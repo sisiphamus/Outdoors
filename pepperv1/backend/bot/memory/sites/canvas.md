@@ -2,47 +2,41 @@
 
 **URL:** https://canvas.rice.edu/
 
-## API Access (authenticated via browser session)
+## Access Methods (in priority order)
 
-Canvas has a full REST API accessible in the browser when the user is logged in. Use API endpoints directly — they return clean JSON, no DOM parsing needed.
+### 1. Canvas MCP Server (Preferred)
+**Package**: `mcp-canvas-lms` (54 tools)
+**Auth**: Personal access token from Canvas > Account > Settings > New Access Token
+- If configured, use `mcp__canvas__*` tools directly
+- Full access to courses, assignments, grades, announcements, modules
 
-### Key Endpoints
+### 2. REST API (Direct)
+Canvas has a comprehensive REST API. Use with personal access token or browser session cookies.
 
+**Key Endpoints:**
 | Purpose | Endpoint |
 |---------|----------|
 | To-do items | `/api/v1/users/self/todo?per_page=50` |
-| Upcoming events/assignments | `/api/v1/users/self/upcoming_events?per_page=50` |
-| All courses | `/api/v1/courses?enrollment_state=active&per_page=50` |
+| Upcoming events | `/api/v1/users/self/upcoming_events?per_page=50` |
+| Active courses | `/api/v1/courses?enrollment_state=active&per_page=50` |
 | Course assignments | `/api/v1/courses/{id}/assignments?per_page=50` |
 | Course announcements | `/api/v1/courses/{id}/discussion_topics?only_announcements=true` |
-| User profile | `/api/v1/users/self/profile` |
 | Dashboard cards | `/api/v1/dashboard/dashboard_cards` |
 
-### Best Approach
-
-**Option 1: Playwright MCP (preferred)**
-1. Navigate to `https://canvas.rice.edu/` first to ensure auth session is active.
-2. Hit API endpoints directly via `browser_navigate` — they return raw JSON in the page.
-3. Use `browser_evaluate` to parse: `() => JSON.parse(document.body.innerText)`
-4. For a "what's due" query, combine `/todo` + `/upcoming_events` for the fullest picture.
-See knowledge/playwright-mcp-setup for install instructions.
-
-**Option 2: Direct curl/fetch (try if Playwright unavailable)**
 ```bash
-curl -s "https://canvas.rice.edu/api/v1/users/self/todo?per_page=50" \
-  -H "Cookie: [browser cookies]" | jq .
+# With API token
+curl -s -H "Authorization: Bearer $CANVAS_TOKEN" "https://canvas.rice.edu/api/v1/users/self/todo?per_page=50"
 ```
-Requires extracting browser cookies — complex on Windows.
 
-**When Playwright MCP is NOT available:**
-- Try WebFetch or curl approaches first
-- If all alternatives fail, emit: [NEEDS_MORE_TOOLS: need Playwright MCP browser tools to navigate canvas.rice.edu with existing browser session]
-- The system will auto-install Playwright MCP (see knowledge/playwright-mcp-setup) and re-invoke you
-- Do NOT just tell the user the tools aren't available and give up
+### 3. Playwright Browser + API (Fallback)
+Navigate to Canvas first to establish auth session, then hit API endpoints via `browser_evaluate`:
+```javascript
+() => fetch('/api/v1/users/self/todo?per_page=50').then(r => r.json())
+```
+This returns clean JSON without DOM parsing.
 
-### Notes
-
-- The dashboard To Do sidebar widget uses a loading spinner and is unreliable for scraping — always prefer the API.
-- API responses include course names, due dates (ISO 8601), assignment descriptions (HTML), and submission status.
-- User's school: **Rice University**
-- Known course: **BUSI 365** (startup/product class with sprint-based assignments)
+## Notes
+- University: Rice University
+- Known course: BUSI 365 (startup/product class)
+- API responses include course names, due dates (ISO 8601), assignment descriptions (HTML), submission status
+- Dashboard To Do widget is unreliable for scraping — always prefer API

@@ -1,0 +1,18 @@
+{
+  "1": {
+    "sessionId": "739f6816-8a4e-4f55-b456-9ef3f1c9c62a",
+    "createdAt": "2026-02-27T05:51:42.985Z",
+    "lastActivity": "2026-03-03T03:05:55.253Z",
+    "label": "whats upp",
+    "platform": "telegram",
+    "mode": "assistant"
+  },
+  "2": {
+    "sessionId": "178d6f67-2df8-453e-966c-f53e5c6f7ac8",
+    "createdAt": "2026-02-27T05:52:03.079Z",
+    "lastActivity": "2026-02-27T05:52:48.656Z",
+    "label": "Im building something",
+    "platform": "telegram",
+    "mode": "assistant"
+  }
+}

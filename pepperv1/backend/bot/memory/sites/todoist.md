@@ -2,39 +2,35 @@
 
 **URL:** https://todoist.com/
 
-## Access Method
+## Access Methods (in priority order)
 
-**Always use Playwright MCP browser automation.** Do NOT use API tokens, OAuth, REST API keys, or any other token-based authentication method.
+### 1. MCP Server (Preferred)
+**Package**: `@doist/todoist-ai` (Official from Doist)
+**Auth**: API token from Todoist Settings > Integrations > Developer
+**Tools**: Create/read/update/delete tasks, manage projects, sections, labels, comments
+- If MCP is configured, use `mcp__todoist__*` tools directly
+- No DOM parsing, no snapshots, no stale refs — pure structured API
 
-### Why Playwright Over Tokens
-- User is already logged into Todoist in their Edge browser
-- Playwright connects to the existing Edge session with cookies/auth intact
-- No need to manage, store, or rotate API tokens
-- Browser automation sees exactly what the user sees
+### 2. REST API v1 (Fallback)
+**IMPORTANT**: REST v2 is DEPRECATED (returns 410 Gone as of Feb 2026). Use v1:
+```bash
+# Get all tasks (paginated, returns {results, next_cursor})
+curl -s -H "Authorization: Bearer $TODOIST_API_TOKEN" https://api.todoist.com/api/v1/tasks
 
-### Best Approach
+# Create a task
+curl -s -X POST -H "Authorization: Bearer $TODOIST_API_TOKEN" -H "Content-Type: application/json" \
+  -d '{"content":"Task name","due_string":"today"}' https://api.todoist.com/api/v1/tasks
 
-1. Use `mcp__playwright__browser_navigate` to go to `https://todoist.com/app/`
-2. Use `mcp__playwright__browser_snapshot` to read the current task list
-3. Use `mcp__playwright__browser_click` and `mcp__playwright__browser_type` to create/edit/complete tasks
-4. Use `mcp__playwright__browser_evaluate` for extracting structured data if needed
+# Complete a task
+curl -s -X POST -H "Authorization: Bearer $TODOIST_API_TOKEN" https://api.todoist.com/api/v1/tasks/{id}/close
+```
 
-### Common Operations
+### 3. Playwright Browser (Last Resort)
+Only if MCP and API are both unavailable:
+1. Navigate to `https://todoist.com/app/today`
+2. Snapshot with filename param, grep for task refs
+3. Use click/type for interactions
 
-| Action | Method |
-|--------|--------|
-| View tasks | Navigate to `/app/today` or `/app/upcoming`, then snapshot |
-| Add task | Click "Add task" button, type task content, press Enter |
-| Complete task | Click the checkbox next to the task |
-| View project | Navigate to `/app/project/{id}` |
-| Search | Use the search bar or navigate to `/app/search/{query}` |
-
-### When Playwright MCP is NOT available
-- Try WebFetch to `https://todoist.com/app/` as a fallback (may not work without auth)
-- If all alternatives fail, emit: `[NEEDS_MORE_TOOLS: need Playwright MCP browser tools to navigate todoist.com with existing browser session]`
-- Do NOT attempt to use Todoist API tokens or REST API — use Playwright only
-
-### Notes
-- Todoist web app is a single-page app — wait for content to load after navigation
+## Notes
+- Todoist web app is an SPA — wait for content to load after navigation
 - The app URL is `https://todoist.com/app/` (not just `todoist.com`)
-- Connect to existing Edge browser session per browser preferences

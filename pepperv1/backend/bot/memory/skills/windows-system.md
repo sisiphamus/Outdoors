@@ -103,6 +103,13 @@ Pattern for all media keys:
 
 This works system-wide — doesn't need Spotify window to be focused. Same command works for YouTube in browser, Windows Media Player, etc.
 
+## Opening Apps via URI Schemes
+- **Spotify**: `start spotify:` (launches or brings to focus)
+- **Spotify web**: `start https://open.spotify.com`
+- **Calculator**: `start calculator:`
+- **Maps**: `start bingmaps:`
+- **Mail**: `start mailto:someone@example.com`
+
 ## Shell Environment: Git Bash Quirks
 
 The executor runs in **Git bash on Windows**. This causes issues with Windows CLI tools that use `/` flags:
