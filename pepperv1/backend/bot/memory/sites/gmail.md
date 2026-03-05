@@ -27,9 +27,10 @@ Playwright connects via CDP to the user's already-running Edge. **The user is al
 - Refs are stable within a compose session
 - **Resolve contacts by name**: Type name in To field → Gmail autocomplete suggests matches → click contact
 
-**Multiple accounts:**
-- `/u/0/` (first account), `/u/1/` (second), etc.
-- School email: at253@rice.edu | Personal: towneradamm@gmail.com
-- Default to school email unless personal is specified
+**Multiple accounts — EXPLICIT MAPPING:**
+- **`/u/0/` = towneradamm@gmail.com (personal)**
+- **`/u/1/` = at253@rice.edu (school) ← DEFAULT**
+- Always use `/u/1/` unless personal email is specifically requested
+- After navigating, verify you're on the correct account before proceeding
 
 **Gmail's accessibility tree is enormous.** Always use `filename` param on snapshots, then Grep for specific refs.
