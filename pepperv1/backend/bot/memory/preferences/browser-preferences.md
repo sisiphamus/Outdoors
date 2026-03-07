@@ -74,8 +74,11 @@ Pepper uses `@playwright/mcp` with `--cdp-endpoint` pointing to the AutomationPr
 | Profile 4 | antony@calybr.app | Calybr |
 | Profile 5 | mcmurtryifp@gmail.com | McMurtry IVP |
 
-**AutomationProfile** was seeded from the Default profile (antony.saleh2017@gmail.com).
-To use a different account, sign into it inside the AutomationProfile Chrome instance.
+**AutomationProfile** was seeded from **Profile 1 (user@example.com)**.
+- The automation browser only has the Rice account signed in.
+- `antony.saleh2017@gmail.com` (personal Gmail) is NOT available in AutomationProfile.
+- Do NOT attempt to sign into personal Gmail or personal Google-linked services (e.g. personal GitHub) via the automation browser — it will fail or open the wrong account.
+- For personal Gmail tasks, the user must add that account manually to AutomationProfile first.
 
 ## Auto-Launch (browser-health.js)
 On startup, Pepper checks if CDP is reachable on port 9222. If not, it auto-launches Chrome with:
