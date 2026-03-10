@@ -1,0 +1,84 @@
+appId: com.outdoors.desktop
+productName: Outdoors
+copyright: Copyright © 2026 Outdoors
+
+directories:
+  output: dist
+
+files:
+  - main.js
+  - preload.js
+  - "!dist"
+  - "!node_modules/.cache"
+
+extraResources:
+  - from: ../../../outdoorsv4
+    to: outdoorsv4
+    filter:
+      - "**/*"
+  - from: ../
+    to: project
+    filter:
+      - "**/*"
+      # Dependencies & build artifacts
+      - "!node_modules/**"
+      - "!electron/**"
+      # Auth & config
+      - "!auth_state/**"
+      - "!config.json"
+      - "!.env"
+      # Conversation data
+      - "!bot/logs/**"
+      - "!bot/outputs/**"
+      # Personal memory
+      - "!bot/memory/preferences/**"
+      - "!bot/memory/sites/**"
+      - "!bot/memory/short-term/**"
+      - "!bot/memory/chat-sessions.json"
+      - "!bot/memory/wa-chat-sessions.json"
+      - "!bot/memory/conversations.json"
+      # Personal skills & knowledge
+      - "!bot/memory/skills/applications/**"
+      - "!bot/memory/skills/Adams Writing Voice/**"
+      - "!bot/memory/knowledge/contact-lookup.md"
+      - "!bot/memory/knowledge/gmail-email-automation.md"
+      - "!bot/memory/knowledge/google-workspace-email.md"
+      - "!bot/memory/knowledge/how-many-left-project.md"
+      - "!bot/memory/knowledge/outdoors-pipeline-debugging.md"
+      # Tests & runtime artifacts
+      - "!tests/**"
+      - "!bot/message-queue/**"
+      - "!package-lock.json"
+
+mac:
+  target:
+    - dmg
+    - zip
+  icon: ../src/setup/icon.png
+  category: public.app-category.utilities
+
+dmg:
+  title: Outdoors
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: ../src/setup/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: ../src/setup/icon.ico
+  uninstallerIcon: ../src/setup/icon.ico
+  installerHeaderIcon: ../src/setup/icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Outdoors

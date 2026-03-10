@@ -14,16 +14,16 @@ const defaults = {
   allowedNumbers: [],
   allowAllNumbers: false,
   claudeCommand: 'claude',
-  claudeArgs: ['--print', '--max-turns', '25'],
+  claudeArgs: ['--print', '--max-turns', '25', '--dangerously-skip-permissions'],
   maxResponseLength: 4000,
   messageTimeout: 900000,
   rateLimitPerMinute: 10,
-  workingDirectory: process.cwd(),
+  workingDirectory: join(__dirname, '..', 'outdoorsv1', 'backend'),
   codeClaudeArgs: ['--print'],
-  codeWorkingDirectory: process.cwd(),
+  codeWorkingDirectory: join(__dirname, '..', 'outdoorsv1', 'backend'),
   prefix: '!claude ',
   authDir: join(__dirname, '..', 'outdoorsv1', 'backend', 'auth_state'),
-  outputDirectory: join(__dirname, '..', 'bot', 'outputs'),
+  outputDirectory: join(__dirname, '..', 'outdoorsv1', 'backend', 'bot', 'outputs'),
 };
 
 function loadConfig() {

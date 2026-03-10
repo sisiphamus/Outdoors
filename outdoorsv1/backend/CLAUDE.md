@@ -33,49 +33,45 @@ When you receive a task that is primarily coding or software development — bui
 ## Browser Automation
 
 - **NEVER kill Chrome.** Do NOT run `taskkill /im chrome.exe` or any command that terminates Chrome. The AutomationProfile cookies/sessions live in memory — killing Chrome destroys them permanently and forces a manual re-login. If CDP is unreachable, diagnose without killing Chrome.
-- **Use the user's preferred browser.** Check `bot/memory/preferences/user-profile.md` for the preferred browser, then use the matching MCP tool set (see Browser Tool Selection table below). The browser connects via CDP on port 9222 to the AutomationProfile — all sessions, cookies, and logins are preserved.
-- **Chrome requires CDP to work.** `mcp__chrome__*` tools connect to Chrome running with `--remote-debugging-port=9222 --user-data-dir=AutomationProfile`. The bot's startup (browser-health.js) auto-launches this Chrome. **If Chrome is not running, do NOT attempt to launch it yourself** — do NOT run `Start-Process`, `chrome.exe`, or any shell command to open a browser. If CDP is not responding, report it as an error.
-- **If browser tools fail:** Try the other set once (`mcp__playwright__*` if `mcp__chrome__*` fails, or vice versa — both use port 9222). If both fail, output `[NEEDS_MORE_TOOLS: Chrome CDP not available on port 9222]`. **NEVER run `Start-Process`, `chrome.exe`, or any Bash/PowerShell command to open a browser. No exceptions, no reasoning around it.**
+- **Use Playwright tools** (`mcp__playwright__*`) for all browser tasks. The browser connects via CDP on port 9222 to the AutomationProfile — all sessions, cookies, and logins are preserved.
+- **Browser requires CDP to work.** The bot's startup (browser-health.js) auto-launches the browser with `--remote-debugging-port=9222 --user-data-dir=AutomationProfile`. **If the browser is not running, do NOT attempt to launch it yourself** — do NOT run `Start-Process`, `chrome.exe`, or any shell command to open a browser. If CDP is not responding, report it as an error.
+- **If browser tools fail:** Try the other tool set once. If both fail, output `[NEEDS_MORE_TOOLS: CDP not available on port 9222]`. **NEVER run `Start-Process`, `chrome.exe`, or any Bash/PowerShell command to open a browser. No exceptions, no reasoning around it.**
 - **The AutomationProfile has all the needed accounts.** Sessions are seeded from the user's real Chrome profile. Just navigate — you're already authenticated.
 - **Git/GitHub credentials**: Use the Windows credential manager or SSH keys — never try to browser-auth a git push. If `gh auth` or git push fails, check `cmdkey /list` and `~/.gitconfig`, not the browser. If you ever fall back to bash-based Playwright or any other browser automation, connect via CDP — never launch a fresh browser. Use Gmail for all email tasks — never use Outlook.
 - **Browser first for authenticated content.** For the user's personal content (Gmail, Todoist, Notion, LinkedIn, etc.), always use the browser — the user is already logged in. Don't try APIs then complain about permissions.
 - **Access app state over DOM.** Modern web apps load all data into JS memory before rendering. Use `browser_evaluate` to access `window.__INITIAL_STATE__`, `window.App?.state`, or `window.store.getState()` — 1 call gets ALL data instead of 10+ calls scraping/scrolling the DOM. If you'll use a site more than once, invest time finding its state access pattern and save it to `bot/memory/sites/`.
 
-### Browser Tool Selection (Read `bot/memory/preferences/browser-preferences.md` first)
-The correct browser MCP tools depend on the user's configured browser. Check `browser-preferences.md` on every session start.
+### Browser Tool Selection
+Use Playwright tools for all browser tasks.
 
 | Preferred Browser | MCP Tools to Use | Notes |
 |-------------------|-----------------|-------|
 | **Google Chrome** | `mcp__chrome__*` (chrome-devtools-mcp, autoConnect) | Connects to already-running Chrome. All sessions/cookies preserved. |
 | **Microsoft Edge / Brave / Other** | `mcp__playwright__*` (Playwright via CDP on port 9222) | Requires browser running with `--remote-debugging-port=9222` |
 
-**Do NOT call ToolSearch.** Both MCP servers are pre-configured and pre-approved — call tools directly.
-
-#### Chrome Tool Names (`mcp__chrome__*`) — use when preferred browser = Chrome
-- `mcp__chrome__navigate_page` — go to a URL
-- `mcp__chrome__take_snapshot` — get accessibility tree (save output, don't inline)
-- `mcp__chrome__click` — click an element
-- `mcp__chrome__type_text` — type into a field
-- `mcp__chrome__fill` — fill a form field
-- `mcp__chrome__press_key` — press keyboard keys
-- `mcp__chrome__list_pages` — list open tabs
-- `mcp__chrome__select_page` — switch tabs
-- `mcp__chrome__evaluate_script` — run JS on the page
-- `mcp__chrome__take_screenshot` — screenshot the page
+**Do NOT call ToolSearch.** MCP servers are pre-configured and pre-approved — call tools directly.
 
 #### Playwright Tool Names (`mcp__playwright__*`) — use when preferred browser = Edge/Other
 - `mcp__playwright__browser_navigate` — go to a URL
-- `mcp__playwright__browser_snapshot` — get accessibility tree (**ALWAYS use `filename` param**)
+- `mcp__playwright__browser_snapshot` — get accessibility tree (parse inline — do NOT save to file then read back)
 - `mcp__playwright__browser_click` — click an element by ref
 - `mcp__playwright__browser_type` — type/fill a field by ref
 - `mcp__playwright__browser_press_key` — press keyboard keys
 - `mcp__playwright__browser_tabs` — switch between tabs
 - `mcp__playwright__browser_evaluate` — run JS on the page
 
+#### Chrome Tool Names (`mcp__chrome__*`) — use when preferred browser = Chrome
+- `mcp__chrome__navigate_page`, `mcp__chrome__take_snapshot`, `mcp__chrome__click`, `mcp__chrome__type_text`, `mcp__chrome__fill`, `mcp__chrome__press_key`, `mcp__chrome__list_pages`, `mcp__chrome__select_page`, `mcp__chrome__evaluate_script`, `mcp__chrome__take_screenshot`
+
+### Browser State Rules
+- **After any click/type that changes page state** (submit, dialog open/close, navigation), take a FRESH snapshot before using element refs. Old refs are STALE and will fail.
+- **Parse snapshots inline.** NEVER save a snapshot to a `.md` file then Read it back. The snapshot data is already in your context — use it directly.
+- **One snapshot = one action cycle.** Snapshot → act on refs → (if state changed) snapshot again. NOT: snapshot → grep snapshot → read snapshot file → grep again → read again.
+
 ### Browser Tips
-- **SPAs re-render DOM on every click — refs go stale.** Take a fresh snapshot after each action on dynamic sites. Use evaluate for atomic multi-step operations (e.g., click dropdown then select item in one JS call). Open a new tab to escape redirect loops.
+- **SPAs re-render DOM on every click — refs go stale.** Use evaluate for atomic multi-step operations (e.g., click dropdown then select item in one JS call). Open a new tab to escape redirect loops.
 - **Access app state over DOM.** Use `evaluate_script`/`browser_evaluate` to access `window.__INITIAL_STATE__`, `window.App?.state`, or `window.store.getState()` — 1 call gets ALL data instead of 10+ calls scraping/scrolling.
-- **If you already have refs from earlier in the session, just use them.** Don't re-snapshot.
+- **If you already have refs AND the page hasn't changed, just use them.** Don't re-snapshot. But if you clicked something that mutated the page, refs are stale — re-snapshot.
 - **Check `bot/memory/sites/` first** if the task involves a site you might have notes on.
 
 ## Memory System
@@ -95,16 +91,27 @@ You have a `bot/memory/` folder with knowledge from past tasks. Check it when th
 - **Never save element refs, CSS selectors, or step-by-step walkthroughs** in memory — those are session-specific and will be wrong next time.
 - Keep files short and actionable — this is a cheat sheet, not documentation.
 
-### Snapshot cleanup
-- **Never leave `.md` snapshot files in the working directory.** If you saved a browser snapshot to a `.md` file during a task, delete it when done. Only `CLAUDE.md` should persist.
-
 ## Efficiency
 
+### CRITICAL: Browser Efficiency
+
+1. **Prefer `browser_evaluate` over `browser_snapshot` on heavy pages** (Gmail, Google Docs, Notion). Snapshots on these pages exceed context limits and get auto-saved to files — forcing extra Read/Grep calls. Instead:
+   - Use `browser_evaluate` to extract just what you need (button refs, field values, page state)
+   - If you MUST snapshot and it gets saved to a file, search it with ONE Grep using a broad pattern — not multiple narrow Greps
+   - WRONG: snapshot → Grep("Send") → Grep("To") → Grep("Subject") (4 calls)
+   - RIGHT: snapshot → Grep("Send|To|Subject|Insert") (2 calls)
+
+2. **Don't look up config files before browser tasks.** Just use Playwright tools directly. Don't Glob for `browser-preferences.md`, `gmail.md`, or site memory files before starting. Only check memory if a task fails and you need help.
+
+3. **Your first call on a browser task should be `browser_navigate`.** Not Glob, not memory lookup, not anything else. Navigate first, then act.
+
+### General Rules
+
 - **Never repeat a tool call you already made.** Read your own output before making the next call.
-- **Batch parallel calls.** If you need to discover tools AND check memory, do both in one turn — don't run them sequentially.
+- **Batch or die.** If you need 2+ independent pieces of info, request them in ONE turn with parallel tool calls. Sequential calls for independent operations = wasted time.
 - **If the task is obvious, skip memory and just act.** "What's on my Todoist?" → navigate to Todoist. Don't check memory first for something that's a single navigation.
-- **Do NOT use TodoWrite, TodoRead, TaskCreate, or any task/todo tools.** They waste turns. Just do the work — don't track it.
-- **Do NOT use ToolSearch.** It does not exist in this environment. Browser MCP tools are pre-approved — just call them directly (check browser-preferences.md for which tool set to use).
+- **Parse, don't persist.** When you get data back from a tool (snapshot, API response, search result), work with it in context. Don't write it to a file then read the file back.
+- **Stay on task.** If you see something broken/messy that isn't part of the current task (extra compose window, stale tab, formatting issue), IGNORE IT. Complete the primary task first.
 
 ## Skills
 

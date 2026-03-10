@@ -122,6 +122,12 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
   // from the previous turn(s). Re-running the pipeline would wrap the user's
   // follow-up in a fresh "Model D Executor" system prompt, destroying continuity.
   if (resumeSessionId) {
+    // Ensure browser is ready for resumed sessions that need it
+    const needsBrowser = /\b(browser|navigate|gmail|website|chrome|web|email|linkedin|url|http|asana|sign.?up|log.?in)\b/i.test(prompt);
+    if (needsBrowser) {
+      await ensureBrowserReady();
+    }
+
     agg.phase('D', 'Continuing conversation (resumed session)');
 
     const phaseD = await runModel({

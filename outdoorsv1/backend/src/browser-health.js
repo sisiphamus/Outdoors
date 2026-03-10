@@ -158,10 +158,11 @@ export async function ensureBrowserReady() {
 
   // --- EDGE / OTHER CHROMIUM: use @playwright/mcp with --cdp-endpoint ---
   const cdpPort = prefs.cdpPort || 9222;
-  const executablePath = prefs.executablePath;
+  let executablePath = prefs.executablePath;
   // Default to AutomationProfile — Chrome 136+ ignores --remote-debugging-port on the default
   // user data dir. A separate dir is required. See browser-preferences.md for full explanation.
-  const userDataDir = prefs.userDataDir || `C:\\Users\\${process.env.USERNAME}\\AppData\\Local\\Google\\Chrome\\AutomationProfile`;
+  const userDataDir = prefs.userDataDir ||
+    join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile');
   const profileDir = prefs.profileDir || 'Default';
 
   if (await isCdpReachable(cdpPort)) {
@@ -169,10 +170,23 @@ export async function ensureBrowserReady() {
     return;
   }
 
+  // Auto-detect browser if prefs file is missing or has wrong paths
   if (!executablePath || !existsSync(executablePath)) {
-    console.warn(`  [BrowserHealth] Browser not found at: ${executablePath}`);
-    console.warn(`  [BrowserHealth] Update 'Executable Path' in bot/memory/preferences/browser-preferences.md`);
-    return;
+    const candidates = [
+      join(process.env.PROGRAMFILES || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      join(process.env['PROGRAMFILES(X86)'] || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      join(process.env.PROGRAMFILES || '', 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      join(process.env['PROGRAMFILES(X86)'] || '', 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    ];
+    const detected = candidates.find(p => existsSync(p));
+    if (detected) {
+      console.log(`  [BrowserHealth] Auto-detected browser: ${detected}`);
+      executablePath = detected;
+    } else {
+      console.warn(`  [BrowserHealth] No browser found at prefs path (${executablePath}) or common locations`);
+      console.warn(`  [BrowserHealth] Update 'Executable Path' in bot/memory/preferences/browser-preferences.md`);
+      return;
+    }
   }
 
   // Permanently patch shortcuts so future launches always have CDP

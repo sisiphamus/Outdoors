@@ -10,6 +10,17 @@ import { createRuntimeAwareProgress } from './runtime-health.js';
 import { createSession, closeSession } from '../../../outdoorsv4/session/session-manager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const EXECUTION_TIMEOUT_MS = 10 * 60 * 1000; // 10 min hard limit per executeClaudePrompt call
+
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Timed out after ${ms / 1000}s: ${label}`)), ms)
+    ),
+  ]);
+}
 const SHORT_TERM_DIR = join(__dirname, '..', 'bot', 'memory', 'short-term');
 const CHAT_SESSIONS_PATH = join(__dirname, '..', 'bot', 'memory', 'wa-chat-sessions.json');
 const SESSION_TIMEOUT_MS = 10 * 60 * 1000;
@@ -267,13 +278,13 @@ export async function handleMessage(message, emitLog) {
     let execResult;
     let didDelegate = false;
     if (isKnownCode) {
-      execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, resumeSessionId, processKey, clarificationKey: processKey, sessionContext: session }));
+      execResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, resumeSessionId, processKey, clarificationKey: processKey, sessionContext: session })), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt');
     } else {
-      execResult = await executeClaudePrompt(finalPrompt, { onProgress, resumeSessionId, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
+      execResult = await withTimeout(executeClaudePrompt(finalPrompt, { onProgress, resumeSessionId, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session }), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt');
       if (execResult.delegation) {
         didDelegate = true;
         emitLog?.('delegation', { sender, employee: 'coder', model: execResult.delegation.model });
-        execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model));
+        execResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model)), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt');
       }
     }
     if (execResult.status === 'needs_user_input') {
@@ -319,12 +330,12 @@ export async function handleMessage(message, emitLog) {
         let retryResult;
         let didRetryDelegate = false;
         if (isKnownCode) {
-          retryResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress: retryOnProgress, processKey, clarificationKey: processKey, sessionContext: session }));
+          retryResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress: retryOnProgress, processKey, clarificationKey: processKey, sessionContext: session })), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt (retry)');
         } else {
-          retryResult = await executeClaudePrompt(finalPrompt, { onProgress: retryOnProgress, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
+          retryResult = await withTimeout(executeClaudePrompt(finalPrompt, { onProgress: retryOnProgress, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session }), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt (retry)');
           if (retryResult.delegation) {
             didRetryDelegate = true;
-            retryResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress: retryOnProgress, processKey, clarificationKey: processKey, sessionContext: session }, retryResult.delegation.model));
+            retryResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress: retryOnProgress, processKey, clarificationKey: processKey, sessionContext: session }, retryResult.delegation.model)), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt (retry)');
           }
         }
         if (retryResult.status === 'needs_user_input') {

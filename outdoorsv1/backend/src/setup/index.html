@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Outdoors</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="wizard">
+
+    <!-- Page 1: Welcome -->
+    <div class="page active" data-page="0">
+      <div class="page-content welcome">
+        <p class="welcome-label">Welcome to</p>
+        <h1 class="brand">Outdoors</h1>
+        <p class="tagline">Stop working, start living.</p>
+        <p class="description">
+          You text an agent that lives in your computer.
+          No need for special keys, tracking your passwords, your agent uses your computer the way you do.
+        </p>
+        <button class="btn-primary" id="btn-begin">Begin Setup</button>
+      </div>
+    </div>
+
+    <!-- Page 2: Installing Dependencies -->
+    <div class="page" data-page="1">
+      <div class="page-content">
+        <h2>Setting things up</h2>
+        <p class="subtitle">Installing what Outdoors needs to run. This only happens once.</p>
+        <div class="install-checklist">
+          <div class="install-item" id="install-node-deps">
+            <div class="install-icon"><div class="spinner-small"></div></div>
+            <div class="install-label">Node.js dependencies</div>
+          </div>
+          <div class="install-item" id="install-claude-cli">
+            <div class="install-icon waiting-icon"></div>
+            <div class="install-label">Claude CLI</div>
+          </div>
+          <div class="install-item" id="install-python">
+            <div class="install-icon waiting-icon"></div>
+            <div class="install-label">Python ML packages</div>
+          </div>
+        </div>
+        <p class="install-status" id="install-status">Installing Node dependencies...</p>
+      </div>
+    </div>
+
+    <!-- Page 3: Claude Authentication -->
+    <div class="page" data-page="2">
+      <div class="page-content">
+        <h2>Sign in to Claude</h2>
+        <p class="subtitle">
+          Outdoors uses Claude to understand your messages and take action.
+          Sign in with your Anthropic account.
+        </p>
+        <div class="auth-container">
+          <div id="auth-checking" class="auth-state">
+            <div class="spinner"></div>
+            <p class="auth-status-text">Checking authentication...</p>
+          </div>
+          <div id="auth-needed" class="auth-state hidden">
+            <button class="btn-primary" id="btn-auth">Sign in to Claude</button>
+            <p class="auth-hint">A terminal window will open. It takes about 10 seconds to load.<br>Once it loads, press <strong>1</strong> to sign in.</p>
+            <button class="btn-skip" id="btn-skip-auth">Skip for now</button>
+          </div>
+          <div id="auth-waiting" class="auth-state hidden">
+            <div class="spinner"></div>
+            <p class="auth-status-text" id="auth-waiting-text">Opening Claude login...</p>
+            <p class="auth-hint">Press <strong>1</strong> in the terminal window, then complete sign-in in your browser.<br>This page will advance automatically.</p>
+            <button class="btn-skip" id="btn-skip-auth-waiting">Skip for now</button>
+          </div>
+          <div id="auth-success" class="auth-state hidden">
+            <div class="complete-mark small-mark"></div>
+            <p class="auth-status-text">Signed in</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Page 4: WhatsApp QR Code -->
+    <div class="page" data-page="3">
+      <div class="page-content">
+        <h2>Scan with WhatsApp</h2>
+        <p class="subtitle">
+          Open WhatsApp on your phone &rarr; Settings &rarr; Linked Devices &rarr; Link a Device
+        </p>
+        <div class="qr-container">
+          <div id="qr-loading" class="qr-placeholder">
+            <div class="spinner"></div>
+            <p class="qr-status-text">Starting backend &amp; waiting for QR code...</p>
+          </div>
+          <div id="qr-display" class="hidden">
+            <div class="qr-frame">
+              <img id="qr-image" alt="QR Code" />
+            </div>
+          </div>
+          <p class="qr-status" id="qr-status"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Page 5: Complete -->
+    <div class="page" data-page="4">
+      <div class="page-content complete-page">
+        <div class="complete-mark"></div>
+        <h2>You're all set.</h2>
+        <p class="subtitle">
+          Outdoors is now running quietly in the background.
+        </p>
+        <p class="complete-instruction">
+          Send a message in your Outdoors WhatsApp group to get started.
+          That's it. No apps to open, no windows to manage.
+        </p>
+        <div class="complete-commands">
+          <p class="commands-label">How to chat</p>
+          <div class="command-row"><code>1</code><span>Start conversation #1</span></div>
+          <div class="command-row"><code>1 pause</code><span>Pause conversation #1</span></div>
+          <div class="command-row"><code>1 new</code><span>End conversation #1</span></div>
+          <div class="command-row"><code>2</code><span>Start a second conversation</span></div>
+        </div>
+        <button class="btn-primary" id="btn-close">Close</button>
+      </div>
+    </div>
+
+    <!-- Progress dots -->
+    <div class="progress-dots" id="progress-dots">
+      <span class="dot active" data-dot="0"></span>
+      <span class="dot" data-dot="1"></span>
+      <span class="dot" data-dot="2"></span>
+      <span class="dot" data-dot="3"></span>
+      <span class="dot" data-dot="4"></span>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

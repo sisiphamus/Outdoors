@@ -1,0 +1,486 @@
+/* ============================================================
+   Outdoors — Setup Wizard Styles
+   Color palette: Warm earth tones
+   Typography: Playfair Display (headings) + Source Serif 4 (body)
+   ============================================================ */
+
+:root {
+  --bg: #FAF6F1;
+  --bg-secondary: #F0EAE0;
+  --text: #2C2417;
+  --text-secondary: #6B5744;
+  --text-muted: #9A8B78;
+  --accent: #3D5A3E;
+  --accent-hover: #4A6E4C;
+  --highlight: #C4856A;
+  --border: #D9CFC2;
+  --success: #3D5A3E;
+  --error: #9E4A3A;
+  --white: #FFFFFF;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* ============================================================
+   Wizard container
+   ============================================================ */
+
+.wizard {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ============================================================
+   Pages
+   ============================================================ */
+
+.page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+  overflow-y: auto;
+}
+
+.page.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.page-content {
+  max-width: 480px;
+  width: 100%;
+  padding: 40px 40px;
+  margin: auto 0;
+  text-align: center;
+}
+
+/* ============================================================
+   Welcome page
+   ============================================================ */
+
+.welcome-label {
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 8px 0;
+  font-weight: 400;
+}
+
+.brand {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 56px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 16px 0;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.tagline {
+  font-size: 18px;
+  font-style: italic;
+  color: var(--text-secondary);
+  margin: 0 0 28px 0;
+  font-weight: 300;
+}
+
+.description {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0 0 40px 0;
+  line-height: 1.7;
+  max-width: 340px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ============================================================
+   Typography
+   ============================================================ */
+
+h2 {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 28px;
+  font-weight: 500;
+  margin: 0 0 8px 0;
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 32px 0;
+  line-height: 1.6;
+}
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+
+.btn-primary {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--white);
+  border: none;
+  padding: 12px 36px;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 15px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease;
+  letter-spacing: 0.02em;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+/* ============================================================
+   QR code section
+   ============================================================ */
+
+.qr-container {
+  margin-top: 8px;
+}
+
+.qr-placeholder {
+  padding: 40px 0;
+}
+
+.qr-frame {
+  display: inline-block;
+  padding: 16px;
+  background: var(--white);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.qr-frame img {
+  display: block;
+  width: 240px;
+  height: 240px;
+}
+
+.qr-status {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 16px 0 0 0;
+  min-height: 20px;
+}
+
+.qr-status-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 16px 0 0 0;
+}
+
+/* ============================================================
+   Spinner
+   ============================================================ */
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  margin: 0 auto;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ============================================================
+   Complete page
+   ============================================================ */
+
+.complete-mark {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--success);
+  margin: 0 auto 20px auto;
+  position: relative;
+}
+
+.complete-mark::after {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 10px;
+  width: 12px;
+  height: 20px;
+  border: solid var(--white);
+  border-width: 0 3px 3px 0;
+  transform: rotate(45deg);
+}
+
+.complete-instruction {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 28px 0;
+  line-height: 1.7;
+}
+
+.complete-commands {
+  text-align: left;
+  max-width: 300px;
+  margin: 0 auto 32px auto;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.commands-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 0 0 10px 0;
+}
+
+.command-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.command-row code {
+  min-width: 64px;
+  font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+  font-size: 13px;
+  background: var(--bg-secondary);
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--highlight);
+}
+
+.command-row span {
+  color: var(--text-secondary);
+}
+
+/* ============================================================
+   Progress dots
+   ============================================================ */
+
+.progress-dots {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background 0.3s ease, transform 0.3s ease;
+}
+
+.dot.active {
+  background: var(--accent);
+  transform: scale(1.2);
+}
+
+.dot.completed {
+  background: var(--text-muted);
+}
+
+/* ============================================================
+   Utilities
+   ============================================================ */
+
+/* ============================================================
+   Install checklist
+   ============================================================ */
+
+.install-checklist {
+  text-align: left;
+  max-width: 320px;
+  margin: 0 auto 24px auto;
+}
+
+.install-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  opacity: 0.5;
+  transition: opacity 0.3s ease;
+}
+
+.install-item:last-child {
+  border-bottom: none;
+}
+
+.install-item.active,
+.install-item.done,
+.install-item.error {
+  opacity: 1;
+}
+
+.install-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner-small {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.waiting-icon::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  display: block;
+}
+
+.done-icon::after {
+  content: '';
+  width: 10px;
+  height: 16px;
+  border: solid var(--success);
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg);
+  margin-top: -4px;
+}
+
+.error-icon::after {
+  content: '!';
+  color: var(--error);
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.install-label {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.install-item.done .install-label {
+  color: var(--text-secondary);
+}
+
+.install-status {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  min-height: 20px;
+  margin-top: 8px;
+}
+
+/* ============================================================
+   Auth page
+   ============================================================ */
+
+.auth-container {
+  margin-top: 16px;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-state {
+  text-align: center;
+}
+
+.auth-status-text {
+  font-size: 15px;
+  color: var(--text-secondary);
+  margin: 12px 0 0 0;
+}
+
+.auth-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 12px 0 0 0;
+}
+
+.small-mark {
+  width: 36px;
+  height: 36px;
+  margin: 0 auto 8px auto;
+}
+
+.small-mark::after {
+  left: 11px;
+  top: 7px;
+  width: 9px;
+  height: 16px;
+  border-width: 0 2.5px 2.5px 0;
+}
+
+/* ============================================================
+   Utilities
+   ============================================================ */
+
+.btn-skip {
+  display: block;
+  margin: 16px auto 0 auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.btn-skip:hover {
+  color: var(--text-secondary);
+}
+
+.hidden {
+  display: none !important;
+}

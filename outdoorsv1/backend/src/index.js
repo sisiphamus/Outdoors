@@ -23,6 +23,17 @@ import { assertRuntimeBridgeReady, createRuntimeAwareProgress, getRuntimeHealthS
 import { extractImages } from './transport-utils.js';
 import { createSession, closeSession, listActiveSessions, cleanupOrphanedSessionDirs } from '../../../outdoorsv4/session/session-manager.js';
 import { ensureBrowserReady } from './browser-health.js';
+
+const EXECUTION_TIMEOUT_MS = 10 * 60 * 1000; // 10 min hard limit per executeClaudePrompt call
+
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Timed out after ${ms / 1000}s: ${label}`)), ms)
+    ),
+  ]);
+}
 import { registerStartup } from './register-startup.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -384,6 +395,7 @@ io.on('connection', async (socket) => {
     try {
       const progressWrapper = createRuntimeAwareProgress((type, data) => {
         io.emit('log', { type, data: { sender: 'web', processKey, ...data }, timestamp: new Date().toISOString() });
+        io.emit('devlog', { type, data, sessionId: currentSessionId, processKey });
         convoLog.events.push({ type, ...data });
         socket.emit('chat_progress', { type, data, sessionId: currentSessionId, messageId });
       });
@@ -398,14 +410,14 @@ io.on('connection', async (socket) => {
       let execResult;
       let didDelegate = false;
       if (isKnownCode) {
-        execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, resumeSessionId, processKey, clarificationKey: processKey, sessionContext: session }));
+        execResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, resumeSessionId, processKey, clarificationKey: processKey, sessionContext: session })), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt');
       } else {
-        execResult = await executeClaudePrompt(finalPrompt, { onProgress, resumeSessionId, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
+        execResult = await withTimeout(executeClaudePrompt(finalPrompt, { onProgress, resumeSessionId, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session }), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt');
         if (execResult.delegation) {
           didDelegate = true;
           io.emit('log', { type: 'delegation', data: { sender: 'web', processKey, employee: 'coder', model: execResult.delegation.model }, timestamp: new Date().toISOString() });
           socket.emit('chat_progress', { type: 'delegation', data: { employee: 'coder', model: execResult.delegation.model }, sessionId: currentSessionId, messageId });
-          execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model));
+          execResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model)), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt');
         }
       }
       if (execResult.status === 'needs_user_input') {
@@ -448,6 +460,7 @@ io.on('connection', async (socket) => {
         try {
           const progressWrapper = createRuntimeAwareProgress((type, data) => {
             io.emit('log', { type, data: { sender: 'web', processKey, ...data }, timestamp: new Date().toISOString() });
+            io.emit('devlog', { type, data, sessionId: currentSessionId, processKey });
             convoLog.events.push({ type, ...data });
             socket.emit('chat_progress', { type, data, sessionId: currentSessionId, messageId });
           });
@@ -462,13 +475,13 @@ io.on('connection', async (socket) => {
           let execResult;
           let didDelegate = false;
           if (isKnownCode) {
-            execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }));
+            execResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session })), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt (retry)');
           } else {
-            execResult = await executeClaudePrompt(finalPrompt, { onProgress, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
+            execResult = await withTimeout(executeClaudePrompt(finalPrompt, { onProgress, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session }), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt (retry)');
             if (execResult.delegation) {
               didDelegate = true;
               socket.emit('chat_progress', { type: 'delegation', data: { employee: 'coder', model: execResult.delegation.model }, sessionId: currentSessionId, messageId });
-              execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model));
+              execResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model)), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt (retry)');
             }
           }
           if (execResult.status === 'needs_user_input') {

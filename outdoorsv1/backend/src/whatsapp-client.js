@@ -8,7 +8,7 @@ import makeWASocket, {
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import QRCode from 'qrcode';
-import { writeFileSync, mkdirSync, readFileSync } from 'fs';
+import { writeFileSync, mkdirSync, readFileSync, unlinkSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { config, saveConfig } from './config.js';
@@ -20,6 +20,30 @@ import { formatOutdoorsResponse } from './wa-formatter.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOGS_DIR = join(__dirname, '..', 'bot', 'logs');
+const QUEUE_DIR = join(__dirname, '..', 'bot', 'message-queue');
+mkdirSync(QUEUE_DIR, { recursive: true });
+
+function enqueueMessage(msg) {
+  const file = join(QUEUE_DIR, `${msg.key.id}.json`);
+  writeFileSync(file, JSON.stringify({ msg, enqueuedAt: Date.now() }));
+}
+
+function dequeueMessage(msgId) {
+  try { unlinkSync(join(QUEUE_DIR, `${msgId}.json`)); } catch {}
+}
+
+function getPendingMessages() {
+  try {
+    return readdirSync(QUEUE_DIR)
+      .filter(f => f.endsWith('.json'))
+      .map(f => {
+        try { return JSON.parse(readFileSync(join(QUEUE_DIR, f), 'utf-8')); }
+        catch { return null; }
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.enqueuedAt - b.enqueuedAt);
+  } catch { return []; }
+}
 
 const logger = pino({ level: 'silent' });
 
@@ -27,10 +51,13 @@ async function sendOnboardingWelcome(sock, groupJid) {
   try {
     const msg = formatOutdoorsResponse(
       `Hey I'm Outdoors 🌲\n\n` +
-      `Quick heads up — when you see the plant animation (🌱🌿🌳) on your message, that means I'm thinking.\n\n` +
-      `Gonna ask a few quick questions so I can do my job better. Everything stays on your device and you can change any of it later.\n\n` +
-      `So what's your name and when's your birthday? Are you a student or working rn? If you're in school — what school, class of ____, and what's your major? ` +
-      `What's your favorite color? And what are your career plans and greatest aspiration?`
+      `When you see 🌱🌿🌳 on your message, that means I'm thinking.\n\n` +
+      `Answer these so I can do my job better — everything stays on your device and can be changed later:\n\n` +
+      `🌿 What's your name?\n` +
+      `🌿 Student or working? (school, class of ____, major — or where you work)\n` +
+      `🌿 Personal email + school/work email\n` +
+      `🌿 Browser (Chrome, Edge, Brave, Arc)\n` +
+      `🌿 Outdoor vibe — beaches, mountains, forests, desert, or city? (sets your emoji aesthetic)`
     );
     await sock.sendMessage(groupJid, { text: msg });
   } catch (err) {
@@ -190,6 +217,15 @@ async function startWhatsApp() {
       console.log('WhatsApp connected!');
       console.log('[wa] Connected as:', JSON.stringify(sock.user));
 
+      // Drain any messages left in queue from a previous crash
+      const pending = getPendingMessages();
+      if (pending.length > 0) {
+        console.log(`[queue] Draining ${pending.length} pending message(s)`);
+        for (const { msg } of pending) {
+          sock.ev.emit('messages.upsert', { messages: [msg], type: 'notify' });
+        }
+      }
+
       if (!config.outdoorsGroupJid) {
         createOutdoorsGroup(sock, emitLog);
       } else {
@@ -239,12 +275,20 @@ async function startWhatsApp() {
       // Store incoming messages so getMessage can fulfill group retry requests
       if (msg.message) storeMessage(msgId, msg.message);
 
-      // Skip messages sent by us UNLESS it's a group (solo group for self-messaging)
+      // Only process messages from the Outdoors group — ignore all DMs and other groups
       const remoteJid = msg.key.remoteJid;
+      if (!config.outdoorsGroupJid || remoteJid !== config.outdoorsGroupJid) {
+        continue;
+      }
+
+      // Skip messages sent by us UNLESS it's a group (solo group for self-messaging)
       const isGroup = remoteJid?.endsWith('@g.us');
       if (msg.key.fromMe && !isGroup) {
         continue;
       }
+
+      // Persist to queue before processing — survives crashes
+      enqueueMessage(msg);
 
       // Fire off each message concurrently — each spawns its own Claude instance
       (async () => {
@@ -268,11 +312,21 @@ async function startWhatsApp() {
         // Cycle 🌱🌿🌳🪾🍃 reaction while processing
         const growEmojis = ['🌱', '🌿', '🌳', '🪾', '🍃'];
         let growIdx = 0;
+        let reactInFlight = false;
+        let reactFails = 0;
         const pulseInterval = setInterval(async () => {
+          if (reactInFlight || reactFails >= 3) return; // skip if previous still sending or too many failures
+          reactInFlight = true;
           try {
             growIdx = (growIdx + 1) % growEmojis.length;
             await sock.sendMessage(jid, { react: { key: msg.key, text: growEmojis[growIdx] } });
-          } catch {}
+            reactFails = 0; // reset on success
+          } catch (err) {
+            reactFails++;
+            console.log(`[react] shuffle failed (${reactFails}/3):`, err.message);
+          } finally {
+            reactInFlight = false;
+          }
         }, 1500);
 
         try {
@@ -346,6 +400,7 @@ async function startWhatsApp() {
           return;
         } finally {
           clearInterval(pulseInterval);
+          dequeueMessage(msgId);
           sock.sendMessage(jid, { react: { key: msg.key, text: '' } })
             .then(() => console.log('[react] removed ⏳'))
             .catch(e => console.log('[react] remove failed:', e.message));

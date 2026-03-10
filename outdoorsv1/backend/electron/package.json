@@ -1,0 +1,24 @@
+{
+  "name": "outdoors-desktop",
+  "version": "1.0.0",
+  "description": "Outdoors — Stop working, start living.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "pack": "electron-builder --dir"
+  },
+  "dependencies": {
+    "auto-launch": "^5.0.6"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "extends": "./electron-builder.yml"
+  }
+}

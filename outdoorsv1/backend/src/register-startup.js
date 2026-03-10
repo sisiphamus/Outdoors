@@ -44,6 +44,12 @@ async function isRegistered() {
 }
 
 export async function registerStartup() {
+  // When running under Electron, auto-launch is handled by the auto-launch package
+  if (process.env.ELECTRON) {
+    console.log('  [Startup] Running under Electron — skipping Task Scheduler registration');
+    return;
+  }
+
   try {
     if (await isRegistered()) {
       console.log(`  [Startup] Task '${TASK_NAME}' already registered ✓`);

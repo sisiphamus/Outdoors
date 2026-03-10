@@ -10,8 +10,8 @@ import { register, unregister, emitActivity } from '../util/process-registry.js'
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-// .mcp.json lives in outdoorsv1/backend/ — two levels up from outdoorsv4/pipeline/
-const MCP_CONFIG_PATH = join(__dirname, '..', '..', 'outdoorsv1', 'backend', '.mcp.json');
+// .mcp.json lives at project root — two levels up from outdoorsv4/pipeline/
+const MCP_CONFIG_PATH = join(__dirname, '..', '..', '.mcp.json');
 
 const MODEL_MAP = {
   opus: 'claude-opus-4-20250514',
@@ -60,11 +60,47 @@ export function runModel({
     const cmd = config.claudeCommand || 'claude';
     const args = [...(claudeArgs || config.claudeArgs || ['--print']), '--output-format', 'stream-json', '--verbose'];
 
+    // Always ensure critical flags are present (config may be stale in Electron deployments)
+    if (!args.includes('--dangerously-skip-permissions')) {
+      args.push('--dangerously-skip-permissions');
+    }
+    if (!args.includes('--max-turns')) {
+      args.push('--max-turns', '25');
+    }
+
     // Inject MCP config so Claude always has browser tools, regardless of cwd
     // Skip MCP for lightweight calls (e.g. onboarding) that don't need browser tools
     if (!skipMcp && existsSync(MCP_CONFIG_PATH)) {
       args.push('--mcp-config', MCP_CONFIG_PATH);
     }
+
+    // Explicitly allow all tools — MCP tools aren't fully covered by
+    // --dangerously-skip-permissions in --print mode
+    args.push('--allowedTools',
+        'Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,' +
+        'mcp__playwright__browser_navigate,mcp__playwright__browser_snapshot,' +
+        'mcp__playwright__browser_click,mcp__playwright__browser_type,' +
+        'mcp__playwright__browser_press_key,mcp__playwright__browser_tabs,' +
+        'mcp__playwright__browser_evaluate,mcp__playwright__browser_close,' +
+        'mcp__playwright__browser_take_screenshot,mcp__playwright__browser_wait_for,' +
+        'mcp__playwright__browser_fill_form,mcp__playwright__browser_select_option,' +
+        'mcp__playwright__browser_hover,mcp__playwright__browser_drag,' +
+        'mcp__playwright__browser_handle_dialog,mcp__playwright__browser_file_upload,' +
+        'mcp__playwright__browser_navigate_back,mcp__playwright__browser_network_requests,' +
+        'mcp__playwright__browser_console_messages,mcp__playwright__browser_resize,' +
+        'mcp__playwright__browser_run_code,mcp__playwright__browser_install,' +
+        'mcp__chrome__navigate_page,mcp__chrome__take_snapshot,' +
+        'mcp__chrome__click,mcp__chrome__type_text,mcp__chrome__fill,' +
+        'mcp__chrome__press_key,mcp__chrome__list_pages,mcp__chrome__select_page,' +
+        'mcp__chrome__evaluate_script,mcp__chrome__take_screenshot'
+      );
+
+    // Hard-block tools that waste turns
+    args.push('--disallowedTools',
+      'ToolSearch,TodoWrite,TodoRead,TaskCreate,TaskStop,' +
+      'CronCreate,CronDelete,CronList,EnterPlanMode,ExitPlanMode,' +
+      'EnterWorktree,ExitWorktree,NotebookEdit,Skill'
+    );
 
     // For large system prompts, prepend instructions into the user prompt via stdin
     // instead of passing as a CLI arg to avoid Windows ENAMETOOLONG errors.
@@ -107,10 +143,27 @@ export function runModel({
     let sessionId = null;
     const fullEvents = [];
     let buffer = '';
-    let response_streamed = false; // tracks whether assistant_text was already emitted via streaming
     let killedForQuestion = false; // true when we kill the process to pause for AskUserQuestion
     let killedAfterResult = false; // true after first result — kills process tree to stop background tasks from wasting API calls
-    // No timeout — let models run as long as they need
+
+    // Inactivity watchdog — if the subprocess produces no stdout for 5 minutes, kill it.
+    // Resets on each data event, so long-running tasks that stream output are fine.
+    let lastActivity = Date.now();
+    const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastActivity > INACTIVITY_TIMEOUT_MS) {
+        clearInterval(watchdog);
+        onProgress?.('stderr', { text: `[model-runner] Killing subprocess — no output for ${INACTIVITY_TIMEOUT_MS / 1000}s` });
+        try {
+          if (process.platform === 'win32') {
+            const taskkill = `${process.env.SystemRoot || 'C:\\Windows'}\\System32\\taskkill.exe`;
+            spawn(taskkill, ['/T', '/F', '/PID', String(proc.pid)], { shell: false, stdio: 'ignore', detached: true });
+          } else {
+            process.kill(-proc.pid, 'SIGTERM');
+          }
+        } catch {}
+      }
+    }, 30_000);
 
     // Write prompt to stdin and close
     if (stdinPrefix) {
@@ -122,6 +175,7 @@ export function runModel({
     proc.stdin.end();
 
     proc.stdout.on('data', (chunk) => {
+      lastActivity = Date.now();
       buffer += chunk.toString();
       const lines = buffer.split('\n');
       buffer = lines.pop(); // keep incomplete line
@@ -177,13 +231,7 @@ export function runModel({
                 }
               }
 
-              // Extract text from message
-              const text = extractText(event.message);
-              if (text && !killedAfterResult) {
-                response = text;
-                response_streamed = true;
-                onProgress?.('assistant_text', { text });
-              }
+
             }
             break;
 
@@ -257,6 +305,7 @@ export function runModel({
     });
 
     proc.on('close', (code) => {
+      clearInterval(watchdog);
       if (processKey) unregister(processKey);
 
       // Process any remaining buffer
