@@ -71,6 +71,41 @@
   }
   #clear-btn:hover { background: #4a2020; color: #fff; }
 
+  /* ── Conversation Tabs ── */
+  #conv-tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    background: #16213e;
+    border-bottom: 1px solid #0f3460;
+    flex-shrink: 0;
+    overflow-x: auto;
+  }
+  .conv-tab {
+    padding: 2px 10px;
+    border: 1px solid #0f3460;
+    border-radius: 4px;
+    background: transparent;
+    color: #a0a0a0;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .conv-tab.active {
+    background: #0f3460;
+    color: #fff;
+    border-color: #1a73e8;
+  }
+  .conv-tab:hover { border-color: #1a73e8; }
+  .conv-tab .tab-count {
+    margin-left: 4px;
+    font-size: 9px;
+    opacity: 0.6;
+  }
+
   /* ── Status Bar ── */
   #status-bar {
     display: flex;
@@ -135,6 +170,7 @@
   .badge-log { background: #1a2a3a; color: #90caf9; }
   .badge-process { background: #1a1a4a; color: #9fa8da; }
   .badge-error { background: #5c1a1a; color: #ff5252; }
+  .badge-received { background: #1a3a1a; color: #66bb6a; }
 
   /* Collapsible details */
   .entry details { margin-top: 2px; }
@@ -191,6 +227,10 @@
   <button id="clear-btn">Clear</button>
 </div>
 
+<div id="conv-tabs">
+  <button class="conv-tab active" data-conv="all">All</button>
+</div>
+
 <div id="status-bar">
   <span class="dot disconnected" id="socket-dot"></span>
   <span id="socket-status">Connecting...</span>
@@ -212,6 +252,9 @@ const entryCountEl = document.getElementById('entry-count');
 let entryCount = 0;
 let autoScroll = true;
 const activeFilters = new Set(['stdout','stderr','tool_use','tool_result','pipeline_phase','cost','log','process']);
+const seenConversations = new Set();
+let activeConv = 'all';
+const convCounts = {};
 
 // ── Filter buttons ──
 document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -228,6 +271,44 @@ document.getElementById('clear-btn').addEventListener('click', () => {
   container.innerHTML = '';
   entryCount = 0;
   entryCountEl.textContent = '0 entries';
+  // Reset conversation counts
+  for (const k in convCounts) convCounts[k] = 0;
+  document.querySelectorAll('.conv-tab .tab-count').forEach(el => el.textContent = '(0)');
+});
+
+// ── Conversation tabs ──
+function getConvLabel(processKey) {
+  if (!processKey) return null;
+  const numbered = processKey.match(/^wa:conv:(\d+)$/);
+  if (numbered) return '#' + numbered[1];
+  if (processKey.startsWith('web:conv:')) return 'Web ' + processKey.split(':')[2];
+  if (processKey.includes(':chat:')) return 'Chat';
+  return processKey;
+}
+
+function ensureConvTab(processKey) {
+  if (!processKey || seenConversations.has(processKey)) return;
+  seenConversations.add(processKey);
+  convCounts[processKey] = 0;
+  const tabBar = document.getElementById('conv-tabs');
+  const btn = document.createElement('button');
+  btn.className = 'conv-tab';
+  btn.dataset.conv = processKey;
+  btn.innerHTML = escapeHtml(getConvLabel(processKey)) + '<span class="tab-count">(0)</span>';
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.conv-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    activeConv = processKey;
+    applyFilters();
+  });
+  tabBar.appendChild(btn);
+}
+
+document.querySelector('.conv-tab[data-conv="all"]').addEventListener('click', function() {
+  document.querySelectorAll('.conv-tab').forEach(t => t.classList.remove('active'));
+  this.classList.add('active');
+  activeConv = 'all';
+  applyFilters();
 });
 
 searchInput.addEventListener('input', () => applyFilters());
@@ -236,9 +317,11 @@ function applyFilters() {
   const search = searchInput.value.toLowerCase();
   container.querySelectorAll('.entry').forEach(el => {
     const type = el.dataset.type;
+    const conv = el.dataset.conv || '';
     const matchesFilter = activeFilters.has(type);
     const matchesSearch = !search || el.textContent.toLowerCase().includes(search);
-    el.classList.toggle('hidden', !(matchesFilter && matchesSearch));
+    const matchesConv = activeConv === 'all' || conv === activeConv;
+    el.classList.toggle('hidden', !(matchesFilter && matchesSearch && matchesConv));
   });
 }
 
@@ -256,17 +339,21 @@ jumpBtn.addEventListener('click', () => {
 });
 
 // ── Add entry ──
-function addEntry(type, summary, details) {
+function addEntry(type, summary, details, processKey) {
   const now = new Date();
   const ts = now.toTimeString().slice(0,8) + '.' + String(now.getMilliseconds()).padStart(3,'0');
 
   // Map to filter category
   const category = getCategoryForType(type);
-  const badgeClass = 'badge-' + (type === 'error' || type === 'handler_crash' || type === 'send_error' ? 'error' : category);
+  const badgeClass = 'badge-' + (type === 'error' || type === 'handler_crash' || type === 'send_error' ? 'error' : type === 'received' ? 'received' : category);
+
+  // Register conversation tab if needed
+  if (processKey) ensureConvTab(processKey);
 
   const el = document.createElement('div');
   el.className = 'entry';
   el.dataset.type = category;
+  if (processKey) el.dataset.conv = processKey;
 
   let detailsHtml = '';
   if (details) {
@@ -280,11 +367,19 @@ function addEntry(type, summary, details) {
 
   el.innerHTML = `<span class="ts">${ts}</span><span class="badge ${badgeClass}">${escapeHtml(type)}</span><span class="msg">${escapeHtml(summary)}${detailsHtml}</span>`;
 
+  // Update conversation count
+  if (processKey) {
+    convCounts[processKey] = (convCounts[processKey] || 0) + 1;
+    const tabBtn = document.querySelector(`.conv-tab[data-conv="${CSS.escape(processKey)}"] .tab-count`);
+    if (tabBtn) tabBtn.textContent = '(' + convCounts[processKey] + ')';
+  }
+
   // Check filter visibility
   const search = searchInput.value.toLowerCase();
   const matchesFilter = activeFilters.has(category);
   const matchesSearch = !search || (summary + (typeof details === 'string' ? details : JSON.stringify(details || ''))).toLowerCase().includes(search);
-  if (!(matchesFilter && matchesSearch)) el.classList.add('hidden');
+  const matchesConv = activeConv === 'all' || (processKey && processKey === activeConv);
+  if (!(matchesFilter && matchesSearch && matchesConv)) el.classList.add('hidden');
 
   container.appendChild(el);
   entryCount++;
@@ -306,6 +401,7 @@ function getCategoryForType(type) {
   if (type === 'pipeline_phase') return 'pipeline_phase';
   if (type === 'cost') return 'cost';
   if (type === 'process_activity' || type === 'process_status') return 'process';
+  if (type === 'received') return 'log';
   if (type === 'assistant_text') return 'log';
   return 'log';
 }
@@ -356,24 +452,34 @@ async function connectSocket() {
       addEntry('log', 'Socket.IO disconnected: ' + reason);
     });
 
+    // Replay buffered history on connect (events that happened before devlog was opened)
+    socket.on('log_history', (history) => {
+      for (const entry of history) {
+        const type = entry.type || 'log';
+        if (type === 'process_activity') {
+          const d = entry.data || {};
+          const summary = `[${d.processKey || '?'}] ${d.type || '?'}: ${d.summary || ''}`;
+          addEntry('process_activity', summary, null, d.processKey);
+        } else {
+          const pk = entry.data?.processKey || null;
+          const summary = pk ? formatProgressSummary(type, entry.data, pk) : formatLogSummary(type, entry.data);
+          addEntry(type, summary, entry.data, pk);
+        }
+      }
+    });
+
     // Infrastructure log events (broadcast)
     socket.on('log', (entry) => {
       const type = entry.type || 'log';
-      const summary = formatLogSummary(type, entry.data);
-      addEntry(type, summary, entry.data);
-    });
-
-    // Pipeline progress (broadcast via devlog event)
-    socket.on('devlog', (entry) => {
-      const type = entry.type || 'log';
-      const summary = formatProgressSummary(type, entry.data, entry.processKey);
-      addEntry(type, summary, entry.data);
+      const pk = entry.data?.processKey || null;
+      const summary = pk ? formatProgressSummary(type, entry.data, pk) : formatLogSummary(type, entry.data);
+      addEntry(type, summary, entry.data, pk);
     });
 
     // Process activity (broadcast)
     socket.on('process_activity', (entry) => {
       const summary = `[${entry.processKey}] ${entry.type}: ${entry.summary || ''}`;
-      addEntry('process_activity', summary);
+      addEntry('process_activity', summary, null, entry.processKey);
     });
 
     socket.on('process_status', (data) => {

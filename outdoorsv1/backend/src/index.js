@@ -24,16 +24,6 @@ import { extractImages } from './transport-utils.js';
 import { createSession, closeSession, listActiveSessions, cleanupOrphanedSessionDirs } from '../../../outdoorsv4/session/session-manager.js';
 import { ensureBrowserReady } from './browser-health.js';
 
-const EXECUTION_TIMEOUT_MS = 10 * 60 * 1000; // 10 min hard limit per executeClaudePrompt call
-
-function withTimeout(promise, ms, label) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`Timed out after ${ms / 1000}s: ${label}`)), ms)
-    ),
-  ]);
-}
 import { registerStartup } from './register-startup.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -43,6 +33,17 @@ const LOGS_DIR = join(__dirname, '..', 'bot', 'logs');
 const app = express();
 const server = createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
+
+// In-memory ring buffer — captures all log events so the devlog viewer
+// can replay history even if it wasn't open when events occurred.
+const LOG_BUFFER_MAX = 2000;
+const logBuffer = [];
+function emitLog(type, data) {
+  const entry = { type, data, timestamp: new Date().toISOString() };
+  logBuffer.push(entry);
+  if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
+  io.emit('log', entry);
+}
 
 app.use(express.json());
 // API routes
@@ -267,6 +268,11 @@ io.on('connection', async (socket) => {
   socket.emit('status', getStatus());
   socket.emit('process_status', getActiveProcessSummary());
 
+  // Replay buffered log history so the devlog viewer shows past events
+  if (logBuffer.length > 0) {
+    socket.emit('log_history', logBuffer);
+  }
+
   // Re-send last QR if one exists (handles page load after QR was generated)
   const qr = getLastQR();
   if (qr && getStatus() === 'waiting_for_qr') {
@@ -390,11 +396,11 @@ io.on('connection', async (socket) => {
     // Create an isolated session for this execution
     const session = createSession(processKey, 'web');
     io.emit('session_created', { id: session.id, processKey, transport: 'web' });
-    io.emit('log', { type: 'incoming', data: { sender: 'web', processKey, prompt: finalPrompt, conversation: parsed.number }, timestamp: new Date().toISOString() });
+    emitLog('incoming', { sender: 'web', processKey, prompt: finalPrompt, conversation: parsed.number });
 
     try {
       const progressWrapper = createRuntimeAwareProgress((type, data) => {
-        io.emit('log', { type, data: { sender: 'web', processKey, ...data }, timestamp: new Date().toISOString() });
+        emitLog(type, { sender: 'web', processKey, ...data });
         io.emit('devlog', { type, data, sessionId: currentSessionId, processKey });
         convoLog.events.push({ type, ...data });
         socket.emit('chat_progress', { type, data, sessionId: currentSessionId, messageId });
@@ -404,20 +410,20 @@ io.on('connection', async (socket) => {
       convoLog.runtimeStaleDetected = progressWrapper.health.stale;
       convoLog.runtimeChangedFiles = progressWrapper.health.changedFiles;
       if (progressWrapper.health.stale) {
-        io.emit('log', { type: 'runtime_stale_code_detected', data: { sender: 'web', processKey, changedFiles: progressWrapper.health.changedFiles }, timestamp: new Date().toISOString() });
+        emitLog('runtime_stale_code_detected', { sender: 'web', processKey, changedFiles: progressWrapper.health.changedFiles });
       }
 
       let execResult;
       let didDelegate = false;
       if (isKnownCode) {
-        execResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, resumeSessionId, processKey, clarificationKey: processKey, sessionContext: session })), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt');
+        execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, resumeSessionId, processKey, clarificationKey: processKey, sessionContext: session }));
       } else {
-        execResult = await withTimeout(executeClaudePrompt(finalPrompt, { onProgress, resumeSessionId, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session }), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt');
+        execResult = await executeClaudePrompt(finalPrompt, { onProgress, resumeSessionId, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
         if (execResult.delegation) {
           didDelegate = true;
-          io.emit('log', { type: 'delegation', data: { sender: 'web', processKey, employee: 'coder', model: execResult.delegation.model }, timestamp: new Date().toISOString() });
+          emitLog('delegation', { sender: 'web', processKey, employee: 'coder', model: execResult.delegation.model });
           socket.emit('chat_progress', { type: 'delegation', data: { employee: 'coder', model: execResult.delegation.model }, sessionId: currentSessionId, messageId });
-          execResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model)), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt');
+          execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model));
         }
       }
       if (execResult.status === 'needs_user_input') {
@@ -431,7 +437,7 @@ io.on('connection', async (socket) => {
           windowId,
           messageId,
         });
-        io.emit('log', { type: 'clarification_requested', data: { sender: 'web', processKey, conversation: parsed.number, windowId }, timestamp: new Date().toISOString() });
+        emitLog('clarification_requested', { sender: 'web', processKey, conversation: parsed.number, windowId });
         return;
       }
       const { response, sessionId, fullEvents } = execResult;
@@ -459,7 +465,7 @@ io.on('connection', async (socket) => {
         currentSessionId = null;
         try {
           const progressWrapper = createRuntimeAwareProgress((type, data) => {
-            io.emit('log', { type, data: { sender: 'web', processKey, ...data }, timestamp: new Date().toISOString() });
+            emitLog(type, { sender: 'web', processKey, ...data });
             io.emit('devlog', { type, data, sessionId: currentSessionId, processKey });
             convoLog.events.push({ type, ...data });
             socket.emit('chat_progress', { type, data, sessionId: currentSessionId, messageId });
@@ -469,19 +475,19 @@ io.on('connection', async (socket) => {
           convoLog.runtimeStaleDetected = progressWrapper.health.stale;
           convoLog.runtimeChangedFiles = progressWrapper.health.changedFiles;
           if (progressWrapper.health.stale) {
-            io.emit('log', { type: 'runtime_stale_code_detected', data: { sender: 'web', processKey, changedFiles: progressWrapper.health.changedFiles }, timestamp: new Date().toISOString() });
+            emitLog('runtime_stale_code_detected', { sender: 'web', processKey, changedFiles: progressWrapper.health.changedFiles });
           }
 
           let execResult;
           let didDelegate = false;
           if (isKnownCode) {
-            execResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session })), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt (retry)');
+            execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }));
           } else {
-            execResult = await withTimeout(executeClaudePrompt(finalPrompt, { onProgress, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session }), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt (retry)');
+            execResult = await executeClaudePrompt(finalPrompt, { onProgress, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
             if (execResult.delegation) {
               didDelegate = true;
               socket.emit('chat_progress', { type: 'delegation', data: { employee: 'coder', model: execResult.delegation.model }, sessionId: currentSessionId, messageId });
-              execResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model)), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt (retry)');
+              execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model));
             }
           }
           if (execResult.status === 'needs_user_input') {
@@ -495,7 +501,7 @@ io.on('connection', async (socket) => {
               windowId,
               messageId,
             });
-            io.emit('log', { type: 'clarification_requested', data: { sender: 'web', processKey, conversation: parsed.number, windowId }, timestamp: new Date().toISOString() });
+            emitLog('clarification_requested', { sender: 'web', processKey, conversation: parsed.number, windowId });
             return;
           }
           const { response, sessionId, fullEvents } = execResult;
@@ -546,9 +552,15 @@ io.on('connection', async (socket) => {
   console.log('Dashboard client connected');
 });
 
-setSocketIO(io);
+setSocketIO(io, (entry) => {
+  logBuffer.push(entry);
+  if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
+});
 setProcessChangeListener(() => io.emit('process_status', getActiveProcessSummary()));
 setProcessActivityListener((processKey, type, summary) => {
+  const entry = { type: 'process_activity', data: { processKey, type: type, summary }, timestamp: new Date().toISOString() };
+  logBuffer.push(entry);
+  if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
   io.emit('process_activity', { processKey, type, summary });
 });
 

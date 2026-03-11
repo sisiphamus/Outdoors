@@ -11,16 +11,6 @@ import { createSession, closeSession } from '../../../outdoorsv4/session/session
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const EXECUTION_TIMEOUT_MS = 10 * 60 * 1000; // 10 min hard limit per executeClaudePrompt call
-
-function withTimeout(promise, ms, label) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`Timed out after ${ms / 1000}s: ${label}`)), ms)
-    ),
-  ]);
-}
 const SHORT_TERM_DIR = join(__dirname, '..', 'bot', 'memory', 'short-term');
 const CHAT_SESSIONS_PATH = join(__dirname, '..', 'bot', 'memory', 'wa-chat-sessions.json');
 const SESSION_TIMEOUT_MS = 10 * 60 * 1000;
@@ -92,6 +82,11 @@ function formatQuestionsForText(questionsPayload) {
   const lines = ['I need a few details before I continue:'];
   for (let i = 0; i < questions.length; i++) {
     lines.push(`${i + 1}. ${questions[i].question || 'Please clarify'}`);
+    if (questions[i].options?.length) {
+      for (const opt of questions[i].options) {
+        lines.push(`   • ${opt.label}${opt.description ? ` — ${opt.description}` : ''}`);
+      }
+    }
   }
   lines.push('Reply with your answer(s), and I will continue.');
   return lines.join('\n');
@@ -246,13 +241,14 @@ export async function handleMessage(message, emitLog) {
     resumeSessionId = resolveSession(parsed.number);
   } else {
     const existing = chatSessions.get(jid);
-    if (existing && (Date.now() - existing.lastActivity) < SESSION_TIMEOUT_MS) {
+    if (existing && existing.sessionId) {
       resumeSessionId = existing.sessionId;
     }
   }
-  emitLog?.('processing', { sender, prompt: parsed.body, conversation: parsed.number, resuming: resumeSessionId });
-
   const processKey = parsed.number !== null ? `wa:conv:${parsed.number}` : `wa:chat:${jid}`;
+
+  emitLog?.('received', { sender, prompt: parsed.body, conversation: parsed.number, processKey });
+  emitLog?.('processing', { sender, prompt: parsed.body, conversation: parsed.number, resuming: resumeSessionId, processKey });
 
   // Create isolated session for this execution
   const session = createSession(processKey, 'whatsapp');
@@ -268,7 +264,7 @@ export async function handleMessage(message, emitLog) {
   }
 
   const isKnownCode = parsed.number !== null && getConversationMode(parsed.number) === 'code';
-  const progressWrapper = createRuntimeAwareProgress((type, data) => emitLog?.(type, { sender, ...data }));
+  const progressWrapper = createRuntimeAwareProgress((type, data) => emitLog?.(type, { sender, processKey, ...data }));
   const onProgress = progressWrapper.onProgress;
   if (progressWrapper.health.stale) {
     emitLog?.('runtime_stale_code_detected', { sender, jid, changedFiles: progressWrapper.health.changedFiles });
@@ -278,13 +274,13 @@ export async function handleMessage(message, emitLog) {
     let execResult;
     let didDelegate = false;
     if (isKnownCode) {
-      execResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, resumeSessionId, processKey, clarificationKey: processKey, sessionContext: session })), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt');
+      execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, resumeSessionId, processKey, clarificationKey: processKey, sessionContext: session }));
     } else {
-      execResult = await withTimeout(executeClaudePrompt(finalPrompt, { onProgress, resumeSessionId, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session }), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt');
+      execResult = await executeClaudePrompt(finalPrompt, { onProgress, resumeSessionId, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
       if (execResult.delegation) {
         didDelegate = true;
         emitLog?.('delegation', { sender, employee: 'coder', model: execResult.delegation.model });
-        execResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model)), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt');
+        execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model));
       }
     }
     if (execResult.status === 'needs_user_input') {
@@ -325,17 +321,17 @@ export async function handleMessage(message, emitLog) {
       chatSessions.delete(jid);
       saveChatSessions();
       try {
-        const retryProgressWrapper = createRuntimeAwareProgress((type, data) => emitLog?.(type, { sender, ...data }));
+        const retryProgressWrapper = createRuntimeAwareProgress((type, data) => emitLog?.(type, { sender, processKey, ...data }));
         const retryOnProgress = retryProgressWrapper.onProgress;
         let retryResult;
         let didRetryDelegate = false;
         if (isKnownCode) {
-          retryResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress: retryOnProgress, processKey, clarificationKey: processKey, sessionContext: session })), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt (retry)');
+          retryResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress: retryOnProgress, processKey, clarificationKey: processKey, sessionContext: session }));
         } else {
-          retryResult = await withTimeout(executeClaudePrompt(finalPrompt, { onProgress: retryOnProgress, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session }), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt (retry)');
+          retryResult = await executeClaudePrompt(finalPrompt, { onProgress: retryOnProgress, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
           if (retryResult.delegation) {
             didRetryDelegate = true;
-            retryResult = await withTimeout(executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress: retryOnProgress, processKey, clarificationKey: processKey, sessionContext: session }, retryResult.delegation.model)), EXECUTION_TIMEOUT_MS, 'executeClaudePrompt (retry)');
+            retryResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress: retryOnProgress, processKey, clarificationKey: processKey, sessionContext: session }, retryResult.delegation.model));
           }
         }
         if (retryResult.status === 'needs_user_input') {
@@ -363,13 +359,15 @@ export async function handleMessage(message, emitLog) {
           runtimeChangedFiles: retryProgressWrapper.health.changedFiles,
         };
       } catch (retryErr) {
+        console.error('[message-handler] Retry failed:', retryErr);
         emitLog?.('error', { sender, prompt: parsed.body, error: retryErr.message });
-        return { response: `Error: ${retryErr.message}`, sender, prompt: parsed.body, jid };
+        return { response: 'Something went wrong — check server logs for details.', sender, prompt: parsed.body, jid };
       }
     }
+    console.error('[message-handler] Execution failed:', err);
     emitLog?.('error', { sender, prompt: parsed.body, error: err.message });
     return {
-      response: `Error: ${err.message}`,
+      response: 'Something went wrong — check server logs for details.',
       sender,
       prompt: parsed.body,
       jid,

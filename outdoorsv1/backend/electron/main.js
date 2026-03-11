@@ -37,6 +37,8 @@ let tray = null;
 let backendProcess = null;
 let devLogWindow = null;
 let authPollTimer = null; // track auth polling so we can cancel on skip
+let backendRestarts = 0;
+const MAX_BACKEND_RESTARTS = 5;
 let resolvedClaudeCmd = 'claude'; // updated after install or PATH lookup
 
 // Resolve the claude command — caches after first successful lookup
@@ -411,7 +413,29 @@ function startBackend() {
     backendProcess.on('close', (code) => {
       console.log('[backend] exited with code', code);
       backendProcess = null;
-      if (!started) resolve({ ok: false, error: `Backend exited with code ${code}`, stderr: stderrOutput });
+      if (!started) {
+        resolve({ ok: false, error: `Backend exited with code ${code}`, stderr: stderrOutput });
+        return;
+      }
+
+      // Auto-restart if backend crashes after successful startup
+      if (fs.existsSync(SETUP_DONE_FLAG) && backendRestarts < MAX_BACKEND_RESTARTS) {
+        backendRestarts++;
+        const delay = Math.min(3000 * backendRestarts, 15000);
+        console.log(`[backend] Crashed (code ${code}). Restarting in ${delay / 1000}s (attempt ${backendRestarts}/${MAX_BACKEND_RESTARTS})...`);
+        setTimeout(() => {
+          startBackend().then(result => {
+            if (result.ok) {
+              console.log('[backend] Restarted successfully');
+              backendRestarts = 0; // reset on successful restart
+            } else {
+              console.error('[backend] Restart failed:', result.error);
+            }
+          });
+        }, delay);
+      } else if (backendRestarts >= MAX_BACKEND_RESTARTS) {
+        console.error('[backend] Max restart attempts reached. Relaunch the app to try again.');
+      }
     });
 
     // Timeout — backend didn't start in 30s

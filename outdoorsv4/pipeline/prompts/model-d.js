@@ -3,7 +3,36 @@
 
 import { config } from '../../config.js';
 
-export function buildPrompt(prompt, outputSpec, memoryContents, { shortTermDir } = {}) {
+// Browser-specific rules (~3000 tokens) — only injected when the task needs browser automation.
+const BROWSER_RULES = `## CRITICAL: Browser = User's Logged-In Session
+The browser MCP connects to the user's **already-running browser** with all sessions, cookies, and logins intact. This means:
+- **All the user's cookies, logins, and active sessions are available.** The user is already logged into Gmail, Canvas, Notion, LinkedIn, etc.
+- **You do NOT need to authenticate.** Never ask for passwords, OAuth tokens, or API keys for services the user accesses via their browser. Just navigate there — you're already logged in.
+- **Do NOT launch Chrome yourself — EVER. No exceptions.** Running \`Start-Process chrome\`, \`chrome.exe\`, or any command that opens a browser is FORBIDDEN. The pipeline already launched the correct Chrome (AutomationProfile with seeded accounts) before you started. If MCP tools can't connect, the pipeline failed — output \`[NEEDS_MORE_TOOLS]\`, do NOT try to fix it with Bash.
+- If a service has no public API or MCP server, **use the browser directly** — don't ask the user to set up an API or provide credentials. The browser session IS your credential.
+
+## CRITICAL: Which Browser MCP Tools to Use
+Check \`bot/memory/preferences/browser-preferences.md\` for the **Preferred Browser**:
+- **Google Chrome** → use \`mcp__chrome__*\` tools (chrome-devtools-mcp via \`--browserUrl http://127.0.0.1:9222\`)
+  - Navigate: \`mcp__chrome__navigate_page\` | Evaluate JS: \`mcp__chrome__evaluate_script\` | Click: \`mcp__chrome__click\` | Type: \`mcp__chrome__type_text\` | Snapshot: \`mcp__chrome__take_snapshot\` | Screenshot: \`mcp__chrome__take_screenshot\` | Tabs: \`mcp__chrome__list_pages\`, \`mcp__chrome__select_page\`
+- **Edge / Brave / Other** → use \`mcp__playwright__*\` tools (CDP on port 9222)
+  - Navigate: \`mcp__playwright__browser_navigate\` | Evaluate JS: \`mcp__playwright__browser_evaluate\` | Click: \`mcp__playwright__browser_click\` | Type: \`mcp__playwright__browser_type\` | Snapshot: \`mcp__playwright__browser_snapshot\` | Tabs: \`mcp__playwright__browser_tabs\`
+
+**If \`mcp__chrome__*\` fails to connect:** try \`mcp__playwright__*\` once as fallback (both use the same CDP port). If that also fails, output \`[NEEDS_MORE_TOOLS: Chrome CDP not available on port 9222]\` as the LAST line and stop. **Do NOT run any Bash/PowerShell command to start a browser.**
+
+## Service Access — Priority Ladder with Failover
+Each service has a priority ladder. Start at the top. If a method fails **twice with the same error**, SKIP IT and move to the next method. Do NOT retry the same method a third time.
+
+| Priority | Method | When to use | When to SKIP |
+|----------|--------|------------|-------------|
+| 1 | **MCP tools** (\`mcp__google_workspace__*\`, \`mcp__notion__*\`, etc.) | Tool exists in your environment | Tool not available, or 2 calls returned errors |
+| 2 | **Browser** (use \`mcp__chrome__*\` or \`mcp__playwright__*\` per preference) | MCP unavailable or failed | Browser tools not available, or 2 navigation/click attempts failed on same step |
+| 3 | **REST API** (curl/fetch) | MCP and browser both failed | No auth tokens available, or 2 API calls returned auth/permission errors |
+| 4 | **Escalate** | All above methods exhausted | Never skip this — this is the safety net |
+
+**NEVER ask the user for API keys, tokens, or OAuth setup.** The user is away from their computer. Use whatever auth is already available (browser cookies, tokens in memory files, MCP configs).`;
+
+export function buildPrompt(prompt, outputSpec, memoryContents, { shortTermDir, needsBrowser } = {}) {
   const skills = memoryContents.filter(m => m.category === 'skill');
   const knowledge = memoryContents.filter(m => m.category !== 'skill');
 
@@ -54,33 +83,7 @@ When your task produces files (code, reports, images, data, etc.), write them to
 - Create a descriptive subfolder per task, e.g. 'outputs/pdf-report-2024/', 'outputs/scrape-results/'
 - Always tell the user the full path of what you wrote
 
-## CRITICAL: Browser = User's Logged-In Session
-The browser MCP connects to the user's **already-running browser** with all sessions, cookies, and logins intact. This means:
-- **All the user's cookies, logins, and active sessions are available.** The user is already logged into Gmail, Canvas, Notion, LinkedIn, etc.
-- **You do NOT need to authenticate.** Never ask for passwords, OAuth tokens, or API keys for services the user accesses via their browser. Just navigate there — you're already logged in.
-- **Do NOT launch Chrome yourself — EVER. No exceptions.** Running \`Start-Process chrome\`, \`chrome.exe\`, or any command that opens a browser is FORBIDDEN. The pipeline already launched the correct Chrome (AutomationProfile with seeded accounts) before you started. If MCP tools can't connect, the pipeline failed — output \`[NEEDS_MORE_TOOLS]\`, do NOT try to fix it with Bash.
-- If a service has no public API or MCP server, **use the browser directly** — don't ask the user to set up an API or provide credentials. The browser session IS your credential.
-
-## CRITICAL: Which Browser MCP Tools to Use
-Check \`bot/memory/preferences/browser-preferences.md\` for the **Preferred Browser**:
-- **Google Chrome** → use \`mcp__chrome__*\` tools (chrome-devtools-mcp via \`--browserUrl http://127.0.0.1:9222\`)
-  - Navigate: \`mcp__chrome__navigate_page\` | Evaluate JS: \`mcp__chrome__evaluate_script\` | Click: \`mcp__chrome__click\` | Type: \`mcp__chrome__type_text\` | Snapshot: \`mcp__chrome__take_snapshot\` | Screenshot: \`mcp__chrome__take_screenshot\` | Tabs: \`mcp__chrome__list_pages\`, \`mcp__chrome__select_page\`
-- **Edge / Brave / Other** → use \`mcp__playwright__*\` tools (CDP on port 9222)
-  - Navigate: \`mcp__playwright__browser_navigate\` | Evaluate JS: \`mcp__playwright__browser_evaluate\` | Click: \`mcp__playwright__browser_click\` | Type: \`mcp__playwright__browser_type\` | Snapshot: \`mcp__playwright__browser_snapshot\` | Tabs: \`mcp__playwright__browser_tabs\`
-
-**If \`mcp__chrome__*\` fails to connect:** try \`mcp__playwright__*\` once as fallback (both use the same CDP port). If that also fails, output \`[NEEDS_MORE_TOOLS: Chrome CDP not available on port 9222]\` as the LAST line and stop. **Do NOT run any Bash/PowerShell command to start a browser.**
-
-## Service Access — Priority Ladder with Failover
-Each service has a priority ladder. Start at the top. If a method fails **twice with the same error**, SKIP IT and move to the next method. Do NOT retry the same method a third time.
-
-| Priority | Method | When to use | When to SKIP |
-|----------|--------|------------|-------------|
-| 1 | **MCP tools** (\`mcp__google_workspace__*\`, \`mcp__notion__*\`, etc.) | Tool exists in your environment | Tool not available, or 2 calls returned errors |
-| 2 | **Browser** (use \`mcp__chrome__*\` or \`mcp__playwright__*\` per preference) | MCP unavailable or failed | Browser tools not available, or 2 navigation/click attempts failed on same step |
-| 3 | **REST API** (curl/fetch) | MCP and browser both failed | No auth tokens available, or 2 API calls returned auth/permission errors |
-| 4 | **Escalate** | All above methods exhausted | Never skip this — this is the safety net |
-
-**NEVER ask the user for API keys, tokens, or OAuth setup.** The user is away from their computer. Use whatever auth is already available (browser cookies, tokens in memory files, MCP configs).
+${needsBrowser ? BROWSER_RULES : ''}
 
 ## Instructions
 1. Follow the output specification precisely — produce the exact output type and format described
@@ -92,6 +95,10 @@ Each service has a priority ladder. Start at the top. If a method fails **twice 
 7. Be thorough and produce professional-quality output
 8. **Snapshots**: Save to '${shortTermDir || config.outputDirectory}/', never inline. These are YOUR working files — not user deliverables. For Chrome: \`mcp__chrome__take_snapshot\`. For Edge/Other: \`mcp__playwright__browser_snapshot\` with \`filename\` param. Grep the saved file for the refs you need.
 9. **Do NOT call ToolSearch** — it does not exist. Browser MCP tools are pre-approved. Call them directly (check preference file for which set to use).
+
+## Serving Static Files
+To preview HTML files locally, use: \`npx -y serve -s -l PORT <directory>\`
+This is the only reliable method. Do NOT try python http.server, live-server, or other alternatives.
 
 ## CRITICAL: Be relentless, not repetitive.
 Persistence means trying DIFFERENT approaches. Repeating the same failing method is not persistence — it is waste.

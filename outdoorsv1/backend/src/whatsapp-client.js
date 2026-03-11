@@ -112,13 +112,20 @@ function storeMessage(id, message) {
   }
 }
 
-function setSocketIO(socketIO) {
+let bufferPush = null;
+
+function setSocketIO(socketIO, logBufferPush) {
   io = socketIO;
+  bufferPush = logBufferPush || null;
 }
 
 function emitLog(type, data) {
   const entry = { type, data, timestamp: new Date().toISOString() };
+  bufferPush?.(entry);
   io?.emit('log', entry);
+  if (data?.processKey) {
+    io?.emit('devlog', { type, data, processKey: data.processKey, timestamp: entry.timestamp });
+  }
   if (type !== 'qr') {
     console.log(`[${type}]`, JSON.stringify(data));
   }
@@ -315,7 +322,11 @@ async function startWhatsApp() {
         let reactInFlight = false;
         let reactFails = 0;
         const pulseInterval = setInterval(async () => {
-          if (reactInFlight || reactFails >= 3) return; // skip if previous still sending or too many failures
+          if (reactInFlight) return;
+          if (reactFails >= 3) {
+            reactFails = 0; // reset and retry next tick instead of dying permanently
+            return;
+          }
           reactInFlight = true;
           try {
             growIdx = (growIdx + 1) % growEmojis.length;
@@ -327,7 +338,7 @@ async function startWhatsApp() {
           } finally {
             reactInFlight = false;
           }
-        }, 1500);
+        }, 3000);
 
         try {
           await sock.sendMessage(jid, { react: { key: msg.key, text: '🌱' } });

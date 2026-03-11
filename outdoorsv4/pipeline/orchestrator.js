@@ -12,8 +12,10 @@ import { createAggregator } from '../util/progress-aggregator.js';
 import { getFullInventory, getContents, writeMemory, updateMemory, detectSiteContext } from '../memory/memory-manager.js';
 import { config } from '../config.js';
 import { setClaudeSessionId } from '../session/session-manager.js';
+import { redactSecrets } from './redact-secrets.js';
 import { execSync } from 'child_process';
 import { mkdirSync } from 'fs';
+import { join } from 'path';
 
 const MAX_FEEDBACK_LOOPS = 3;
 
@@ -133,7 +135,7 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
     const phaseD = await runModel({
       userPrompt: prompt,
       systemPrompt: undefined,
-      model: null,
+      model: 'sonnet',
       claudeArgs: config.claudeArgs,
       onProgress: (type, data) => agg.forward('D', type, data),
       processKey: processKey ? `${processKey}:D` : null,
@@ -168,7 +170,7 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
 
       return {
         status: 'completed',
-        response: phaseD.response,
+        response: redactSecrets(phaseD.response),
         sessionId: phaseD.sessionId,
         fullEvents: phaseD.fullEvents,
       };
@@ -186,6 +188,10 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
     ? ' | scores: ' + Object.entries(outputSpec.outputScores).map(([k, v]) => `${k}=${v}`).join(' ')
     : '';
   agg.phase('A', `Complete → [${activeLabels}]${scoreStr}`);
+
+  // Dynamic max turns based on task complexity from Phase A
+  const COMPLEXITY_TURNS = { simple: 15, moderate: 25, complex: 45 };
+  const maxTurns = COMPLEXITY_TURNS[outputSpec.complexity] || 25;
 
   // ── Feedback loop: A → B → C? → D, max 3 iterations ──
   let loopCount = 0;
@@ -274,6 +280,9 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
     // ── Phase D: Executor ──
     agg.phase('D', 'Executing task');
 
+    // Ensure output directories exist so Model D doesn't waste turns on ENOENT
+    mkdirSync(join(outputDir, 'screenshots'), { recursive: true });
+
     // Gather memory contents for selected memories + newly created ones from C
     const selectedContents = getContents(audit.selectedMemories || []);
     // Add C's memories directly (they have name, category, content already)
@@ -293,14 +302,16 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
     }
     const phaseD = await runModel({
       userPrompt: prompt,
-      systemPrompt: modelDPrompt(prompt, outputSpec, allMemoryContents, { shortTermDir }),
-      model: null, // use config default
+      systemPrompt: modelDPrompt(prompt, outputSpec, allMemoryContents, { shortTermDir, needsBrowser }),
+      model: 'sonnet',
       claudeArgs: config.claudeArgs,
       onProgress: (type, data) => agg.forward('D', type, data),
       processKey: processKey ? `${processKey}:D` : null,
       timeout,
       cwd: outputDir,
       resumeSessionId,
+      allowBrowser: needsBrowser,
+      maxTurns,
     });
 
     // Track Claude's session ID back to our internal session
@@ -363,14 +374,16 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
         const updatedContents = [...getContents(audit.selectedMemories || []), ...newlyCreatedMemories.map(m => ({ name: m.name, category: m.category, content: m.content })), ...detectSiteContext(prompt)];
         const phaseD2 = await runModel({
           userPrompt: prompt,
-          systemPrompt: modelDPrompt(prompt, outputSpec, updatedContents, { shortTermDir }),
-          model: null,
+          systemPrompt: modelDPrompt(prompt, outputSpec, updatedContents, { shortTermDir, needsBrowser }),
+          model: 'sonnet',
           claudeArgs: config.claudeArgs,
           onProgress: (type, data) => agg.forward('D', type, data),
           processKey: processKey ? `${processKey}:D2` : null,
           timeout,
           cwd: outputDir,
           resumeSessionId,
+          allowBrowser: needsBrowser,
+          maxTurns,
         });
         if (phaseD2.questionRequest) {
           return { status: 'needs_user_input', questions: phaseD2.questionRequest, sessionId: phaseD2.sessionId, fullEvents: phaseD2.fullEvents };
@@ -396,7 +409,7 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
 
   return {
     status: 'completed',
-    response: lastDResponse,
+    response: redactSecrets(lastDResponse),
     sessionId: lastDSessionId,
     fullEvents: lastDFullEvents,
   };
@@ -423,8 +436,21 @@ function buildToolMemoryRequest(toolsNeeded) {
   };
 }
 
+// Safe command patterns — only these prefixes are allowed for auto-install.
+// Anything else from an LLM-written memory file could be arbitrary code execution.
+const SAFE_INSTALL_PATTERNS = [
+  /^npm\s+install\b/,
+  /^npx\s+/,
+  /^pip\s+install\b/,
+  /^pip3\s+install\b/,
+  /^claude\s+mcp\s+add\b/,
+  /^winget\s+install\b/,
+  /^choco\s+install\b/,
+  /^uv\s+pip\s+install\b/,
+];
+
 // If a freshly-created memory describes tool installs, run them immediately so D can use them.
-// Supports any install_command: lines — npm packages, pip packages, winget, etc.
+// Only allows commands matching SAFE_INSTALL_PATTERNS to prevent command injection.
 async function tryInstallFromMemory(mem, onProgress) {
   const content = mem.content || '';
 
@@ -444,6 +470,12 @@ async function tryInstallFromMemory(mem, onProgress) {
     .filter(cmd => cmd.length > 0);
 
   for (const cmd of installLines) {
+    // Security: only allow known-safe install commands
+    if (!SAFE_INSTALL_PATTERNS.some(p => p.test(cmd))) {
+      console.warn(`[security] Blocked unsafe install command from memory: ${cmd}`);
+      onProgress?.('warning', { message: `Blocked unsafe install command: ${cmd}` });
+      continue;
+    }
     onProgress?.('tool_install', { message: `Installing: ${cmd}` });
     try {
       execSync(cmd, { stdio: 'pipe', timeout: 60000, shell: true });

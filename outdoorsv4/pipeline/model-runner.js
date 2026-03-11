@@ -55,6 +55,8 @@ export function runModel({
   resumeSessionId,
   skipMcp,
   skipVerbose,
+  allowBrowser = true,
+  maxTurns,
 }) {
   return new Promise((resolve, reject) => {
     const cmd = config.claudeCommand || 'claude';
@@ -65,7 +67,7 @@ export function runModel({
       args.push('--dangerously-skip-permissions');
     }
     if (!args.includes('--max-turns')) {
-      args.push('--max-turns', '25');
+      args.push('--max-turns', String(maxTurns || 25));
     }
 
     // Inject MCP config so Claude always has browser tools, regardless of cwd
@@ -74,10 +76,11 @@ export function runModel({
       args.push('--mcp-config', MCP_CONFIG_PATH);
     }
 
-    // Explicitly allow all tools — MCP tools aren't fully covered by
-    // --dangerously-skip-permissions in --print mode
-    args.push('--allowedTools',
-        'Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,' +
+    // Explicitly allow tools — MCP tools aren't fully covered by
+    // --dangerously-skip-permissions in --print mode.
+    // When allowBrowser is false, skip browser MCP tools to save ~2000 tokens of tool schemas.
+    const BASE_TOOLS = 'Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch';
+    const BROWSER_TOOLS =
         'mcp__playwright__browser_navigate,mcp__playwright__browser_snapshot,' +
         'mcp__playwright__browser_click,mcp__playwright__browser_type,' +
         'mcp__playwright__browser_press_key,mcp__playwright__browser_tabs,' +
@@ -92,8 +95,8 @@ export function runModel({
         'mcp__chrome__navigate_page,mcp__chrome__take_snapshot,' +
         'mcp__chrome__click,mcp__chrome__type_text,mcp__chrome__fill,' +
         'mcp__chrome__press_key,mcp__chrome__list_pages,mcp__chrome__select_page,' +
-        'mcp__chrome__evaluate_script,mcp__chrome__take_screenshot'
-      );
+        'mcp__chrome__evaluate_script,mcp__chrome__take_screenshot';
+    args.push('--allowedTools', allowBrowser ? `${BASE_TOOLS},${BROWSER_TOOLS}` : BASE_TOOLS);
 
     // Hard-block tools that waste turns
     args.push('--disallowedTools',
@@ -104,9 +107,12 @@ export function runModel({
 
     // For large system prompts, prepend instructions into the user prompt via stdin
     // instead of passing as a CLI arg to avoid Windows ENAMETOOLONG errors.
+    // Windows limits total command line to ~8191 chars. We check the total args
+    // length (not just systemPrompt) to avoid "The command line is too long" errors.
     let stdinPrefix = '';
     if (systemPrompt) {
-      if (systemPrompt.length > 8000) {
+      const currentArgsLen = args.reduce((sum, a) => sum + a.length + 1, cmd.length);
+      if (currentArgsLen + systemPrompt.length > 7000) {
         stdinPrefix = `[SYSTEM INSTRUCTIONS — follow these carefully]\n${systemPrompt}\n[END SYSTEM INSTRUCTIONS]\n\n`;
       } else {
         args.push('--append-system-prompt', systemPrompt);
@@ -149,7 +155,7 @@ export function runModel({
     // Inactivity watchdog — if the subprocess produces no stdout for 5 minutes, kill it.
     // Resets on each data event, so long-running tasks that stream output are fine.
     let lastActivity = Date.now();
-    const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
+    const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
     const watchdog = setInterval(() => {
       if (Date.now() - lastActivity > INACTIVITY_TIMEOUT_MS) {
         clearInterval(watchdog);
