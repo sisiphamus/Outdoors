@@ -314,57 +314,128 @@ document.getElementById('btn-retry-browser')?.addEventListener('click', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Page 5: Telegram Setup
+// Page 5: WhatsApp Setup (starts backend, shows QR code inline)
 // ---------------------------------------------------------------------------
 
-document.getElementById('btn-tg-connect')?.addEventListener('click', async () => {
-  if (!isElectron) return;
+let waSocket = null;
+let waConnected = false;
+let waSocketRetries = 0;
 
-  const tokenInput = document.getElementById('tg-token');
-  const hintEl = document.getElementById('tg-token-hint');
-  const token = tokenInput?.value?.trim();
+document.getElementById('btn-retry-wa')?.addEventListener('click', () => {
+  waSocketRetries = 0;
+  runTelegramPage();
+});
 
-  if (!token || !token.includes(':')) {
-    if (hintEl) hintEl.textContent = 'Please enter a valid bot token (format: 123456:ABC...).';
+async function runTelegramPage() {
+  if (waConnected) return;
+
+  showWaSection('wa-starting');
+  setWaStartingText('Starting backend...');
+
+  if (!isElectron) { nextPage(); return; }
+
+  // Start the backend
+  const result = await window.electronAPI.startBackend();
+  if (!result.ok && !result.alreadyRunning) {
+    document.getElementById('wa-error-text').textContent =
+      'Backend failed to start: ' + (result.error || 'unknown error');
+    showWaSection('wa-error');
     return;
   }
 
-  if (hintEl) hintEl.textContent = 'Verifying token...';
+  setWaStartingText('Connecting to backend...');
 
-  try {
-    const result = await window.electronAPI.saveTelegramToken(token);
-    if (result.ok) {
-      // Token valid — show step 2
-      document.getElementById('tg-step-token').classList.add('hidden');
-      document.getElementById('tg-step-chat').classList.remove('hidden');
+  // Connect to backend via Socket.IO to receive QR code
+  const backendUrl = await window.electronAPI.getBackendUrl();
+  loadWaSocketIO(backendUrl);
+}
 
-      // Poll for chat ID
-      const chatResult = await window.electronAPI.detectTelegramChatId(token);
-      if (chatResult.ok) {
-        document.getElementById('tg-chat-spinner').classList.add('hidden');
-        document.getElementById('tg-chat-hint').textContent = 'Connected! Chat ID: ' + chatResult.chatId;
-        await delay(1500);
-        nextPage();
-      } else {
-        document.getElementById('tg-chat-spinner').classList.add('hidden');
-        document.getElementById('tg-chat-hint').textContent = chatResult.error || 'Could not detect chat. You can configure this later.';
-        await delay(2000);
-        nextPage();
-      }
-    } else {
-      if (hintEl) hintEl.textContent = result.error || 'Invalid token. Check with @BotFather.';
-    }
-  } catch (err) {
-    if (hintEl) hintEl.textContent = 'Error: ' + err.message;
+function setWaStartingText(text) {
+  const el = document.getElementById('wa-starting-text');
+  if (el) el.textContent = text;
+}
+
+function loadWaSocketIO(backendUrl) {
+  if (typeof io !== 'undefined') {
+    connectWaSocket(backendUrl);
+    return;
   }
-});
 
-document.getElementById('btn-skip-tg')?.addEventListener('click', () => {
+  // Remove any previous failed script tags
+  const old = document.querySelector('script[data-socketio]');
+  if (old) old.remove();
+
+  const script = document.createElement('script');
+  script.setAttribute('data-socketio', '1');
+  script.src = backendUrl + '/socket.io/socket.io.js';
+  script.onload = () => connectWaSocket(backendUrl);
+  script.onerror = () => {
+    waSocketRetries++;
+    if (waSocketRetries > 15) {
+      document.getElementById('wa-error-text').textContent =
+        'Could not connect to backend. It may still be starting up.';
+      showWaSection('wa-error');
+      return;
+    }
+    setWaStartingText('Waiting for backend to be ready... (' + waSocketRetries + ')');
+    script.remove();
+    setTimeout(() => loadWaSocketIO(backendUrl), 2000);
+  };
+  document.head.appendChild(script);
+}
+
+function connectWaSocket(backendUrl) {
+  if (waSocket) {
+    try { waSocket.disconnect(); } catch {}
+  }
+
+  setWaStartingText('Waiting for WhatsApp QR code...');
+
+  waSocket = io(backendUrl, { reconnection: true, reconnectionDelay: 2000 });
+
+  waSocket.on('qr', (dataUrl) => {
+    const img = document.getElementById('wa-qr-img');
+    if (img) img.src = dataUrl;
+    showWaSection('wa-qr');
+  });
+
+  waSocket.on('log', (entry) => {
+    if (!entry) return;
+    if (entry.type === 'connected') {
+      onWaConnected();
+    }
+    // QR can also come as a log event
+    if (entry.type === 'qr' && entry.data?.dataUrl) {
+      const img = document.getElementById('wa-qr-img');
+      if (img) img.src = entry.data.dataUrl;
+      showWaSection('wa-qr');
+    }
+  });
+
+  waSocket.on('connect', () => {
+    setWaStartingText('Connected to backend. Generating QR code...');
+  });
+
+  waSocket.on('connect_error', () => {
+    setWaStartingText('Waiting for backend...');
+  });
+}
+
+async function onWaConnected() {
+  waConnected = true;
+  showWaSection('wa-connected');
+  await delay(1500);
   nextPage();
-});
+}
 
-function runTelegramPage() {
-  // Page is ready — button handlers are wired above
+function showWaSection(id) {
+  const sections = ['wa-starting', 'wa-qr', 'wa-connected', 'wa-error'];
+  sections.forEach(s => {
+    const el = document.getElementById(s);
+    if (el) el.classList.add('hidden');
+  });
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('hidden');
 }
 
 // ---------------------------------------------------------------------------
@@ -374,7 +445,7 @@ function runTelegramPage() {
 document.getElementById('btn-close').addEventListener('click', async () => {
   if (isElectron) {
     await window.electronAPI.completeSetup();
-    await window.electronAPI.closeWindow();
+    await window.electronAPI.openDashboard();
   } else {
     window.close();
   }

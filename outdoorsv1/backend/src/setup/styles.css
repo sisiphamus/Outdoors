@@ -170,7 +170,17 @@ h2 {
    ============================================================ */
 
 .qr-container {
-  margin-top: 8px;
+  margin-top: 12px;
+  text-align: center;
+}
+
+.qr-container img {
+  width: 220px;
+  height: 220px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  padding: 8px;
 }
 
 .qr-placeholder {
@@ -540,16 +550,16 @@ h2 {
 }
 
 /* ============================================================
-   Telegram setup page
+   WhatsApp / messaging setup page
    ============================================================ */
 
-.telegram-steps {
+.whatsapp-steps, .telegram-steps {
   text-align: left;
   max-width: 400px;
   margin: 0 auto;
 }
 
-.telegram-step {
+.whatsapp-step, .telegram-step {
   margin-bottom: 20px;
 }
 

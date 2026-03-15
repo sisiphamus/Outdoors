@@ -131,30 +131,42 @@
       </div>
     </div>
 
-    <!-- Page 5: Telegram Setup -->
+    <!-- Page 5: WhatsApp Setup -->
     <div class="page" data-page="4">
       <div class="page-content">
-        <h2>Connect Telegram</h2>
+        <h2>Connect WhatsApp</h2>
         <p class="subtitle">
-          Outdoors lives in your Telegram. Create a bot, paste the token, then send it a message.
+          Outdoors lives in a WhatsApp group on your phone.
         </p>
-        <div class="telegram-steps">
-          <div class="telegram-step" id="tg-step-token">
-            <p class="step-label">1. Create a bot with <a href="https://t.me/BotFather" target="_blank">@BotFather</a> and paste the token:</p>
-            <div class="token-input-group">
-              <input type="text" class="input-field" id="tg-token" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" spellcheck="false" />
-              <button class="btn-primary btn-small" id="btn-tg-connect">Connect</button>
-            </div>
-            <p class="auth-hint" id="tg-token-hint"></p>
-          </div>
-          <div class="telegram-step hidden" id="tg-step-chat">
-            <div class="complete-mark small-mark"></div>
-            <p class="step-label">Bot connected! Now send <code>/start</code> to your bot in Telegram.</p>
-            <div class="spinner-small" id="tg-chat-spinner"></div>
-            <p class="auth-hint" id="tg-chat-hint">Waiting for your message...</p>
-          </div>
+
+        <div id="wa-starting" class="browser-status">
+          <div class="spinner-small"></div>
+          <p class="browser-status-text" id="wa-starting-text">Starting backend...</p>
         </div>
-        <button class="btn-skip" id="btn-skip-tg">Skip for now</button>
+
+        <div id="wa-qr" class="hidden">
+          <div class="whatsapp-steps">
+            <div class="whatsapp-step">
+              <p class="step-label">1. Open <strong>WhatsApp</strong> on your phone</p>
+              <p class="step-label">2. Go to <strong>Linked Devices</strong> → <strong>Link a Device</strong></p>
+              <p class="step-label">3. Scan the QR code below</p>
+            </div>
+          </div>
+          <div class="qr-container">
+            <img id="wa-qr-img" alt="WhatsApp QR Code" />
+          </div>
+          <p class="auth-hint" id="wa-qr-hint">Waiting for you to scan...</p>
+        </div>
+
+        <div id="wa-connected" class="browser-status hidden">
+          <div class="complete-mark small-mark"></div>
+          <p class="browser-status-text">WhatsApp connected!</p>
+        </div>
+
+        <div id="wa-error" class="hidden">
+          <p class="error-text" id="wa-error-text">Backend failed to start.</p>
+          <button class="btn-primary" id="btn-retry-wa" style="margin-top:12px">Retry</button>
+        </div>
       </div>
     </div>
 
@@ -167,7 +179,7 @@
           Outdoors is now running quietly in the background.
         </p>
         <p class="complete-instruction">
-          Send a message to your bot in Telegram to get started.
+          Send a message to your Outdoors WhatsApp group to get started.
           That's it. No apps to open, no windows to manage.
         </p>
         <div class="complete-commands">
@@ -177,7 +189,7 @@
           <div class="command-row"><code>1 new</code><span>End conversation #1</span></div>
           <div class="command-row"><code>2</code><span>Start a second conversation</span></div>
         </div>
-        <button class="btn-primary" id="btn-close">Close</button>
+        <button class="btn-primary" id="btn-close">Next &rarr;</button>
       </div>
     </div>
 

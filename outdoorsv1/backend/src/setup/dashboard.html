@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Outdoors</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <!-- Custom titlebar -->
+  <div class="titlebar">
+    <div class="titlebar-drag">
+      <span class="titlebar-brand">Outdoors</span>
+      <span class="titlebar-status" id="status-indicator">
+        <span class="status-dot"></span>
+        <span class="status-text" id="status-text">Connecting...</span>
+      </span>
+    </div>
+    <div class="titlebar-actions">
+      <button class="titlebar-btn" id="btn-settings" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 4.754a3.246 3.246 0 100 6.492 3.246 3.246 0 000-6.492zM5.754 8a2.246 2.246 0 114.492 0 2.246 2.246 0 01-4.492 0z"/>
+          <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 01-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 01-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 01.52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 011.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 011.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 01.52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 01-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 01-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 002.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 001.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 00-1.115 2.693l.16.291c.415.764-.421 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 00-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 00-2.692-1.115l-.292.16c-.764.415-1.6-.421-1.184-1.185l.159-.291A1.873 1.873 0 001.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 003.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 002.692-1.115l.094-.319z"/>
+        </svg>
+      </button>
+      <button class="titlebar-btn" id="btn-minimize" title="Minimize">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M4 8h8v1H4z"/>
+        </svg>
+      </button>
+      <button class="titlebar-btn titlebar-btn-close" id="btn-close" title="Close to tray">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <div class="main-content">
+    <div class="feed" id="feed">
+      <div class="feed-welcome">
+        <p class="feed-welcome-title">Outdoors</p>
+        <p class="feed-welcome-text">Activity will appear here as tasks are processed.</p>
+        <p class="feed-welcome-hint">Text your Outdoors WhatsApp group to get started.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings overlay -->
+  <div class="settings-overlay hidden" id="settings-overlay">
+    <div class="settings-panel">
+      <div class="settings-header">
+        <h2>Settings</h2>
+        <button class="settings-close" id="btn-settings-close">&times;</button>
+      </div>
+      <div class="settings-body">
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-tab="memory">Memory</button>
+          <button class="settings-tab" data-tab="general">General</button>
+        </div>
+
+        <!-- Memory tab -->
+        <div class="settings-content" id="tab-memory">
+          <div class="memory-editor">
+            <div class="memory-sidebar" id="memory-tree"></div>
+            <div class="memory-edit-area">
+              <div class="memory-edit-header">
+                <span class="memory-filename" id="memory-filename">Select a file</span>
+                <button class="btn-save hidden" id="btn-save-memory">Save</button>
+              </div>
+              <textarea class="memory-textarea" id="memory-content" placeholder="Select a file from the tree to edit..." disabled></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- General tab -->
+        <div class="settings-content hidden" id="tab-general">
+          <div class="settings-form">
+            <div class="form-group">
+              <label>Rate Limit (requests/min)</label>
+              <input type="number" id="cfg-rate-limit" value="10" min="1" max="100">
+            </div>
+            <div class="form-group">
+              <label>Max Response Length</label>
+              <input type="number" id="cfg-max-response" value="4000" min="500" max="50000">
+            </div>
+            <div class="form-group">
+              <label>Message Timeout (seconds)</label>
+              <input type="number" id="cfg-timeout" value="300" min="30" max="3600">
+            </div>
+            <button class="btn-primary" id="btn-save-config">Save Settings</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

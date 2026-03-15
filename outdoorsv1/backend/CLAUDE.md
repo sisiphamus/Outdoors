@@ -117,12 +117,14 @@ You have a `bot/memory/` folder with knowledge from past tasks. Check it when th
 
 When doing anything remotely complex or requiring expertise, use a skill file from `bot/memory/skills/`. If there isn't a skill for the task type, use the skill-maker (`bot/memory/skills/creating-skills.md`) to create one:
 
-(bot/memory/skills/ceo-strategist) 
-(bot/memory/skills/coder) 
-(bot/memory/skills/data-analyst) 
-(bot/memory/skills/marketing-expert) 
-(bot/memory/skills/ui-designer) 
-(bot/memory/skills/writing) 
+(bot/memory/skills/coding)
+(bot/memory/skills/strategic-reasoning)
+(bot/memory/skills/browser-use)
+(bot/memory/skills/chrome-use)
+(bot/memory/skills/blog-writer)
+(bot/memory/skills/applications)
+(bot/memory/skills/project-research)
+(bot/memory/skills/website-deployment)
 (bot/memory/skills/creating-skills.md)
 
 - All user-facing outputs go in the `bot/outputs/` folder.

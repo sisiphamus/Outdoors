@@ -7,7 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, '..', 'config.json');
 
 const defaults = {
-  port: 3457,
+  port: 3847,
   allowedNumbers: [],
   allowAllNumbers: false,
   claudeCommand: 'claude',

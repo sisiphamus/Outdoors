@@ -1,7 +1,7 @@
 /**
  * Outdoors — Electron Preload Script
  *
- * Exposes IPC bridge to the setup wizard renderer.
+ * Exposes IPC bridge to the setup wizard and dashboard renderers.
  */
 
 const { contextBridge, ipcRenderer } = require('electron');
@@ -23,9 +23,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   launchAutomationChrome: (exePath) => ipcRenderer.invoke('launch-automation-chrome', exePath),
   checkBrowserAuth: () => ipcRenderer.invoke('check-browser-auth'),
 
-  // Telegram setup
-  saveTelegramToken: (token) => ipcRenderer.invoke('save-telegram-token', token),
-  detectTelegramChatId: (token) => ipcRenderer.invoke('detect-telegram-chat-id', token),
+  // WhatsApp (pairing handled automatically via QR in dashboard)
 
   // Backend
   startBackend: () => ipcRenderer.invoke('start-backend'),
@@ -34,4 +32,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Setup lifecycle
   completeSetup: () => ipcRenderer.invoke('complete-setup'),
   closeWindow: () => ipcRenderer.invoke('close-window'),
+
+  // Dashboard
+  openDashboard: () => ipcRenderer.invoke('open-dashboard'),
+  minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
+  listMemoryFiles: () => ipcRenderer.invoke('list-memory-files'),
+  readMemoryFile: (relativePath) => ipcRenderer.invoke('read-memory-file', relativePath),
+  saveMemoryFile: (relativePath, content) => ipcRenderer.invoke('save-memory-file', relativePath, content),
+  getConfig: () => ipcRenderer.invoke('get-full-config'),
+  saveConfig: (data) => ipcRenderer.invoke('save-full-config', data),
 });

@@ -89,23 +89,59 @@ function copyDirSync(src, dest) {
 }
 
 function ensureWorkspace() {
-  if (IS_DEV) return false; // dev mode — use real project directory directly
+  if (IS_DEV) return false;
 
-  // Check if workspace exists AND has the critical backend entry point.
-  // If the directory exists but is incomplete (interrupted first run), re-copy.
   const backendIndex = path.join(WORKSPACE, 'outdoorsv1', 'backend', 'src', 'index.js');
   const v4Index = path.join(WORKSPACE, 'outdoorsv4', 'index.js');
-  if (fs.existsSync(backendIndex) && fs.existsSync(v4Index)) {
-    return false; // workspace is intact
-  }
+  const versionFile = path.join(WORKSPACE, '.app-version');
+
+  const currentVersion = app.getVersion();
+  let installedVersion = '';
+  try { installedVersion = fs.readFileSync(versionFile, 'utf-8').trim(); } catch {}
+
+  const workspaceExists = fs.existsSync(backendIndex) && fs.existsSync(v4Index);
+  const versionMatch = installedVersion === currentVersion;
+
+  if (workspaceExists && versionMatch) return false;
+
+  const isFirstRun = !workspaceExists;
 
   try {
-    // The bundled project is in extraResources/project/
     const bundledProject = path.join(process.resourcesPath, 'project');
+    const destBackend = path.join(WORKSPACE, 'outdoorsv1', 'backend');
+
     if (fs.existsSync(bundledProject)) {
-      copyDirSync(bundledProject, path.join(WORKSPACE, 'outdoorsv1', 'backend'));
+      if (isFirstRun) {
+        copyDirSync(bundledProject, destBackend);
+      } else {
+        // Upgrade: re-sync source code but preserve user data
+        const preserveDirs = new Set(['auth_state', 'node_modules', 'bot']);
+        const preserveFiles = new Set(['config.json', '.env', '.claude.json']);
+
+        const bundledSrc = path.join(bundledProject, 'src');
+        if (fs.existsSync(bundledSrc)) {
+          copyDirSync(bundledSrc, path.join(destBackend, 'src'));
+        }
+
+        const topEntries = fs.readdirSync(bundledProject, { withFileTypes: true });
+        for (const entry of topEntries) {
+          if (preserveDirs.has(entry.name) || preserveFiles.has(entry.name)) continue;
+          if (entry.name === 'src' || entry.name === 'electron' || entry.name === 'dist') continue;
+          const srcPath = path.join(bundledProject, entry.name);
+          const destPath = path.join(destBackend, entry.name);
+          if (entry.isDirectory()) copyDirSync(srcPath, destPath);
+          else fs.copyFileSync(srcPath, destPath);
+        }
+
+        const bundledClaude = path.join(bundledProject, 'CLAUDE.md');
+        if (fs.existsSync(bundledClaude)) {
+          fs.copyFileSync(bundledClaude, path.join(destBackend, 'CLAUDE.md'));
+        }
+
+        console.log(`[workspace] Upgraded from ${installedVersion || 'unknown'} to ${currentVersion}`);
+      }
     }
-    // outdoorsv4 pipeline (imported by backend via ../../../outdoorsv4/)
+
     const bundledV4 = path.join(process.resourcesPath, 'outdoorsv4');
     if (fs.existsSync(bundledV4)) {
       copyDirSync(bundledV4, path.join(WORKSPACE, 'outdoorsv4'));
@@ -114,17 +150,17 @@ function ensureWorkspace() {
     console.error('[workspace] Copy failed:', err);
   }
 
-  // Create empty dirs that aren't bundled but the app expects
-  const emptyDirs = [
-    'bot/logs', 'bot/outputs', 'bot/message-queue',
-    'bot/memory/short-term',
-  ];
+  const emptyDirs = ['bot/logs', 'bot/outputs', 'bot/message-queue', 'bot/memory/short-term'];
   for (const dir of emptyDirs) {
-    try {
-      fs.mkdirSync(path.join(BACKEND_DIR, dir), { recursive: true });
-    } catch {}
+    try { fs.mkdirSync(path.join(BACKEND_DIR, dir), { recursive: true }); } catch {}
   }
-  return true; // first run
+
+  try {
+    fs.mkdirSync(WORKSPACE, { recursive: true });
+    fs.writeFileSync(versionFile, currentVersion);
+  } catch {}
+
+  return isFirstRun;
 }
 
 // ── Setup Wizard Window ─────────────────────────────────────────────────────
@@ -567,71 +603,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
     }
   });
 
-  // ── Telegram Setup ───────────────────────────────────────────────────────
-  ipcMain.handle('save-telegram-token', async (_event, token) => {
-    try {
-      const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
-      const data = await res.json();
-      if (!data.ok) {
-        return { ok: false, error: 'Invalid token: ' + (data.description || 'unknown error') };
-      }
-
-      // Save token to config.json
-      let cfg = {};
-      if (fs.existsSync(CONFIG_PATH)) {
-        try { cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')); } catch {}
-      }
-      cfg.telegramToken = token;
-      fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
-
-      return { ok: true, botUsername: data.result.username };
-    } catch (err) {
-      return { ok: false, error: err.message };
-    }
-  });
-
-  ipcMain.handle('detect-telegram-chat-id', async (_event, token) => {
-    // Clear any pending updates first
-    try {
-      await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=-1`);
-    } catch {}
-
-    // Poll for /start message for up to 60 seconds
-    const start = Date.now();
-    const timeout = 60000;
-
-    while (Date.now() - start < timeout) {
-      try {
-        const res = await fetch(`https://api.telegram.org/bot${token}/getUpdates?timeout=5`);
-        const data = await res.json();
-        if (data.ok && data.result.length > 0) {
-          for (const update of data.result) {
-            const msg = update.message;
-            if (msg && msg.chat) {
-              const chatId = msg.chat.id;
-              // Save chatId to config
-              let cfg = {};
-              if (fs.existsSync(CONFIG_PATH)) {
-                try { cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')); } catch {}
-              }
-              cfg.telegramAllowedIds = [chatId];
-              fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
-
-              // Acknowledge the update
-              try {
-                await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=${update.update_id + 1}`);
-              } catch {}
-
-              return { ok: true, chatId };
-            }
-          }
-        }
-      } catch {}
-      await new Promise(r => setTimeout(r, 2000));
-    }
-
-    return { ok: false, error: 'Timed out waiting for a message. Send /start to your bot and try again.' };
-  });
+  // ── WhatsApp Setup (QR pairing happens automatically via backend) ────────
 
   // Start the backend
   ipcMain.handle('start-backend', async () => {
@@ -648,8 +620,8 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
 
   // Get backend port for Socket.IO connection
   ipcMain.handle('get-backend-url', () => {
-    // Read port from config, default 3458
-    let port = 3458;
+    // Read port from config, default 3847
+    let port = 3847;
     try {
       if (fs.existsSync(CONFIG_PATH)) {
         const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
@@ -676,6 +648,65 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
   // Close/hide window
   ipcMain.handle('close-window', () => {
     if (mainWindow) mainWindow.hide();
+  });
+
+  // ── Dashboard IPC ─────────────────────────────────────────────────────────
+
+  ipcMain.handle('open-dashboard', async () => {
+    createDashboardWindow();
+  });
+
+  ipcMain.handle('minimize-window', () => {
+    if (mainWindow) mainWindow.minimize();
+  });
+
+  ipcMain.handle('list-memory-files', async () => {
+    const memoryDir = path.join(BACKEND_DIR, 'bot', 'memory');
+    const results = [];
+    function walk(dir, rel) {
+      if (!fs.existsSync(dir)) return;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        const relPath = rel ? rel + '/' + entry.name : entry.name;
+        if (entry.isDirectory()) {
+          if (entry.name === 'short-term' || entry.name === 'node_modules') continue;
+          walk(fullPath, relPath);
+        } else if (entry.name.endsWith('.md') || entry.name.endsWith('.json')) {
+          results.push({ name: entry.name, relativePath: relPath });
+        }
+      }
+    }
+    walk(memoryDir, '');
+    return results;
+  });
+
+  ipcMain.handle('read-memory-file', async (_event, relativePath) => {
+    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
+    return fs.readFileSync(path.join(BACKEND_DIR, 'bot', 'memory', relativePath), 'utf-8');
+  });
+
+  ipcMain.handle('save-memory-file', async (_event, relativePath, content) => {
+    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
+    const filePath = path.join(BACKEND_DIR, 'bot', 'memory', relativePath);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, content, 'utf-8');
+    return { ok: true };
+  });
+
+  ipcMain.handle('get-full-config', async () => {
+    try {
+      if (fs.existsSync(CONFIG_PATH)) return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+    } catch {}
+    return {};
+  });
+
+  ipcMain.handle('save-full-config', async (_event, data) => {
+    let cfg = {};
+    try { if (fs.existsSync(CONFIG_PATH)) cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')); } catch {}
+    Object.assign(cfg, data);
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+    return { ok: true };
   });
 }
 
@@ -905,6 +936,40 @@ function setupAutoLaunch() {
   }
 }
 
+// ── Dashboard Window ─────────────────────────────────────────────────────
+
+function createDashboardWindow() {
+  if (mainWindow) {
+    mainWindow.setResizable(true);
+    mainWindow.setMaximizable(true);
+    mainWindow.setSize(940, 660);
+    mainWindow.center();
+    mainWindow.loadFile(path.join(SETUP_DIR, 'dashboard.html'));
+    mainWindow.show();
+    mainWindow.focus();
+  } else {
+    mainWindow = new BrowserWindow({
+      width: 940,
+      height: 660,
+      resizable: true,
+      maximizable: true,
+      frame: false,
+      titleBarStyle: 'hidden',
+      backgroundColor: '#FAF6F1',
+      icon: ICON_PATH,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    mainWindow.loadFile(path.join(SETUP_DIR, 'dashboard.html'));
+    mainWindow.on('close', (e) => {
+      if (tray) { e.preventDefault(); mainWindow.hide(); }
+    });
+  }
+}
+
 // ── App Lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
@@ -915,14 +980,10 @@ app.whenReady().then(async () => {
   createTray();
 
   if (!setupDone || isFirstRun) {
-    // Show setup wizard
     createSetupWindow();
   } else {
-    // Setup already done — start backend directly
     await startBackend();
-    // Create a hidden window (can be shown from tray)
-    createSetupWindow();
-    mainWindow.hide();
+    createDashboardWindow();
   }
 });
 
