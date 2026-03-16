@@ -131,8 +131,42 @@
       </div>
     </div>
 
-    <!-- Page 5: WhatsApp Setup -->
+    <!-- Page 5: Google Account Access -->
     <div class="page" data-page="4">
+      <div class="page-content">
+        <h2>Connect Google</h2>
+        <p class="subtitle">
+          Let Outdoors manage Gmail, Calendar, and Drive on your behalf.
+          You'll sign in with Google once — access refreshes automatically.
+        </p>
+        <div id="google-start">
+          <button class="btn-primary" id="btn-google-auth">Sign in with Google</button>
+          <p class="auth-hint">Opens a browser window for Google sign-in.</p>
+          <button class="btn-skip" id="btn-skip-google">Skip for now</button>
+        </div>
+        <div id="google-waiting" class="browser-status hidden">
+          <div class="spinner-small"></div>
+          <p class="browser-status-text" id="google-waiting-text">Opening Google sign-in...</p>
+          <button class="btn-skip" id="btn-skip-google-waiting">Skip for now</button>
+        </div>
+        <div id="google-success" class="browser-status hidden">
+          <div class="complete-mark small-mark"></div>
+          <p class="browser-status-text">Google account connected <span id="google-email"></span></p>
+        </div>
+        <div id="google-error" class="hidden">
+          <p class="error-text" id="google-error-text"></p>
+          <button class="btn-skip" id="btn-retry-google">Try again</button>
+          <button class="btn-skip" id="btn-skip-google-error">Skip for now</button>
+        </div>
+        <div id="google-no-creds" class="hidden">
+          <p class="auth-hint">Google integration not configured. You can set it up later.</p>
+          <button class="btn-primary" id="btn-skip-google-nocreds">Continue</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Page 6: WhatsApp Setup -->
+    <div class="page" data-page="5">
       <div class="page-content">
         <h2>Connect WhatsApp</h2>
         <p class="subtitle">
@@ -170,8 +204,8 @@
       </div>
     </div>
 
-    <!-- Page 6: Complete -->
-    <div class="page" data-page="5">
+    <!-- Page 7: Complete -->
+    <div class="page" data-page="6">
       <div class="page-content complete-page">
         <div class="complete-mark"></div>
         <h2>You're all set.</h2>
@@ -201,6 +235,7 @@
       <span class="dot" data-dot="3"></span>
       <span class="dot" data-dot="4"></span>
       <span class="dot" data-dot="5"></span>
+      <span class="dot" data-dot="6"></span>
     </div>
   </div>
 

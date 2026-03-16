@@ -23,7 +23,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   launchAutomationChrome: (exePath) => ipcRenderer.invoke('launch-automation-chrome', exePath),
   checkBrowserAuth: () => ipcRenderer.invoke('check-browser-auth'),
 
-  // WhatsApp (pairing handled automatically via QR in dashboard)
+  // Google Account Access
+  checkGoogleCreds: () => ipcRenderer.invoke('check-google-creds'),
+  startGoogleAuth: () => ipcRenderer.invoke('start-google-auth'),
 
   // Backend
   startBackend: () => ipcRenderer.invoke('start-backend'),

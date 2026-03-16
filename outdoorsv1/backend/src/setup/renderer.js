@@ -5,7 +5,7 @@
 
 const isElectron = !!(window.electronAPI);
 let currentPage = 0;
-const totalPages = 6;
+const totalPages = 7;
 
 // ---------------------------------------------------------------------------
 // Page navigation
@@ -32,7 +32,8 @@ function goToPage(index) {
   if (currentPage === 1) runInstallPage();
   if (currentPage === 2) runAuthPage();
   if (currentPage === 3) runBrowserPage();
-  if (currentPage === 4) runTelegramPage();
+  if (currentPage === 4) runGooglePage();
+  if (currentPage === 5) runTelegramPage();
 }
 
 function nextPage() {
@@ -314,7 +315,75 @@ document.getElementById('btn-retry-browser')?.addEventListener('click', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Page 5: WhatsApp Setup (starts backend, shows QR code inline)
+// Page 5: Google Account Access (workspace-mcp OAuth)
+// ---------------------------------------------------------------------------
+
+let googleSetupDone = false;
+
+function showGoogleSection(id) {
+  const sections = ['google-start', 'google-waiting', 'google-success', 'google-error', 'google-no-creds'];
+  sections.forEach(s => {
+    const el = document.getElementById(s);
+    if (el) el.classList.add('hidden');
+  });
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('hidden');
+}
+
+async function runGooglePage() {
+  if (googleSetupDone) return;
+  if (!isElectron) { nextPage(); return; }
+
+  // Check if oauth-creds.json exists
+  const credsCheck = await window.electronAPI.checkGoogleCreds();
+  if (!credsCheck.hasCreds) {
+    showGoogleSection('google-no-creds');
+    return;
+  }
+
+  // Creds exist — show the sign-in button
+  showGoogleSection('google-start');
+}
+
+async function handleGoogleAuth() {
+  if (!isElectron) return;
+
+  showGoogleSection('google-waiting');
+  document.getElementById('google-waiting-text').textContent = 'Starting Google sign-in...';
+
+  try {
+    const result = await window.electronAPI.startGoogleAuth();
+
+    if (result.ok) {
+      googleSetupDone = true;
+      const emailEl = document.getElementById('google-email');
+      if (emailEl && result.email) emailEl.textContent = `(${result.email})`;
+      showGoogleSection('google-success');
+      await delay(1500);
+      nextPage();
+    } else {
+      const errorText = document.getElementById('google-error-text');
+      if (errorText) errorText.textContent = result.error || 'Google sign-in failed.';
+      showGoogleSection('google-error');
+    }
+  } catch (err) {
+    const errorText = document.getElementById('google-error-text');
+    if (errorText) errorText.textContent = 'Error: ' + err.message;
+    showGoogleSection('google-error');
+  }
+}
+
+document.getElementById('btn-google-auth')?.addEventListener('click', handleGoogleAuth);
+document.getElementById('btn-retry-google')?.addEventListener('click', () => {
+  showGoogleSection('google-start');
+});
+document.getElementById('btn-skip-google')?.addEventListener('click', () => nextPage());
+document.getElementById('btn-skip-google-waiting')?.addEventListener('click', () => nextPage());
+document.getElementById('btn-skip-google-error')?.addEventListener('click', () => nextPage());
+document.getElementById('btn-skip-google-nocreds')?.addEventListener('click', () => nextPage());
+
+// ---------------------------------------------------------------------------
+// Page 6: WhatsApp Setup (starts backend, shows QR code inline)
 // ---------------------------------------------------------------------------
 
 let waSocket = null;

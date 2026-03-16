@@ -45,7 +45,7 @@
 ### Connector Knowledge Gained
 See `memory/skills/connectors/` for full directory.
 
-**Most impactful MCP servers to set up for Antony:**
+**Most impactful MCP servers to set up for {{User}} Example:**
 1. Granola — query meeting notes from club/IVP/class meetings
 2. Linear — if doing engineering projects
 3. Sentry — for any deployed apps

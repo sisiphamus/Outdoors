@@ -923,7 +923,7 @@ process_activity
 [wa:conv:1:D] tool_use: Grep
 13:49:42.796
 tool_result
-[wa:conv:1] toolu_01QpbAt7dPdi4Xb4Nz4pgTJ1 → 42: uid=5_38 button "Compose" 216: uid=5_212 row "unread, Antony Saleh , Fwd: File Curation Assistant Hiring Round 2...
+[wa:conv:1] toolu_01QpbAt7dPdi4Xb4Nz4pgTJ1 → 42: uid=5_38 button "Compose" 216: uid=5_212 row "unread, Anthony Arthur , Fwd: File Curation Assistant Hiring Round 2...
 details
 13:49:42.797
 tool_use
@@ -1116,7 +1116,7 @@ process_activity
 [wa:conv:1:D] tool_use: Grep
 13:50:57.561
 tool_result
-[wa:conv:1] toolu_01Ra4vQXphYhf6ifprf3Gwwk → 215: uid=1_212 row "unread, Antony Saleh , Fwd: File Curation Assistant Hiring Round 2 , 12:53 PM , ---------- Forwar...
+[wa:conv:1] toolu_01Ra4vQXphYhf6ifprf3Gwwk → 215: uid=1_212 row "unread, Rohan Rmeilleh , Fwd: File Curation Assistant Hiring Round 2 , 12:53 PM , ---------- Forwar...
 details
 13:51:01.406
 tool_use

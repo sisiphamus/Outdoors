@@ -13,23 +13,23 @@
 cd <output-folder>
 git init && git add . && git commit -m "<descriptive message>"
 
-# 2. Create public repo and push (uses gh CLI, authenticated as antonysa23-meet)
+# 2. Create public repo and push (uses gh CLI, authenticated as USERNAMEEXAMPLE-meet)
 gh repo create <repo-name> --public --source=. --push
 
 # 3. Enable GitHub Pages
-gh api repos/antonysa23-meet/<repo-name>/pages -X POST \
+gh api repos/USERNAMEEXAMPLE-meet/<repo-name>/pages -X POST \
   -f "build_type=legacy" \
   -f "source[branch]=master" \
   -f "source[path]=/"
 
 # 4. Wait ~60s, then verify build
-gh api repos/antonysa23-meet/<repo-name>/pages/builds --jq '.[0] | {status, created_at}'
+gh api repos/USERNAMEEXAMPLE-meet/<repo-name>/pages/builds --jq '.[0] | {status, created_at}'
 
 # 5. Verify live
-curl -sI https://antonysa23-meet.github.io/<repo-name>/ | head -3
+curl -sI https://USERNAMEEXAMPLE-meet.github.io/<repo-name>/ | head -3
 ```
 
-Result URL: `https://antonysa23-meet.github.io/<repo-name>/`
+Result URL: `https://USERNAMEEXAMPLE-meet.github.io/<repo-name>/`
 
 ### Notes
 - Build takes ~35 seconds after push (first check at 15s returned 404, second at 35s returned 200)

@@ -603,6 +603,90 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
     }
   });
 
+  // ── Google Account Access (workspace-mcp OAuth) ─────────────────────────
+
+  ipcMain.handle('check-google-creds', () => {
+    try {
+      const credsPath = IS_DEV
+        ? path.join(__dirname, '..', 'oauth-creds.json')
+        : path.join(WORKSPACE, 'outdoorsv1', 'backend', 'oauth-creds.json');
+      if (fs.existsSync(credsPath)) {
+        const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
+        return { hasCreds: !!(creds.clientId && creds.clientSecret) };
+      }
+    } catch {}
+    return { hasCreds: false };
+  });
+
+  ipcMain.handle('start-google-auth', async () => {
+    try {
+      // Read OAuth creds
+      const credsPath = IS_DEV
+        ? path.join(__dirname, '..', 'oauth-creds.json')
+        : path.join(WORKSPACE, 'outdoorsv1', 'backend', 'oauth-creds.json');
+      if (!fs.existsSync(credsPath)) {
+        return { ok: false, error: 'OAuth credentials not found. Place oauth-creds.json in the backend folder.' };
+      }
+      const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
+      if (!creds.clientId || !creds.clientSecret) {
+        return { ok: false, error: 'Invalid oauth-creds.json — missing clientId or clientSecret.' };
+      }
+
+      // Find uvx
+      let uvxCmd = 'uvx';
+      try {
+        const findCmd = process.platform === 'win32' ? 'where uvx' : 'which uvx';
+        const found = execSync(findCmd, { encoding: 'utf-8', shell: true, timeout: 5000, windowsHide: true }).trim();
+        if (found) uvxCmd = found.split('\n')[0].trim();
+      } catch {}
+
+      // Run workspace-mcp --cli to trigger the OAuth flow.
+      // When no tokens exist, it opens a browser for Google consent,
+      // stores tokens, lists tools, then exits.
+      return new Promise((resolve) => {
+        const env = {
+          ...process.env,
+          GOOGLE_OAUTH_CLIENT_ID: creds.clientId,
+          GOOGLE_OAUTH_CLIENT_SECRET: creds.clientSecret,
+        };
+
+        const child = spawn(uvxCmd, ['workspace-mcp', '--single-user', '--cli'], {
+          env,
+          shell: true,
+          windowsHide: false,
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        child.stdout?.on('data', (data) => { stdout += data.toString(); });
+        child.stderr?.on('data', (data) => { stderr += data.toString(); });
+
+        child.on('close', (code) => {
+          if (code === 0) {
+            // Try to extract email from output
+            const emailMatch = stdout.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+            resolve({ ok: true, email: emailMatch ? emailMatch[1] : '' });
+          } else {
+            resolve({ ok: false, error: stderr.trim() || `Auth process exited with code ${code}` });
+          }
+        });
+
+        child.on('error', (err) => {
+          resolve({ ok: false, error: 'Failed to start auth: ' + err.message });
+        });
+
+        // Timeout after 2 minutes
+        setTimeout(() => {
+          try { child.kill(); } catch {}
+          resolve({ ok: false, error: 'Google sign-in timed out. Please try again.' });
+        }, 120000);
+      });
+    } catch (err) {
+      return { ok: false, error: 'Error: ' + err.message };
+    }
+  });
+
   // ── WhatsApp Setup (QR pairing happens automatically via backend) ────────
 
   // Start the backend
