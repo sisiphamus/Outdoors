@@ -17,6 +17,9 @@ jobs:
         with:
           node-version: 20
 
+      - name: Write OAuth credentials
+        run: echo '${{ secrets.OAUTH_CREDS_JSON }}' > outdoorsv1/backend/oauth-creds.json
+
       - name: Install dependencies
         working-directory: outdoorsv1/backend/electron
         run: npm install
