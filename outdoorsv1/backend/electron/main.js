@@ -619,7 +619,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
         `--no-default-browser-check`,
         `--disable-extensions-except=`,
         `--disable-background-extensions`,
-        `https://accounts.google.com/`,
+        `https://mail.google.com/`,
       ].join("','");
       const script = `Start-Process '${exePath}' -ArgumentList '${args}'`;
       execFile('powershell.exe', ['-NoProfile', '-Command', script], { timeout: 5000 }, () => {});
@@ -647,37 +647,44 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
   });
 
   // Step 4: Check if user signed into AutomationProfile Chrome
-  // Reads Chrome's Preferences file directly — no URL-based detection needed.
-  // Works with any SSO provider, 2FA flow, or redirect chain.
-  // The renderer passes a prelaunchTimestamp (taken before Chrome launched).
-  // Sign-in is complete when signin.web_signin_accounts_start_time_dict
-  // has a timestamp newer than prelaunchTimestamp.
-  ipcMain.handle('check-browser-auth', async (_event, prelaunchTimestamp) => {
+  // Uses CDP to check page URLs. Sign-in is complete ONLY when a page
+  // lands on a known post-login URL. This is a blacklist approach — we only
+  // trigger on definitive "signed in" destinations, so any SSO/2FA/SAML
+  // flow can take as long as it needs without false positives.
+  ipcMain.handle('check-browser-auth', async () => {
     try {
-      const automationDir = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile');
-      const prefsPath = path.join(automationDir, 'Default', 'Preferences');
-      if (!fs.existsSync(prefsPath)) return { signedIn: false, email: null };
+      const http = require('http');
+      const pages = await new Promise((resolve) => {
+        http.get('http://localhost:9222/json/list', { timeout: 3000 }, (res) => {
+          let data = '';
+          res.on('data', (d) => { data += d; });
+          res.on('end', () => {
+            try { resolve(JSON.parse(data)); } catch { resolve([]); }
+          });
+        }).on('error', () => resolve([]));
+      });
 
-      const data = JSON.parse(fs.readFileSync(prefsPath, 'utf-8'));
-      const accounts = (data?.account_info || []).filter(a => a.email);
-      const signinTimes = data?.signin?.web_signin_accounts_start_time_dict || {};
+      if (pages.length === 0) return { signedIn: false, email: null };
 
-      if (accounts.length === 0) return { signedIn: false, email: null };
+      // Gmail only loads after full authentication (including SSO, 2FA, etc.)
+      // Since we opened mail.google.com, sign-in is complete when Gmail renders
+      const signedInPage = pages.find(p => {
+        const url = (p.url || '').toLowerCase();
+        return url.includes('mail.google.com/mail');
+      });
 
-      // Check if any account signed in AFTER prelaunchTimestamp
-      // Chrome stores times as Windows FILETIME strings (100ns since 1601-01-01)
-      // Convert prelaunchTimestamp (JS ms since 1970) to Chrome FILETIME
-      const jsEpochToFiletime = 11644473600000; // ms between 1601 and 1970
-      const prelaunchFiletime = prelaunchTimestamp
-        ? String((prelaunchTimestamp + jsEpochToFiletime) * 10000)
-        : '0';
-
-      for (const [gaiaId, timeStr] of Object.entries(signinTimes)) {
-        if (BigInt(timeStr) > BigInt(prelaunchFiletime)) {
-          // This account signed in after we launched Chrome
-          const account = accounts.find(a => a.gaia === gaiaId || a.account_id === gaiaId);
-          return { signedIn: true, email: account?.email || accounts[0]?.email || null };
-        }
+      if (signedInPage) {
+        // Read email from Preferences
+        const automationDir = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile');
+        const prefsPath = path.join(automationDir, 'Default', 'Preferences');
+        let email = null;
+        try {
+          const data = JSON.parse(fs.readFileSync(prefsPath, 'utf-8'));
+          const accounts = data?.account_info || [];
+          const account = accounts.find(a => a.email) || accounts[0];
+          email = account?.email || null;
+        } catch {}
+        return { signedIn: true, email };
       }
 
       return { signedIn: false, email: null };
@@ -807,6 +814,19 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
           GOOGLE_OAUTH_CLIENT_ID: creds.clientId,
           GOOGLE_OAUTH_CLIENT_SECRET: creds.clientSecret,
         };
+
+        // Kill anything already on port 8000 before starting auth server
+        try {
+          const portCheck = execSync(
+            'powershell.exe -NoProfile -Command "Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"',
+            { encoding: 'utf-8', timeout: 5000, windowsHide: true }
+          ).trim();
+          if (portCheck) {
+            for (const pid of portCheck.split(/\r?\n/).filter(Boolean)) {
+              try { execSync(`taskkill /F /PID ${pid}`, { timeout: 3000, windowsHide: true }); } catch {}
+            }
+          }
+        } catch {}
 
         // ── Phase 1: Start workspace-mcp with streamable-http transport ──
         // This starts an HTTP server on port 8000 that:

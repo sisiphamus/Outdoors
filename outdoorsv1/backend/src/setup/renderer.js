@@ -297,7 +297,7 @@ function startAuthPolling() {
 
   authPollTimer = setInterval(async () => {
     try {
-      const result = await window.electronAPI.checkBrowserAuth(window._prelaunchTimestamp || 0);
+      const result = await window.electronAPI.checkBrowserAuth();
       if (result.signedIn) {
         clearInterval(authPollTimer);
         authPollTimer = null;
