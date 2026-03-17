@@ -37,6 +37,29 @@ let tray = null;
 let backendProcess = null;
 let devLogWindow = null;
 let authPollTimer = null; // track auth polling so we can cancel on skip
+
+// Read the signed-in email from Chrome AutomationProfile Preferences
+function getAutomationProfileEmail() {
+  try {
+    const prefsPath = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile', 'Default', 'Preferences');
+    if (!fs.existsSync(prefsPath)) return null;
+    const prefs = JSON.parse(fs.readFileSync(prefsPath, 'utf-8'));
+    const accounts = prefs.account_info || [];
+    if (accounts.length > 0) return accounts[0].email || null;
+  } catch {}
+  return null;
+}
+
+// Get the user's Google email — first from config, then from AutomationProfile
+function getUserGoogleEmail() {
+  try {
+    if (fs.existsSync(CONFIG_PATH)) {
+      const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+      if (cfg.googleEmail) return cfg.googleEmail;
+    }
+  } catch {}
+  return getAutomationProfileEmail();
+}
 let backendRestarts = 0;
 const MAX_BACKEND_RESTARTS = 5;
 let resolvedClaudeCmd = 'claude'; // updated after install or PATH lookup
@@ -800,11 +823,15 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
         mcpProc.stderr?.on('data', (d) => {
           const text = d.toString();
           console.log('[google-auth:stderr]', text.trim().slice(0, 200));
-          // Detect when the HTTP server is ready
-          if (!serverReady && (text.includes('Uvicorn running') || text.includes('Application startup complete'))) {
+          // Detect when the HTTP server is ready — check for various startup messages
+          if (!serverReady && (text.includes('Uvicorn running') || text.includes('Application startup complete') || text.includes('Transport: streamable-http') || text.includes('Transport:'))) {
             serverReady = true;
-            console.log('[google-auth] HTTP server ready on port 8000');
-            doMcpAuth();
+            console.log('[google-auth] HTTP server detected, waiting for port 8000...');
+            // Give the server a moment to actually bind the port
+            setTimeout(() => {
+              console.log('[google-auth] Calling doMcpAuth');
+              doMcpAuth();
+            }, 3000);
           }
         });
         mcpProc.stdout?.on('data', (d) => console.log('[google-auth:stdout]', d.toString().trim().slice(0, 200)));
@@ -854,7 +881,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
               jsonrpc: '2.0', id: 2, method: 'tools/call',
               params: {
                 name: 'start_google_auth',
-                arguments: { service_name: 'gmail', user_google_email: 'user@gmail.com' },
+                arguments: { service_name: 'gmail', user_google_email: getUserGoogleEmail() || 'user@gmail.com' },
               },
             }, sessionId);
 
@@ -930,14 +957,19 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
               const newFiles = currentFiles.filter(f => !existingCredFiles.has(f));
               if (newFiles.length > 0) {
                 clearInterval(pollTimer);
+                // Use the AutomationProfile email if available, otherwise first new credential
+                const automationEmail = getAutomationProfileEmail();
+                const matchingFile = automationEmail ? newFiles.find(f => f.replace('.json', '') === automationEmail) : null;
+                const selectedEmail = matchingFile ? automationEmail : newFiles[0].replace('.json', '');
                 try {
                   let cfg = {};
                   if (fs.existsSync(CONFIG_PATH)) cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
                   cfg.googleServices = toolsList;
+                  cfg.googleEmail = selectedEmail;
                   fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
                 } catch {}
                 if (mainWindow && !mainWindow.isDestroyed()) {
-                  mainWindow.webContents.send('google-auth-complete', { ok: true, email: newFiles[0].replace('.json', '') });
+                  mainWindow.webContents.send('google-auth-complete', { ok: true, email: selectedEmail });
                 }
                 return;
               }
@@ -1096,6 +1128,9 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
           const wsArgs = ['workspace-mcp', '--single-user'];
           if (services && services.length > 0) wsArgs.push('--tools', ...services);
 
+          // Get the user's Google email from AutomationProfile
+          const userEmail = getUserGoogleEmail();
+
           const mcpConfig = {
             mcpServers: {
               google_workspace: {
@@ -1110,6 +1145,29 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
             },
           };
           fs.writeFileSync(claudeConfigPath, JSON.stringify(mcpConfig, null, 2) + '\n');
+
+          // Also update mcp-bot.json in outdoorsv4 with google_workspace + email
+          const v4Dir = IS_DEV
+            ? path.join(__dirname, '..', '..', '..', 'outdoorsv4')
+            : path.join(WORKSPACE, 'outdoorsv4');
+          const botMcpPath = path.join(v4Dir, 'mcp-bot.json');
+          try {
+            let botMcp = {};
+            if (fs.existsSync(botMcpPath)) botMcp = JSON.parse(fs.readFileSync(botMcpPath, 'utf-8'));
+            if (!botMcp.mcpServers) botMcp.mcpServers = {};
+            botMcp.mcpServers.google_workspace = mcpConfig.mcpServers.google_workspace;
+            fs.writeFileSync(botMcpPath, JSON.stringify(botMcp, null, 2) + '\n');
+          } catch {}
+
+          // Save email to config so the bot always uses the right account
+          if (userEmail) {
+            try {
+              let cfg = {};
+              if (fs.existsSync(CONFIG_PATH)) cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+              cfg.googleEmail = userEmail;
+              fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+            } catch {}
+          }
         }
       }
 
@@ -1134,13 +1192,18 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
 
       const servicesList = (services || ['gmail', 'calendar', 'contacts']).join(', ');
       const today = new Date().toISOString().split('T')[0];
+      const scanEmail = getUserGoogleEmail() || 'the authenticated user';
 
-      const fullPrompt = `You are running an onboarding personalization scan for a new Outdoors user. Your goal is to use Google Workspace MCP tools to learn about the user and fill out standardized knowledge files.
+      const fullPrompt = `You are running an onboarding personalization scan for a new Outdoors user. Your goal is to use Google Workspace MCP tools (mcp__google_workspace__*) to learn about the user and fill out standardized knowledge files.
+
+IMPORTANT: The user's Google email is: ${scanEmail}
+Always pass user_google_email="${scanEmail}" when calling any Google Workspace MCP tool.
+Do NOT use browser/Chrome tools — use ONLY mcp__google_workspace__* tools for reading data.
 
 TASK: Read the skill file at bot/memory/skills/onboarding/SKILL.md — it contains the exact templates and filenames for each service. Then scan the user's data for these services: ${servicesList}.
 
 For each service:
-1. Use the appropriate MCP read tools (search_gmail_messages, get_events, list_contacts, etc.)
+1. Use the appropriate mcp__google_workspace__* tools (search_gmail_messages, get_events, list_contacts, etc.)
 2. Analyze the data for patterns, style, and preferences
 3. Create the knowledge file at bot/memory/knowledge/<service>-profile.md using the EXACT template from the skill file
 4. Fill in every field in the template with real observations — be specific, not generic
@@ -1166,8 +1229,18 @@ Start by reading the skill file, then scan each service systematically.`;
         : path.join(WORKSPACE, 'outdoorsv4');
       const botMcpPath = path.join(v4Dir, 'mcp-bot.json');
 
-      // Also use .claude.json as MCP config for the scan
-      const mcpConfigPath = path.join(BACKEND_DIR, '.claude.json');
+      // Create a scan-specific MCP config with ONLY google_workspace (no browser tools)
+      const scanMcpConfigPath = path.join(app.getPath('userData'), 'scan-mcp-config.json');
+      try {
+        const fullConfig = JSON.parse(fs.readFileSync(path.join(BACKEND_DIR, '.claude.json'), 'utf-8'));
+        const scanConfig = {
+          mcpServers: {
+            google_workspace: fullConfig.mcpServers?.google_workspace,
+          },
+        };
+        fs.writeFileSync(scanMcpConfigPath, JSON.stringify(scanConfig, null, 2));
+      } catch {}
+      const mcpConfigPath = scanMcpConfigPath;
 
       const spawnArgs = [
         '--print',

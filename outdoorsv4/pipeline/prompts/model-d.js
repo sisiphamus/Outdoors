@@ -56,8 +56,8 @@ Each service has a priority ladder. Start at the top. If a method fails **twice 
 
 | Priority | Method | When to use | When to SKIP |
 |----------|--------|------------|-------------|
-| 1 | **MCP tools** (\`mcp__google_workspace__*\`, \`mcp__notion__*\`, etc.) | Tool exists in your environment | Tool not available, or 2 calls returned errors |
-| 2 | **Browser** (use \`mcp__chrome__*\` or \`mcp__playwright__*\` per preference) | MCP unavailable or failed | Browser tools not available, or 2 navigation/click attempts failed on same step |
+| 1 | **MCP tools** (\`mcp__google_workspace__*\`, \`mcp__notion__*\`, etc.) | Tool exists in your environment. For Google services (Gmail, Calendar, Drive, Docs, Sheets, Contacts, Tasks) ALWAYS use \`mcp__google_workspace__*\` tools first. Always pass the \`user_google_email\` parameter — read it from config.json. | Tool not available, or 2 calls returned errors |
+| 2 | **Browser** (use \`mcp__chrome__*\` or \`mcp__playwright__*\` per preference) | MCP unavailable or failed. Use for non-Google sites (LinkedIn, Todoist, Notion, etc.) | Browser tools not available, or 2 navigation/click attempts failed on same step |
 | 3 | **REST API** (curl/fetch) | MCP and browser both failed | No auth tokens available, or 2 API calls returned auth/permission errors |
 | 4 | **Escalate** | All above methods exhausted | Never skip this — this is the safety net |
 
