@@ -671,10 +671,25 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
         const url = (p.url || '').toLowerCase();
         return url.includes('myaccount.google.com') ||
                url.includes('google.com/webhp') ||
-               url.startsWith('chrome://newtab');
+               url.includes('mail.google.com') ||
+               url.includes('drive.google.com') ||
+               url.includes('calendar.google.com') ||
+               url.includes('accounts.google.com/signout') ||
+               url.includes('accounts.google.com/b/') ||
+               url.startsWith('chrome://newtab') ||
+               url.startsWith('chrome://new-tab-page');
       });
 
-      if (signedInPage) {
+      // Fallback: if no page is still on the Google sign-in flow, sign-in is done
+      const stillSigningIn = pages.some(p => {
+        const url = (p.url || '').toLowerCase();
+        return url.includes('accounts.google.com/signin') ||
+               url.includes('accounts.google.com/v3/signin') ||
+               url.includes('accounts.google.com/o/oauth2') ||
+               url.includes('accounts.google.com/challenge');
+      });
+
+      if (signedInPage || (!stillSigningIn && pages.length > 0)) {
         // Read email from Preferences
         const automationDir = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile');
         const prefsPath = path.join(automationDir, 'Default', 'Preferences');
