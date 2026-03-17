@@ -56,7 +56,7 @@ export function runModel({
 }) {
   return new Promise((resolve, reject) => {
     const cmd = config.claudeCommand || 'claude';
-    const args = [...(claudeArgs || config.claudeArgs || ['--print']), '--output-format', 'stream-json', '--verbose'];
+    const args = [...(claudeArgs || config.claudeArgs || ['--print']), '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
 
     // Block Claude Code UI-only tools that don't work in a subprocess context.
     args.push('--disallowedTools',
