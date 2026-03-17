@@ -968,6 +968,8 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
                   cfg.googleEmail = selectedEmail;
                   fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
                 } catch {}
+                // Kill the auth server — it's no longer needed and blocks port 8000
+                try { mcpProc.kill(); } catch {}
                 if (mainWindow && !mainWindow.isDestroyed()) {
                   mainWindow.webContents.send('google-auth-complete', { ok: true, email: selectedEmail });
                 }
@@ -979,14 +981,17 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
                   const stat = fs.statSync(path.join(credsDir, file));
                   if (Date.now() - stat.mtimeMs < 10000) {
                     clearInterval(pollTimer);
+                    const reAuthEmail = file.replace('.json', '');
                     try {
                       let cfg = {};
                       if (fs.existsSync(CONFIG_PATH)) cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
                       cfg.googleServices = toolsList;
+                      cfg.googleEmail = reAuthEmail;
                       fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
                     } catch {}
+                    try { mcpProc.kill(); } catch {}
                     if (mainWindow && !mainWindow.isDestroyed()) {
-                      mainWindow.webContents.send('google-auth-complete', { ok: true, email: file.replace('.json', '') });
+                      mainWindow.webContents.send('google-auth-complete', { ok: true, email: reAuthEmail });
                     }
                     return;
                   }
@@ -1229,18 +1234,8 @@ Start by reading the skill file, then scan each service systematically.`;
         : path.join(WORKSPACE, 'outdoorsv4');
       const botMcpPath = path.join(v4Dir, 'mcp-bot.json');
 
-      // Create a scan-specific MCP config with ONLY google_workspace (no browser tools)
-      const scanMcpConfigPath = path.join(app.getPath('userData'), 'scan-mcp-config.json');
-      try {
-        const fullConfig = JSON.parse(fs.readFileSync(path.join(BACKEND_DIR, '.claude.json'), 'utf-8'));
-        const scanConfig = {
-          mcpServers: {
-            google_workspace: fullConfig.mcpServers?.google_workspace,
-          },
-        };
-        fs.writeFileSync(scanMcpConfigPath, JSON.stringify(scanConfig, null, 2));
-      } catch {}
-      const mcpConfigPath = scanMcpConfigPath;
+      // Use the full .claude.json as MCP config — same config that worked before
+      const mcpConfigPath = path.join(BACKEND_DIR, '.claude.json');
 
       const spawnArgs = [
         '--print',
