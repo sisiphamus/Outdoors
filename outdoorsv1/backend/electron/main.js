@@ -667,6 +667,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
 
       // Sign-in is complete when any page lands on myaccount.google.com
       // or when NO pages are on accounts.google.com anymore (user completed flow)
+      // Sign-in is complete ONLY when a page lands on one of these known post-login URLs
       const signedInPage = pages.find(p => {
         const url = (p.url || '').toLowerCase();
         return url.includes('myaccount.google.com') ||
@@ -680,16 +681,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
                url.startsWith('chrome://new-tab-page');
       });
 
-      // Fallback: if no page is still on the Google sign-in flow, sign-in is done
-      const stillSigningIn = pages.some(p => {
-        const url = (p.url || '').toLowerCase();
-        return url.includes('accounts.google.com/signin') ||
-               url.includes('accounts.google.com/v3/signin') ||
-               url.includes('accounts.google.com/o/oauth2') ||
-               url.includes('accounts.google.com/challenge');
-      });
-
-      if (signedInPage || (!stillSigningIn && pages.length > 0)) {
+      if (signedInPage) {
         // Read email from Preferences
         const automationDir = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile');
         const prefsPath = path.join(automationDir, 'Default', 'Preferences');
