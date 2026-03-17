@@ -709,6 +709,25 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
     }
   });
 
+  // Helper: close Chrome tabs on localhost:8000 (the auth callback page) via CDP
+  function closeAuthTab() {
+    const http = require('http');
+    http.get('http://localhost:9222/json/list', { timeout: 3000 }, (res) => {
+      let data = '';
+      res.on('data', (d) => { data += d; });
+      res.on('end', () => {
+        try {
+          const pages = JSON.parse(data);
+          for (const page of pages) {
+            if (page.url && page.url.includes('localhost:8000')) {
+              http.get(`http://localhost:9222/json/close/${page.id}`, { timeout: 3000 }, () => {});
+            }
+          }
+        } catch {}
+      });
+    }).on('error', () => {});
+  }
+
   // Step 5: Close automation Chrome (all tabs) via CDP
   ipcMain.handle('close-automation-chrome', async () => {
     try {
@@ -985,6 +1004,8 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
                 } catch {}
                 // Kill the auth server — it's no longer needed and blocks port 8000
                 try { mcpProc.kill(); } catch {}
+                // Close the localhost:8000 Chrome tab so user doesn't see the ugly success page
+                closeAuthTab();
                 if (mainWindow && !mainWindow.isDestroyed()) {
                   mainWindow.webContents.send('google-auth-complete', { ok: true, email: selectedEmail });
                 }
@@ -1005,6 +1026,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
                       fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
                     } catch {}
                     try { mcpProc.kill(); } catch {}
+                    closeAuthTab();
                     if (mainWindow && !mainWindow.isDestroyed()) {
                       mainWindow.webContents.send('google-auth-complete', { ok: true, email: reAuthEmail });
                     }
@@ -1393,13 +1415,30 @@ function writeMcpConfig(browserKey, browser) {
   } catch {}
 
   if (oauthClientId && oauthClientSecret) {
-    // Read selected Google services from config
+    // Read selected Google services from config, filtered by what's actually authorized
     let googleTools = [];
     try {
       if (fs.existsSync(CONFIG_PATH)) {
         const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
         if (cfg.googleServices && cfg.googleServices.length > 0) {
           googleTools = cfg.googleServices;
+        }
+      }
+    } catch {}
+    // Filter to only services with valid scopes in the credential
+    // Without this, workspace-mcp demands re-auth for missing scopes
+    try {
+      const credDir = path.join(process.env.USERPROFILE || '', '.google_workspace_mcp', 'credentials');
+      if (fs.existsSync(credDir)) {
+        const credFiles = fs.readdirSync(credDir).filter(f => f.endsWith('.json'));
+        if (credFiles.length > 0) {
+          const cred = JSON.parse(fs.readFileSync(path.join(credDir, credFiles[credFiles.length - 1]), 'utf-8'));
+          const scopes = (cred.scopes || []).join(' ');
+          const scopeMap = { gmail:'gmail', calendar:'calendar', contacts:'contacts', drive:'drive', docs:'documents', sheets:'spreadsheets', slides:'presentations', tasks:'tasks', forms:'forms', search:'cse' };
+          googleTools = googleTools.filter(svc => {
+            const kw = scopeMap[svc];
+            return !kw || scopes.includes(kw);
+          });
         }
       }
     } catch {}
