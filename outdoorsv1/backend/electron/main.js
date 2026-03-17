@@ -774,13 +774,14 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
           GOOGLE_OAUTH_CLIENT_SECRET: creds.clientSecret,
         };
 
-        // ── Phase 1: Start workspace-mcp in stdio mode ──
-        // Stdio mode starts an OAuth callback server on port 8000 AND
-        // keeps the process alive to handle the callback.
-        // We send JSON-RPC messages via stdin to call start_google_auth.
-        const serverArgs = ['workspace-mcp', '--single-user', '--tools', ...toolsList];
+        // ── Phase 1: Start workspace-mcp with streamable-http transport ──
+        // This starts an HTTP server on port 8000 that:
+        // - Accepts MCP JSON-RPC calls via HTTP POST
+        // - Handles the OAuth callback at /oauth2callback
+        // - Stays alive until we kill it
+        const serverArgs = ['workspace-mcp', '--single-user', '--transport', 'streamable-http', '--tools', ...toolsList];
 
-        console.log('[google-auth] Starting MCP server:', uvxCmd, serverArgs.join(' '));
+        console.log('[google-auth] Starting MCP HTTP server:', uvxCmd, serverArgs.join(' '));
         const mcpProc = spawn(uvxCmd, serverArgs, {
           env, windowsHide: true,
           stdio: ['pipe', 'pipe', 'pipe'],
@@ -789,49 +790,82 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
           console.error('[google-auth] spawn error:', err.message);
           resolve({ ok: false, error: 'Failed to start auth: ' + err.message });
         });
-        // Don't let the Python callback server block Electron from exiting
         mcpProc.unref();
-        mcpProc.stdin.on('error', () => {}); // ignore broken pipe
+        mcpProc.stdin?.on('error', () => {});
 
-        // Helper: send newline-delimited JSON-RPC (workspace-mcp uses line-delimited, not Content-Length)
-        function sendJsonRpc(msg) {
-          try { mcpProc.stdin.write(JSON.stringify(msg) + '\n'); } catch {}
-        }
-
-        let stdout = '';
+        let serverReady = false;
         let urlFound = false;
-        let initialized = false;
+        let sessionId = null;
 
-        mcpProc.stderr?.on('data', (d) => console.log('[google-auth:stderr]', d.toString().trim()));
+        mcpProc.stderr?.on('data', (d) => {
+          const text = d.toString();
+          console.log('[google-auth:stderr]', text.trim().slice(0, 200));
+          // Detect when the HTTP server is ready
+          if (!serverReady && (text.includes('Uvicorn running') || text.includes('Application startup complete'))) {
+            serverReady = true;
+            console.log('[google-auth] HTTP server ready on port 8000');
+            doMcpAuth();
+          }
+        });
+        mcpProc.stdout?.on('data', (d) => console.log('[google-auth:stdout]', d.toString().trim().slice(0, 200)));
 
-        mcpProc.stdout?.on('data', (chunk) => {
-          stdout += chunk.toString();
+        // Use HTTP to communicate with the MCP server
+        async function doMcpAuth() {
+          try {
+            const http = require('http');
 
-          // After init response arrives, send initialized notification + tool call
-          if (!initialized && stdout.includes('"result"') && stdout.includes('"protocolVersion"')) {
-            initialized = true;
-            console.log('[google-auth] MCP initialized, calling start_google_auth');
-            sendJsonRpc({ jsonrpc: '2.0', method: 'notifications/initialized' });
-            sendJsonRpc({
+            // Helper to make HTTP POST requests to the MCP server
+            function mcpPost(body, sid) {
+              return new Promise((res, rej) => {
+                const data = JSON.stringify(body);
+                const headers = {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json, text/event-stream',
+                  'Content-Length': Buffer.byteLength(data),
+                };
+                if (sid) headers['Mcp-Session-Id'] = sid;
+                const req = http.request({ hostname: 'localhost', port: 8000, path: '/mcp', method: 'POST', headers }, (resp) => {
+                  let responseData = '';
+                  // Capture session ID from response headers
+                  const respSid = resp.headers['mcp-session-id'];
+                  if (respSid) sessionId = respSid;
+                  resp.on('data', (chunk) => { responseData += chunk; });
+                  resp.on('end', () => res(responseData));
+                });
+                req.on('error', rej);
+                req.write(data);
+                req.end();
+              });
+            }
+
+            // Step 1: Initialize
+            console.log('[google-auth] Sending MCP initialize via HTTP');
+            await mcpPost({
+              jsonrpc: '2.0', id: 1, method: 'initialize',
+              params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'outdoors-setup', version: '1.0' } },
+            });
+
+            // Step 2: Initialized notification
+            await mcpPost({ jsonrpc: '2.0', method: 'notifications/initialized' }, sessionId);
+
+            // Step 3: Call start_google_auth
+            console.log('[google-auth] Calling start_google_auth via HTTP');
+            const authResp = await mcpPost({
               jsonrpc: '2.0', id: 2, method: 'tools/call',
               params: {
                 name: 'start_google_auth',
                 arguments: { service_name: 'gmail', user_google_email: 'user@gmail.com' },
               },
-            });
-          }
+            }, sessionId);
 
-          // As soon as we see the auth URL, launch Chrome immediately
-          if (!urlFound) {
-            const urlMatch = stdout.match(/(https:\/\/accounts\.google\.com\/o\/oauth2\/[^\s"<>)\\]+)/);
+            // Extract auth URL from response
+            const urlMatch = authResp.match(/(https:\/\/accounts\.google\.com\/o\/oauth2\/auth[^\s"<>)\\]+)/);
             if (urlMatch) {
               urlFound = true;
               const authUrl = urlMatch[1];
               console.log('[google-auth] Got auth URL, length:', authUrl.length);
 
               // ── Phase 2: Open auth URL in AutomationProfile Chrome ──
-              // Chrome may have been closed after browser sign-in step.
-              // Use PowerShell Start-Process (same pattern as browser-health.js openBrowser)
               const automationDir = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile');
               const CHROME_PATHS = [
                 path.join(process.env.PROGRAMFILES || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
@@ -841,7 +875,6 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
               const chromeExe = CHROME_PATHS.find(p => { try { return fs.existsSync(p); } catch { return false; } });
 
               if (chromeExe) {
-                // Use PowerShell Start-Process with ArgumentList — same proven pattern as browser-health.js
                 const chromeArgs = [
                   `--remote-debugging-port=9222`,
                   `--user-data-dir=${automationDir}`,
@@ -851,42 +884,41 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
                   authUrl,
                 ].map(a => `'${a}'`).join(',');
                 const script = `Start-Process '${chromeExe}' -ArgumentList ${chromeArgs}`;
-                console.log('[google-auth] Launching AutomationProfile Chrome via PowerShell');
                 execFile('powershell.exe', ['-NoProfile', '-Command', script], { timeout: 10000 }, (err) => {
                   if (err) console.error('[google-auth] PowerShell error:', err.message);
                 });
               } else {
-                console.log('[google-auth] No Chrome found, using default browser');
                 shell.openExternal(authUrl);
               }
 
-              // Return immediately — renderer shows "Complete authorization..."
               resolve({ ok: true, authUrl, pendingAuth: true });
+            } else {
+              console.error('[google-auth] No auth URL in response:', authResp.slice(0, 500));
+              resolve({ ok: false, error: 'Could not get Google auth URL.' });
             }
+          } catch (err) {
+            console.error('[google-auth] HTTP error:', err.message);
+            resolve({ ok: false, error: 'Failed to communicate with auth server: ' + err.message });
           }
-        });
+        }
 
-        // Send MCP initialize after server starts (give it 3 seconds to boot)
+        // Timeout: if server doesn't start in 20 seconds, fail
         setTimeout(() => {
-          console.log('[google-auth] Sending MCP initialize');
-          sendJsonRpc({
-            jsonrpc: '2.0', id: 1, method: 'initialize',
-            params: {
-              protocolVersion: '2024-11-05',
-              capabilities: {},
-              clientInfo: { name: 'outdoors-setup', version: '1.0.0' },
-            },
-          });
-        }, 3000);
+          if (!serverReady) {
+            console.error('[google-auth] Server startup timed out');
+            try { mcpProc.kill(); } catch {}
+            resolve({ ok: false, error: 'Auth server failed to start.' });
+          }
+        }, 20000);
 
-        // Timeout: if no URL after 25 seconds, fail
+        // Timeout: if no URL after 35 seconds total, fail
         setTimeout(() => {
           if (!urlFound) {
             console.error('[google-auth] Timed out waiting for auth URL');
             try { mcpProc.kill(); } catch {}
             resolve({ ok: false, error: 'Timed out waiting for Google auth URL.' });
           }
-        }, 25000);
+        }, 35000);
 
         // ── Phase 3: Poll for credential file ──
         let pollCount = 0;
