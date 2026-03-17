@@ -22,10 +22,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   createAutomationProfile: (data) => ipcRenderer.invoke('create-automation-profile', data),
   launchAutomationChrome: (exePath) => ipcRenderer.invoke('launch-automation-chrome', exePath),
   checkBrowserAuth: () => ipcRenderer.invoke('check-browser-auth'),
+  closeAutomationChrome: () => ipcRenderer.invoke('close-automation-chrome'),
 
   // Google Account Access
   checkGoogleCreds: () => ipcRenderer.invoke('check-google-creds'),
-  startGoogleAuth: () => ipcRenderer.invoke('start-google-auth'),
+  startGoogleAuth: (services) => ipcRenderer.invoke('start-google-auth', services),
+  onGoogleAuthComplete: (callback) => ipcRenderer.on('google-auth-complete', (_event, data) => callback(data)),
+
+  // Onboarding scan
+  runOnboardingScan: (services) => ipcRenderer.invoke('run-onboarding-scan', services),
+  onOnboardingProgress: (callback) => ipcRenderer.on('onboarding-progress', (_event, data) => callback(data)),
 
   // Backend
   startBackend: () => ipcRenderer.invoke('start-backend'),

@@ -265,8 +265,15 @@ async function createAndLaunch(selectedProfile) {
       return;
     }
 
-    // Launch Chrome on sign-in page
+    // Show countdown before launching Chrome
     showBrowserSection('browser-launching');
+    const launchText = document.getElementById('browser-launch-text');
+    for (let i = 5; i > 0; i--) {
+      if (launchText) launchText.textContent = `Opening Chrome in ${i} seconds — please log in when it opens.`;
+      await delay(1000);
+    }
+    if (launchText) launchText.textContent = 'Opening Chrome...';
+
     const launchResult = await window.electronAPI.launchAutomationChrome(detectedExePath);
 
     if (!launchResult.ok) {
@@ -295,8 +302,12 @@ function startAuthPolling() {
         const emailEl = document.getElementById('browser-email');
         if (emailEl) emailEl.textContent = result.email ? `(${result.email})` : '';
         showBrowserSection('browser-success');
-        await delay(1500);
-        nextPage();
+
+        // Close the myaccount.google.com tab — we'll reopen Chrome for consent
+        try { await window.electronAPI.closeAutomationChrome(); } catch {}
+
+        await delay(1000);
+        nextPage(); // advances to Google page, which calls runGooglePage
       }
     } catch { /* keep polling */ }
   }, 2000);
@@ -320,8 +331,18 @@ document.getElementById('btn-retry-browser')?.addEventListener('click', () => {
 
 let googleSetupDone = false;
 
+let selectedGoogleServices = [];
+
+function getSelectedServices() {
+  // Always include gmail, calendar, contacts
+  const always = ['gmail', 'calendar', 'contacts'];
+  const checked = Array.from(document.querySelectorAll('#google-services input[type="checkbox"]:checked'))
+    .map(el => el.value);
+  return [...new Set([...always, ...checked])];
+}
+
 function showGoogleSection(id) {
-  const sections = ['google-start', 'google-waiting', 'google-success', 'google-error', 'google-no-creds'];
+  const sections = ['google-services', 'google-waiting', 'google-success', 'google-error', 'google-no-creds'];
   sections.forEach(s => {
     const el = document.getElementById(s);
     if (el) el.classList.add('hidden');
@@ -341,25 +362,77 @@ async function runGooglePage() {
     return;
   }
 
-  // Creds exist — show the sign-in button
-  showGoogleSection('google-start');
+  // Show the service selection (both auto-flow and manual)
+  showGoogleSection('google-services');
 }
 
 async function handleGoogleAuth() {
   if (!isElectron) return;
 
+  selectedGoogleServices = getSelectedServices();
+
   showGoogleSection('google-waiting');
-  document.getElementById('google-waiting-text').textContent = 'Starting Google sign-in...';
+  const waitText = document.getElementById('google-waiting-text');
+
+  // 5-second countdown before opening consent screen
+  for (let i = 5; i > 0; i--) {
+    if (waitText) waitText.textContent = `Opening Google consent screen in ${i} seconds...`;
+    await delay(1000);
+  }
+  if (waitText) waitText.textContent = 'Opening Google consent screen... (This may take a few seconds)';
+
+  // Update text after consent URL opens
+  setTimeout(() => {
+    if (waitText) waitText.textContent = 'Complete the authorization in your browser...';
+  }, 8000);
 
   try {
-    const result = await window.electronAPI.startGoogleAuth();
+    const result = await window.electronAPI.startGoogleAuth(selectedGoogleServices);
 
-    if (result.ok) {
+    if (result.ok && result.pendingAuth) {
+      // Auth URL opened in browser — now wait for the callback to complete
+      if (waitText) waitText.textContent = 'Complete the authorization in your browser...';
+
+      // Listen for auth completion from the credential file poller
+      const authDone = await new Promise((resolve) => {
+        // Set up listener for the IPC event from main process
+        window.electronAPI.onGoogleAuthComplete((data) => {
+          resolve(data);
+        });
+
+        // Timeout after 3 minutes
+        setTimeout(() => resolve({ ok: false, error: 'Google sign-in timed out.' }), 180000);
+      });
+
+      if (authDone.ok) {
+        googleSetupDone = true;
+        const emailEl = document.getElementById('google-email');
+        if (emailEl && authDone.email) emailEl.textContent = `(${authDone.email})`;
+        showGoogleSection('google-success');
+
+        // Close the automation Chrome after consent is granted
+        try { await window.electronAPI.closeAutomationChrome(); } catch {}
+
+        await delay(1500);
+
+        // Run onboarding personalization scan
+        await runOnboardingScan();
+
+        nextPage();
+      } else {
+        const errorText = document.getElementById('google-error-text');
+        if (errorText) errorText.textContent = authDone.error || 'Google sign-in failed.';
+        showGoogleSection('google-error');
+      }
+    } else if (result.ok) {
+      // Direct success (already had credentials)
       googleSetupDone = true;
       const emailEl = document.getElementById('google-email');
       if (emailEl && result.email) emailEl.textContent = `(${result.email})`;
       showGoogleSection('google-success');
+      try { await window.electronAPI.closeAutomationChrome(); } catch {}
       await delay(1500);
+      await runOnboardingScan();
       nextPage();
     } else {
       const errorText = document.getElementById('google-error-text');
@@ -375,12 +448,84 @@ async function handleGoogleAuth() {
 
 document.getElementById('btn-google-auth')?.addEventListener('click', handleGoogleAuth);
 document.getElementById('btn-retry-google')?.addEventListener('click', () => {
-  showGoogleSection('google-start');
+  showGoogleSection('google-services');
 });
 document.getElementById('btn-skip-google')?.addEventListener('click', () => nextPage());
 document.getElementById('btn-skip-google-waiting')?.addEventListener('click', () => nextPage());
 document.getElementById('btn-skip-google-error')?.addEventListener('click', () => nextPage());
 document.getElementById('btn-skip-google-nocreds')?.addEventListener('click', () => nextPage());
+document.getElementById('btn-skip-onboarding')?.addEventListener('click', () => nextPage());
+
+// ---------------------------------------------------------------------------
+// Onboarding personalization scan
+// ---------------------------------------------------------------------------
+
+let onboardingSkipped = false;
+
+async function runOnboardingScan() {
+  if (!isElectron || selectedGoogleServices.length === 0) return;
+
+  showGoogleSection('google-onboarding');
+  const statusEl = document.getElementById('onboarding-status');
+  const barEl = document.getElementById('onboarding-bar');
+
+  const serviceNames = {
+    gmail: 'Gmail', calendar: 'Calendar', contacts: 'Contacts',
+    drive: 'Drive', docs: 'Docs', sheets: 'Sheets',
+    slides: 'Slides', tasks: 'Tasks', forms: 'Forms', search: 'Search',
+  };
+
+  // Show which services will be scanned
+  const names = selectedGoogleServices.map(s => serviceNames[s] || s).join(', ');
+  if (statusEl) statusEl.textContent = `Scanning ${names}...`;
+
+  // Listen for progress updates
+  let progressPct = 5;
+  if (barEl) barEl.style.width = progressPct + '%';
+
+  const totalServices = selectedGoogleServices.length;
+  let scannedCount = 0;
+
+  window.electronAPI.onOnboardingProgress?.((text) => {
+    if (onboardingSkipped) return;
+    // Try to detect which service is being scanned from Claude's output
+    for (const [key, name] of Object.entries(serviceNames)) {
+      if (text.toLowerCase().includes(key) && selectedGoogleServices.includes(key)) {
+        if (statusEl) statusEl.textContent = `Scanning ${name}...`;
+        scannedCount = Math.max(scannedCount, selectedGoogleServices.indexOf(key) + 1);
+        progressPct = Math.min(90, Math.round((scannedCount / totalServices) * 90));
+        if (barEl) barEl.style.width = progressPct + '%';
+        break;
+      }
+    }
+  });
+
+  // Slowly advance progress bar while waiting
+  const progressTimer = setInterval(() => {
+    if (progressPct < 85) {
+      progressPct += 2;
+      if (barEl) barEl.style.width = progressPct + '%';
+    }
+  }, 3000);
+
+  try {
+    const result = await window.electronAPI.runOnboardingScan(selectedGoogleServices);
+    clearInterval(progressTimer);
+
+    if (result.ok) {
+      if (barEl) barEl.style.width = '100%';
+      if (statusEl) statusEl.textContent = 'Personalization complete!';
+      await delay(1500);
+    } else {
+      if (statusEl) statusEl.textContent = 'Scan finished with some issues — you can re-run later.';
+      await delay(2000);
+    }
+  } catch {
+    clearInterval(progressTimer);
+    if (statusEl) statusEl.textContent = 'Scan encountered an error — skipping.';
+    await delay(1500);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Page 6: WhatsApp Setup (starts backend, shows QR code inline)

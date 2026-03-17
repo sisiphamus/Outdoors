@@ -8,7 +8,7 @@ import { randomBytes } from 'crypto';
 import { enqueueWrite } from './memory-write-queue.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MEMORY_ROOT = join(__dirname, '..', '..', 'outdoorsv1', 'backend', 'bot', 'memory');
+export const MEMORY_ROOT = join(__dirname, '..', '..', 'outdoorsv1', 'backend', 'bot', 'memory');
 
 let inventoryCache = null;
 

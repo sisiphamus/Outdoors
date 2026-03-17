@@ -10,10 +10,8 @@ import { register, unregister, emitActivity } from '../util/process-registry.js'
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-// mcp-bot.json lives in outdoorsv4/ — minimal MCP config for bot subprocesses
-// (only chrome + playwright). The full .mcp.json has all MCPs for interactive use.
+// mcp-bot.json lives in outdoorsv4/ — contains all MCP servers (browser + google_workspace)
 const MCP_CONFIG_PATH = join(__dirname, '..', 'mcp-bot.json');
-const EMPTY_MCP_PATH = join(__dirname, '..', 'empty-mcp.json');
 
 const MODEL_MAP = {
   opus: 'claude-opus-4-20250514',
@@ -55,53 +53,12 @@ export function runModel({
   timeout,
   cwd,
   resumeSessionId,
-  skipMcp,
-  skipVerbose,
-  allowBrowser = true,
-  maxTurns,
 }) {
   return new Promise((resolve, reject) => {
     const cmd = config.claudeCommand || 'claude';
     const args = [...(claudeArgs || config.claudeArgs || ['--print']), '--output-format', 'stream-json', '--verbose'];
 
-    if (!args.includes('--max-turns')) {
-      args.push('--max-turns', String(maxTurns || 25));
-    }
-
-    // MCP config: use --strict-mcp-config to prevent global MCPs (~100K tokens of
-    // tool schemas from notion, google_workspace, context7, etc.) from bloating context.
-    // Only load browser MCP servers (chrome + playwright) when the task needs them.
-    if (!skipMcp && allowBrowser && existsSync(MCP_CONFIG_PATH)) {
-      args.push('--mcp-config', MCP_CONFIG_PATH, '--strict-mcp-config');
-    } else {
-      // No MCP needed — pass an empty config file to block all global MCPs
-      args.push('--mcp-config', EMPTY_MCP_PATH, '--strict-mcp-config');
-    }
-
-    // Explicitly allow tools — MCP tools aren't fully covered by
-    // --dangerously-skip-permissions in --print mode.
-    const BASE_TOOLS = 'Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch';
-    const BROWSER_TOOLS =
-        'mcp__playwright__browser_navigate,mcp__playwright__browser_snapshot,' +
-        'mcp__playwright__browser_click,mcp__playwright__browser_type,' +
-        'mcp__playwright__browser_press_key,mcp__playwright__browser_tabs,' +
-        'mcp__playwright__browser_evaluate,mcp__playwright__browser_close,' +
-        'mcp__playwright__browser_take_screenshot,mcp__playwright__browser_wait_for,' +
-        'mcp__playwright__browser_fill_form,mcp__playwright__browser_select_option,' +
-        'mcp__playwright__browser_hover,mcp__playwright__browser_drag,' +
-        'mcp__playwright__browser_handle_dialog,mcp__playwright__browser_file_upload,' +
-        'mcp__playwright__browser_navigate_back,mcp__playwright__browser_network_requests,' +
-        'mcp__playwright__browser_console_messages,mcp__playwright__browser_resize,' +
-        'mcp__playwright__browser_run_code,mcp__playwright__browser_install,' +
-        'mcp__chrome__navigate_page,mcp__chrome__take_snapshot,' +
-        'mcp__chrome__click,mcp__chrome__type_text,mcp__chrome__fill,' +
-        'mcp__chrome__press_key,mcp__chrome__list_pages,mcp__chrome__select_page,' +
-        'mcp__chrome__evaluate_script,mcp__chrome__take_screenshot';
-    if (!args.includes('--allowedTools')) {
-      args.push('--allowedTools', allowBrowser ? `${BASE_TOOLS},${BROWSER_TOOLS}` : BASE_TOOLS);
-    }
-
-    // Hard-block built-in tools that waste turns
+    // Block Claude Code UI-only tools that don't work in a subprocess context.
     args.push('--disallowedTools',
       'ToolSearch,TodoWrite,TodoRead,TaskCreate,TaskStop,TaskGet,TaskList,TaskOutput,TaskUpdate,' +
       'CronCreate,CronDelete,CronList,EnterPlanMode,ExitPlanMode,' +
@@ -109,10 +66,13 @@ export function runModel({
       'ListMcpResourcesTool,ReadMcpResourceTool'
     );
 
+    // Always inject MCP config — all tools (browser + google_workspace) available
+    if (existsSync(MCP_CONFIG_PATH)) {
+      args.push('--mcp-config', MCP_CONFIG_PATH);
+    }
+
     // For large system prompts, prepend instructions into the user prompt via stdin
     // instead of passing as a CLI arg to avoid Windows ENAMETOOLONG errors.
-    // Windows limits total command line to ~8191 chars. We check the total args
-    // length (not just systemPrompt) to avoid "The command line is too long" errors.
     let stdinPrefix = '';
     if (systemPrompt) {
       const currentArgsLen = args.reduce((sum, a) => sum + a.length + 1, cmd.length);
@@ -133,7 +93,6 @@ export function runModel({
     }
 
     // On Windows, shell: true is needed so spawn resolves .cmd wrappers (e.g. claude.cmd).
-    // Large system prompts are already routed through stdin (stdinPrefix) to avoid arg-length limits.
     const proc = spawn(cmd, args, {
       cwd: cwd || config.workingDirectory || process.cwd(),
       env: cleanEnv(),
@@ -141,9 +100,9 @@ export function runModel({
       shell: process.platform === 'win32',
     });
 
-    proc.stdin.on('error', (e) => { /* pipe closed — ignore */ });
-    proc.stdout.on('error', (e) => { /* pipe closed — ignore */ });
-    proc.stderr.on('error', (e) => { /* pipe closed — ignore */ });
+    proc.stdin.on('error', () => { /* pipe closed — ignore */ });
+    proc.stdout.on('error', () => { /* pipe closed — ignore */ });
+    proc.stderr.on('error', () => { /* pipe closed — ignore */ });
 
     if (processKey) {
       register(processKey, proc, model || 'claude');
@@ -153,27 +112,22 @@ export function runModel({
     let sessionId = null;
     const fullEvents = [];
     let buffer = '';
-    let killedForQuestion = false; // true when we kill the process to pause for AskUserQuestion
-    let killedAfterResult = false; // true after first result — kills process tree to stop background tasks from wasting API calls
+    let response_streamed = false;
+    let killedForQuestion = false;
+    let killedAfterResult = false;
 
-    // Inactivity watchdog — if the subprocess produces no stdout for 5 minutes, kill it.
-    // Resets on each data event, so long-running tasks that stream output are fine.
-    let lastActivity = Date.now();
-    const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
-    const watchdog = setInterval(() => {
-      if (Date.now() - lastActivity > INACTIVITY_TIMEOUT_MS) {
-        clearInterval(watchdog);
-        onProgress?.('stderr', { text: `[model-runner] Killing subprocess — no output for ${INACTIVITY_TIMEOUT_MS / 1000}s` });
-        try {
-          if (process.platform === 'win32') {
-            const taskkill = `${process.env.SystemRoot || 'C:\\Windows'}\\System32\\taskkill.exe`;
-            spawn(taskkill, ['/T', '/F', '/PID', String(proc.pid)], { shell: false, stdio: 'ignore', detached: true });
-          } else {
-            process.kill(-proc.pid, 'SIGTERM');
+    // Enforce timeout if specified
+    let timeoutTimer = null;
+    if (timeout && timeout > 0) {
+      timeoutTimer = setTimeout(() => {
+        if (!killedAfterResult && !killedForQuestion) {
+          onProgress?.('warning', { message: `Model timed out after ${timeout}ms` });
+          try { proc.kill(); } catch (e) {
+            process.stderr.write(`[model-runner] Failed to kill timed-out process: ${e.message}\n`);
           }
-        } catch {}
-      }
-    }, 30_000);
+        }
+      }, timeout);
+    }
 
     // Write prompt to stdin and close
     if (stdinPrefix) {
@@ -185,7 +139,6 @@ export function runModel({
     proc.stdin.end();
 
     proc.stdout.on('data', (chunk) => {
-      lastActivity = Date.now();
       buffer += chunk.toString();
       const lines = buffer.split('\n');
       buffer = lines.pop(); // keep incomplete line
@@ -205,7 +158,6 @@ export function runModel({
 
           case 'assistant':
             if (event.subtype === 'tool_use') {
-              // Legacy format: subtype at top level
               onProgress?.('tool_use', {
                 tool: event.tool_name,
                 input: event.input,
@@ -214,14 +166,12 @@ export function runModel({
 
               if (event.tool_name === 'AskUserQuestion') {
                 fullEvents._questionRequest = event.input;
-                // Kill immediately so Claude doesn't auto-resolve and keep building in --print mode
                 killedForQuestion = true;
                 proc.kill();
               }
             } else if (event.message) {
               const content = Array.isArray(event.message.content) ? event.message.content : [];
 
-              // Extract tool_use blocks from message.content
               for (const block of content) {
                 if (block.type === 'tool_use') {
                   const toolInput = typeof block.input === 'string'
@@ -238,22 +188,31 @@ export function runModel({
                     killedForQuestion = true;
                     proc.kill();
                   }
+                  // ExitPlanMode/EnterPlanMode hang in subprocess context — kill gracefully
+                  if (block.name === 'ExitPlanMode' || block.name === 'EnterPlanMode') {
+                    killedAfterResult = true;
+                    proc.kill();
+                  }
                 }
               }
 
-
+              // Extract text from message
+              const text = extractText(event.message);
+              if (text && !killedAfterResult) {
+                response = text;
+                response_streamed = true;
+                onProgress?.('assistant_text', { text });
+              }
             }
             break;
 
           case 'user':
             if (event.subtype === 'tool_result') {
-              // Legacy format: subtype at top level
               onProgress?.('tool_result', {
                 tool: event.tool_name,
                 output: event.output,
               });
             } else if (event.message) {
-              // Current format: tool_result inside message.content
               const content = Array.isArray(event.message.content) ? event.message.content : [];
               for (const block of content) {
                 if (block.type === 'tool_result') {
@@ -270,8 +229,10 @@ export function runModel({
             const resultText = event.result ? (typeof event.result === 'string' ? event.result : extractText(event.result)) : null;
             if (resultText && !killedAfterResult) {
               response = resultText;
-              // Always emit the final result as assistant_text (even if streamed earlier, this is the canonical output)
-              onProgress?.('assistant_text', { text: resultText });
+              // Only emit if not already streamed (prevents duplicate assistant_text events)
+              if (!response_streamed) {
+                onProgress?.('assistant_text', { text: resultText });
+              }
             }
             if (!killedAfterResult && event.session_id) sessionId = event.session_id;
             if (event.duration_ms !== undefined || event.total_cost_usd !== undefined) {
@@ -284,8 +245,7 @@ export function runModel({
               });
             }
             // After the first result, kill the process tree to prevent background
-            // tasks (e.g. HTTP servers started with run_in_background) from
-            // triggering additional model turns that waste API credits.
+            // tasks from triggering additional model turns that waste API credits.
             if (!killedAfterResult && !killedForQuestion) {
               killedAfterResult = true;
               setTimeout(() => {
@@ -315,7 +275,7 @@ export function runModel({
     });
 
     proc.on('close', (code) => {
-      clearInterval(watchdog);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
       if (processKey) unregister(processKey);
 
       // Process any remaining buffer

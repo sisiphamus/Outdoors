@@ -110,7 +110,7 @@
         </div>
         <div id="browser-launching" class="browser-status hidden">
           <div class="spinner-small"></div>
-          <p class="browser-status-text">Launching Chrome...</p>
+          <p class="browser-status-text" id="browser-launch-text">Opening Chrome in 5 seconds — please log in when it opens.</p>
         </div>
         <div id="browser-signin" class="hidden">
           <p class="signin-instruction">Chrome opened on the Google sign-in page.</p>
@@ -136,26 +136,45 @@
       <div class="page-content">
         <h2>Connect Google</h2>
         <p class="subtitle">
-          Let Outdoors manage Gmail, Calendar, and Drive on your behalf.
-          You'll sign in with Google once — access refreshes automatically.
+          Choose which Google services Outdoors should manage for you.
+          You'll only be asked to grant access for the services you select.
         </p>
-        <div id="google-start">
-          <button class="btn-primary" id="btn-google-auth">Sign in with Google</button>
-          <p class="auth-hint">Opens a browser window for Google sign-in.</p>
+        <div id="google-services">
+          <p class="auth-hint" style="margin-bottom:8px">Gmail, Calendar, and Contacts are always included.</p>
+          <p class="auth-hint" style="margin-bottom:12px">Select any additional services you'd like Outdoors to manage:</p>
+          <div class="service-list">
+            <label class="service-item"><input type="checkbox" value="drive" checked><span class="service-name">Drive</span><span class="service-desc">Access and manage files</span></label>
+            <label class="service-item"><input type="checkbox" value="docs"><span class="service-name">Docs</span><span class="service-desc">Read and edit documents</span></label>
+            <label class="service-item"><input type="checkbox" value="sheets"><span class="service-name">Sheets</span><span class="service-desc">Read and edit spreadsheets</span></label>
+            <label class="service-item"><input type="checkbox" value="slides"><span class="service-name">Slides</span><span class="service-desc">Read and edit presentations</span></label>
+            <label class="service-item"><input type="checkbox" value="tasks"><span class="service-name">Tasks</span><span class="service-desc">Manage your task lists</span></label>
+            <label class="service-item"><input type="checkbox" value="forms"><span class="service-name">Forms</span><span class="service-desc">Create and read forms</span></label>
+            <label class="service-item"><input type="checkbox" value="search"><span class="service-name">Search</span><span class="service-desc">Custom search engine</span></label>
+          </div>
+          <button class="btn-primary" id="btn-google-auth">Continue</button>
           <button class="btn-skip" id="btn-skip-google">Skip for now</button>
         </div>
         <div id="google-waiting" class="browser-status hidden">
           <div class="spinner-small"></div>
-          <p class="browser-status-text" id="google-waiting-text">Opening Google sign-in...</p>
+          <p class="browser-status-text" id="google-waiting-text">Opening Google consent screen... (This may take a few seconds)</p>
           <button class="btn-skip" id="btn-skip-google-waiting">Skip for now</button>
         </div>
         <div id="google-success" class="browser-status hidden">
           <div class="complete-mark small-mark"></div>
           <p class="browser-status-text">Google account connected <span id="google-email"></span></p>
         </div>
+        <div id="google-onboarding" class="hidden">
+          <div class="spinner-small"></div>
+          <p class="onboarding-title">Personalizing Outdoors...</p>
+          <p class="browser-status-text" id="onboarding-status">Starting scan...</p>
+          <div class="onboarding-progress">
+            <div class="onboarding-bar" id="onboarding-bar"></div>
+          </div>
+          <button class="btn-primary" id="btn-skip-onboarding">Next - Will continue in the background</button>
+        </div>
         <div id="google-error" class="hidden">
           <p class="error-text" id="google-error-text"></p>
-          <button class="btn-skip" id="btn-retry-google">Try again</button>
+          <button class="btn-skip" id="btn-retry-google">Try aganowin</button>
           <button class="btn-skip" id="btn-skip-google-error">Skip for now</button>
         </div>
         <div id="google-no-creds" class="hidden">

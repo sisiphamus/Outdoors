@@ -64,7 +64,10 @@ Each service has a priority ladder. Start at the top. If a method fails **twice 
 **NEVER ask the user for API keys, tokens, or OAuth setup.** The user is away from their computer. Use whatever auth is already available (browser cookies, tokens in memory files, MCP configs).`;
 }
 
-export function buildPrompt(prompt, outputSpec, memoryContents, { shortTermDir, needsBrowser, browserToolset } = {}) {
+export function buildPrompt(prompt, outputSpec, memoryContents) {
+  // Detect browser toolset from memory contents
+  const browserPrefs = memoryContents.find(m => m.name === 'browser-preferences');
+  const browserToolset = browserPrefs?.content?.includes('Google Chrome') ? 'chrome' : 'playwright';
   const skills = memoryContents.filter(m => m.category === 'skill');
   const knowledge = memoryContents.filter(m => m.category !== 'skill');
 
@@ -115,7 +118,7 @@ When your task produces files (code, reports, images, data, etc.), write them to
 - Create a descriptive subfolder per task, e.g. 'outputs/pdf-report-2024/', 'outputs/scrape-results/'
 - Always tell the user the full path of what you wrote
 
-${needsBrowser ? getBrowserRules(browserToolset) : ''}
+${getBrowserRules(browserToolset)}
 
 ## Instructions
 1. Follow the output specification precisely — produce the exact output type and format described

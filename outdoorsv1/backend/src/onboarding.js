@@ -55,7 +55,9 @@ Fill in what you learned. Use "Not shared" for anything they skipped. Leave out 
  * Returns true if onboarding hasn't been completed yet (no user-profile.md).
  */
 export function isOnboardingNeeded() {
-  return !existsSync(PROFILE_PATH);
+  // Onboarding questionnaire disabled — user profile is built automatically
+  // by the Google Workspace onboarding scan during setup.
+  return false;
 }
 
 /**
