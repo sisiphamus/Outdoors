@@ -274,6 +274,9 @@ async function createAndLaunch(selectedProfile) {
     }
     if (launchText) launchText.textContent = 'Opening Chrome...';
 
+    // Capture timestamp before launch — used to detect NEW sign-ins vs copied profile data
+    window._prelaunchTimestamp = Date.now();
+
     const launchResult = await window.electronAPI.launchAutomationChrome(detectedExePath);
 
     if (!launchResult.ok) {
@@ -294,7 +297,7 @@ function startAuthPolling() {
 
   authPollTimer = setInterval(async () => {
     try {
-      const result = await window.electronAPI.checkBrowserAuth();
+      const result = await window.electronAPI.checkBrowserAuth(window._prelaunchTimestamp || 0);
       if (result.signedIn) {
         clearInterval(authPollTimer);
         authPollTimer = null;

@@ -647,52 +647,37 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
   });
 
   // Step 4: Check if user signed into AutomationProfile Chrome
-  // Uses CDP to check page URLs. Sign-in is complete when the first tab
-  // (which we launched on accounts.google.com) navigates to myaccount.google.com
-  // or any non-sign-in page. This correctly waits for 2FA to complete.
-  ipcMain.handle('check-browser-auth', async () => {
+  // Reads Chrome's Preferences file directly — no URL-based detection needed.
+  // Works with any SSO provider, 2FA flow, or redirect chain.
+  // The renderer passes a prelaunchTimestamp (taken before Chrome launched).
+  // Sign-in is complete when signin.web_signin_accounts_start_time_dict
+  // has a timestamp newer than prelaunchTimestamp.
+  ipcMain.handle('check-browser-auth', async (_event, prelaunchTimestamp) => {
     try {
-      const http = require('http');
-      const pages = await new Promise((resolve) => {
-        http.get('http://localhost:9222/json/list', { timeout: 3000 }, (res) => {
-          let data = '';
-          res.on('data', (d) => { data += d; });
-          res.on('end', () => {
-            try { resolve(JSON.parse(data)); } catch { resolve([]); }
-          });
-        }).on('error', () => resolve([]));
-      });
+      const automationDir = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile');
+      const prefsPath = path.join(automationDir, 'Default', 'Preferences');
+      if (!fs.existsSync(prefsPath)) return { signedIn: false, email: null };
 
-      if (pages.length === 0) return { signedIn: false, email: null };
+      const data = JSON.parse(fs.readFileSync(prefsPath, 'utf-8'));
+      const accounts = (data?.account_info || []).filter(a => a.email);
+      const signinTimes = data?.signin?.web_signin_accounts_start_time_dict || {};
 
-      // Sign-in is complete when any page lands on myaccount.google.com
-      // or when NO pages are on accounts.google.com anymore (user completed flow)
-      // Sign-in is complete ONLY when a page lands on one of these known post-login URLs
-      const signedInPage = pages.find(p => {
-        const url = (p.url || '').toLowerCase();
-        return url.includes('myaccount.google.com') ||
-               url.includes('google.com/webhp') ||
-               url.includes('mail.google.com') ||
-               url.includes('drive.google.com') ||
-               url.includes('calendar.google.com') ||
-               url.includes('accounts.google.com/signout') ||
-               url.includes('accounts.google.com/b/') ||
-               url.startsWith('chrome://newtab') ||
-               url.startsWith('chrome://new-tab-page');
-      });
+      if (accounts.length === 0) return { signedIn: false, email: null };
 
-      if (signedInPage) {
-        // Read email from Preferences
-        const automationDir = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile');
-        const prefsPath = path.join(automationDir, 'Default', 'Preferences');
-        let email = null;
-        try {
-          const data = JSON.parse(fs.readFileSync(prefsPath, 'utf-8'));
-          const accounts = data?.account_info || [];
-          const account = accounts.find(a => a.email) || accounts[0];
-          email = account?.email || null;
-        } catch {}
-        return { signedIn: true, email };
+      // Check if any account signed in AFTER prelaunchTimestamp
+      // Chrome stores times as Windows FILETIME strings (100ns since 1601-01-01)
+      // Convert prelaunchTimestamp (JS ms since 1970) to Chrome FILETIME
+      const jsEpochToFiletime = 11644473600000; // ms between 1601 and 1970
+      const prelaunchFiletime = prelaunchTimestamp
+        ? String((prelaunchTimestamp + jsEpochToFiletime) * 10000)
+        : '0';
+
+      for (const [gaiaId, timeStr] of Object.entries(signinTimes)) {
+        if (BigInt(timeStr) > BigInt(prelaunchFiletime)) {
+          // This account signed in after we launched Chrome
+          const account = accounts.find(a => a.gaia === gaiaId || a.account_id === gaiaId);
+          return { signedIn: true, email: account?.email || accounts[0]?.email || null };
+        }
       }
 
       return { signedIn: false, email: null };

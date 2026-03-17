@@ -21,7 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   detectBrowser: () => ipcRenderer.invoke('detect-browser'),
   createAutomationProfile: (data) => ipcRenderer.invoke('create-automation-profile', data),
   launchAutomationChrome: (exePath) => ipcRenderer.invoke('launch-automation-chrome', exePath),
-  checkBrowserAuth: () => ipcRenderer.invoke('check-browser-auth'),
+  checkBrowserAuth: (prelaunchTimestamp) => ipcRenderer.invoke('check-browser-auth', prelaunchTimestamp),
   closeAutomationChrome: () => ipcRenderer.invoke('close-automation-chrome'),
 
   // Google Account Access
