@@ -295,22 +295,36 @@ async function createAndLaunch(selectedProfile) {
 function startAuthPolling() {
   if (authPollTimer) clearInterval(authPollTimer);
 
+  // Two-phase detection:
+  // Phase 1: Wait for page to LEAVE mail.google.com (redirected to sign-in)
+  // Phase 2: Wait for page to come BACK to mail.google.com/mail (sign-in complete)
+  let leftGmail = false;
+
   authPollTimer = setInterval(async () => {
     try {
       const result = await window.electronAPI.checkBrowserAuth();
-      if (result.signedIn) {
-        clearInterval(authPollTimer);
-        authPollTimer = null;
-        browserSetupDone = true;
-        const emailEl = document.getElementById('browser-email');
-        if (emailEl) emailEl.textContent = result.email ? `(${result.email})` : '';
-        showBrowserSection('browser-success');
 
-        // Close the myaccount.google.com tab — we'll reopen Chrome for consent
-        try { await window.electronAPI.closeAutomationChrome(); } catch {}
+      if (!leftGmail) {
+        // Phase 1: waiting for redirect away from Gmail
+        if (!result.signedIn) {
+          leftGmail = true;
+        }
+      } else {
+        // Phase 2: waiting for return to Gmail after sign-in
+        if (result.signedIn) {
+          clearInterval(authPollTimer);
+          authPollTimer = null;
+          browserSetupDone = true;
+          const emailEl = document.getElementById('browser-email');
+          if (emailEl) emailEl.textContent = result.email ? `(${result.email})` : '';
+          showBrowserSection('browser-success');
 
-        await delay(1000);
-        nextPage(); // advances to Google page, which calls runGooglePage
+          // Close Gmail tab — we'll reopen Chrome for consent
+          try { await window.electronAPI.closeAutomationChrome(); } catch {}
+
+          await delay(1000);
+          nextPage();
+        }
       }
     } catch { /* keep polling */ }
   }, 2000);
