@@ -92,7 +92,11 @@ async function runInstallPage() {
   setInstallItemState('install-node-deps', nodeDeps.ok ? 'done' : 'error');
 
   if (!nodeDeps.ok) {
-    setInstallStatus('Node dependency install failed. Please check your internet connection and restart.');
+    if (nodeDeps.output === 'npm_not_found' || nodeDeps.error?.includes('Node.js')) {
+      setInstallStatus('Node.js is not installed. Please install it from nodejs.org and restart Outdoors.');
+    } else {
+      setInstallStatus('Node dependency install failed: ' + (nodeDeps.error || nodeDeps.output || 'unknown error'));
+    }
     return;
   }
 

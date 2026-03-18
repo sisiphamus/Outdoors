@@ -280,6 +280,14 @@ function setupIPC() {
     if (!fs.existsSync(pkgJson)) {
       return { ok: false, output: 'package.json not found at ' + pkgJson };
     }
+
+    // Check if npm is available
+    try {
+      execSync('npm --version', { encoding: 'utf-8', shell: true, timeout: 10000, windowsHide: true });
+    } catch {
+      return { ok: false, output: 'npm_not_found', error: 'Node.js is not installed. Please install Node.js from https://nodejs.org and restart Outdoors.' };
+    }
+
     return new Promise((resolve) => {
       const npm = spawn('npm', ['install'], {
         cwd: BACKEND_DIR,
@@ -291,6 +299,9 @@ function setupIPC() {
       npm.stderr.on('data', (d) => { output += d.toString(); });
       npm.on('close', (code) => {
         resolve({ ok: code === 0, output });
+      });
+      npm.on('error', (err) => {
+        resolve({ ok: false, output: err.message, error: 'Failed to run npm: ' + err.message });
       });
     });
   });
