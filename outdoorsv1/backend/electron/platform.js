@@ -67,15 +67,34 @@ function launchChrome(exePath, chromeArgs) {
       execFile('powershell.exe', ['-NoProfile', '-Command', script], { timeout: 10000, windowsHide: true }, (err) => {
         if (err) reject(err); else resolve();
       });
+    } else if (IS_MAC) {
+      // macOS — use 'open -a' for .app bundles, pass Chrome flags via --args
+      // exePath is like /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+      // Extract the .app bundle path
+      const appMatch = exePath.match(/^(.+\.app)\//);
+      if (appMatch) {
+        const proc = spawn('open', ['-a', appMatch[1], '--args', ...chromeArgs], {
+          detached: true,
+          stdio: 'ignore',
+        });
+        proc.on('error', reject);
+        proc.unref();
+        setTimeout(resolve, 1500);
+      } else {
+        // Fallback: spawn directly
+        const proc = spawn(exePath, chromeArgs, { detached: true, stdio: 'ignore' });
+        proc.on('error', reject);
+        proc.unref();
+        setTimeout(resolve, 1000);
+      }
     } else {
-      // macOS/Linux — spawn directly, detached
+      // Linux — spawn directly, detached
       const proc = spawn(exePath, chromeArgs, {
         detached: true,
         stdio: 'ignore',
       });
       proc.on('error', reject);
       proc.unref();
-      // Give Chrome a moment to start
       setTimeout(resolve, 1000);
     }
   });

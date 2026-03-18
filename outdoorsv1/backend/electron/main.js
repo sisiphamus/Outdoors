@@ -1204,9 +1204,11 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
                   authUrl,
                 ];
                 platform.launchChrome(chromeExe, chromeArgs).catch(err => {
-                  console.error('[google-auth] Chrome launch error:', err.message);
+                  console.error('[google-auth] Chrome launch error, falling back to default browser:', err.message);
+                  shell.openExternal(authUrl);
                 });
               } else {
+                console.log('[google-auth] Chrome not found, opening in default browser');
                 shell.openExternal(authUrl);
               }
 
