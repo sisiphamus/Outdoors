@@ -1202,6 +1202,74 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
     return { ok: true };
   });
 
+  // ── Output Files (bot/outputs) ────────────────────────────────────────────
+
+  ipcMain.handle('list-output-files', async () => {
+    const outputDir = path.join(BACKEND_DIR, 'bot', 'outputs');
+    const results = [];
+    function walk(dir, rel) {
+      if (!fs.existsSync(dir)) return;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        const relPath = rel ? rel + '/' + entry.name : entry.name;
+        if (entry.isDirectory()) {
+          walk(fullPath, relPath);
+        } else {
+          try {
+            const stat = fs.statSync(fullPath);
+            results.push({ name: entry.name, relativePath: relPath, size: stat.size, modified: stat.mtimeMs });
+          } catch {
+            results.push({ name: entry.name, relativePath: relPath, size: 0, modified: 0 });
+          }
+        }
+      }
+    }
+    walk(outputDir, '');
+    return results;
+  });
+
+  ipcMain.handle('read-output-file', async (_event, relativePath) => {
+    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
+    return fs.readFileSync(path.join(BACKEND_DIR, 'bot', 'outputs', relativePath), 'utf-8');
+  });
+
+  ipcMain.handle('save-output-file', async (_event, relativePath, content) => {
+    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
+    const filePath = path.join(BACKEND_DIR, 'bot', 'outputs', relativePath);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, content, 'utf-8');
+    return { ok: true };
+  });
+
+  ipcMain.handle('delete-output-file', async (_event, relativePath) => {
+    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
+    const filePath = path.join(BACKEND_DIR, 'bot', 'outputs', relativePath);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      // Clean up empty parent directories
+      let dir = path.dirname(filePath);
+      const outputRoot = path.join(BACKEND_DIR, 'bot', 'outputs');
+      while (dir !== outputRoot && dir.startsWith(outputRoot)) {
+        try {
+          const entries = fs.readdirSync(dir);
+          if (entries.length === 0) { fs.rmdirSync(dir); dir = path.dirname(dir); }
+          else break;
+        } catch { break; }
+      }
+    }
+    return { ok: true };
+  });
+
+  ipcMain.handle('open-output-file', async (_event, relativePath) => {
+    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
+    const filePath = path.join(BACKEND_DIR, 'bot', 'outputs', relativePath);
+    if (fs.existsSync(filePath)) {
+      await shell.openPath(filePath);
+    }
+    return { ok: true };
+  });
+
   // ── Onboarding Scan (post-consent personalization) ───────────────────────
 
   ipcMain.handle('run-onboarding-scan', async (_event, services) => {
@@ -1320,13 +1388,22 @@ For each service:
 4. Fill in every field in the template with real observations — be specific, not generic
 5. Always create bot/memory/knowledge/user-profile.md as a synthesis of all services
 
+CRITICAL — WRITING VOICE:
+The writing-voice.md file is the MOST IMPORTANT output of this scan. It enables the assistant to write like the user instead of sounding like a robot. To create it:
+- Read at least 20 recent SENT emails (use search_gmail_messages with in:sent, then get_gmail_messages_content_batch)
+- Include emails to different types of recipients (professional, personal, casual)
+- Extract ACTUAL phrases and sentence patterns the user uses — not generic descriptions
+- Focus on what makes this person's writing DISTINCTIVE from generic email
+- Include 5-8 real anonymized example phrasings (replace names with [Name], topics with [Topic])
+- Note how their voice shifts between contexts (professional vs personal vs quick reply)
+
 RULES:
 - Only READ, never modify the user's data
 - Write PATTERNS and INSIGHTS, not raw data (no full email bodies, no phone numbers, no passwords)
 - Be specific: "uses casual tone, typically 2-3 short sentences, signs off with 'cheers'" beats "mixed tone"
 - Replace [YYYY-MM-DD] with ${today}
 - If a service has no data or fails, write "No data available" in that file and move on
-- Keep each file under 60 lines
+- Keep each file under 60 lines (except writing-voice.md which can be up to 80 lines)
 
 Start by reading the skill file, then scan each service systematically.`;
 

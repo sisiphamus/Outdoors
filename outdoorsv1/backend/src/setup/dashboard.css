@@ -544,3 +544,33 @@ html, body {
   transition: background 0.15s;
 }
 .btn-primary:hover { background: var(--accent-hover); }
+
+/* ── Output Actions ──────────────────────────────────────── */
+
+.output-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.btn-delete {
+  background: var(--error);
+  color: var(--white);
+  border: none;
+  padding: 4px 14px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-delete:hover { background: #B5553F; }
+
+.btn-open {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  padding: 4px 14px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-open:hover { background: var(--border); color: var(--text); }

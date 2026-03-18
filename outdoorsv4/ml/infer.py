@@ -71,7 +71,7 @@ DOMAIN_KEYWORDS = {
 }
 
 # Phase B: tier definitions
-ALWAYS_INCLUDE = {'browser-preferences', 'user-profile'}
+ALWAYS_INCLUDE = {'browser-preferences', 'user-profile', 'writing-voice'}
 SITE_TRIGGERS = {
     'gmail': ['gmail', 'email', 'mail', 'inbox', 'send email'],
     'canvas': ['canvas', 'assignment', 'coursework', 'class', 'course', 'homework', 'hw'],

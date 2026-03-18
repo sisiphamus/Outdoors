@@ -115,6 +115,7 @@ ${skills.length ? `## SKILLS — Follow These As Your Process\nThe following ski
 
 ${knowledge.length ? `## Context & Knowledge\n${knowledgeSections}` : ''}
 
+${memoryContents.find(m => m.name === 'writing-voice') ? `## Writing Voice\nWhen writing emails, messages, or any text on the user's behalf, you MUST match their natural writing style as described in the writing-voice knowledge file above. Do NOT write in a generic assistant tone. Write as the user would write — use their greeting patterns, sign-offs, sentence length, vocabulary, and characteristic phrases. If the writing-voice file says they use casual tone with short sentences, write casual short sentences. If they use em-dashes and exclamation marks, use those. Mirror their voice precisely.\n` : ''}
 ## Outputs Folder
 When your task produces files (code, reports, images, data, etc.), write them to a dedicated subfolder:
 - Base path: '${config.outputDirectory}/'

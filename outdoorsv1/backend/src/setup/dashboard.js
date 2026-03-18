@@ -350,6 +350,7 @@ function setupSettings() {
       document.querySelectorAll('.settings-content').forEach(c => c.classList.add('hidden'));
       tab.classList.add('active');
       document.getElementById('tab-' + tab.dataset.tab).classList.remove('hidden');
+      if (tab.dataset.tab === 'outputs') loadOutputsTree();
     });
   });
   document.getElementById('btn-save-config').addEventListener('click', saveConfig);
@@ -388,7 +389,8 @@ async function loadMemoryTree() {
   }
 }
 
-function buildTree(container, items) {
+function buildTree(container, items, onFileClick) {
+  const clickHandler = onFileClick || openMemoryFile;
   const folders = {};
   const topFiles = [];
   items.forEach(item => {
@@ -408,11 +410,11 @@ function buildTree(container, items) {
     if (ib >= 0) return 1;
     return a.localeCompare(b);
   });
-  for (const f of sorted) container.appendChild(buildFolder(f, folders[f], 0));
-  topFiles.forEach(item => container.appendChild(makeFileBtn(item, 14)));
+  for (const f of sorted) container.appendChild(buildFolder(f, folders[f], 0, clickHandler));
+  topFiles.forEach(item => container.appendChild(makeFileBtn(item, 14, clickHandler)));
 }
 
-function buildFolder(name, items, depth) {
+function buildFolder(name, items, depth, clickHandler) {
   const el = document.createElement('div');
   el.className = 'memory-folder';
   const label = document.createElement('div');
@@ -434,17 +436,17 @@ function buildFolder(name, items, depth) {
       directFiles.push(item);
     }
   });
-  directFiles.forEach(item => children.appendChild(makeFileBtn(item, 28 + depth * 14)));
+  directFiles.forEach(item => children.appendChild(makeFileBtn(item, 28 + depth * 14, clickHandler)));
   for (const sub of Object.keys(subFolders).sort()) {
     const subItems = subFolders[sub];
     if (subItems.length === 1) {
-      const btn = makeFileBtn(subItems[0], 28 + depth * 14);
+      const btn = makeFileBtn(subItems[0], 28 + depth * 14, clickHandler);
       btn.textContent = sub + '/' + subItems[0].name;
       children.appendChild(btn);
     } else {
       children.appendChild(buildFolder(sub, subItems.map(item => ({
         ...item, relativePath: item.relativePath.split('/').slice(1).join('/')
-      })), depth + 1));
+      })), depth + 1, clickHandler));
     }
   }
   el.appendChild(label);
@@ -452,13 +454,14 @@ function buildFolder(name, items, depth) {
   return el;
 }
 
-function makeFileBtn(item, paddingLeft) {
+function makeFileBtn(item, paddingLeft, clickHandler) {
+  const handler = clickHandler || openMemoryFile;
   const btn = document.createElement('button');
   btn.className = 'memory-file';
   btn.style.paddingLeft = paddingLeft + 'px';
   btn.textContent = item.name;
   btn.title = item.relativePath;
-  btn.addEventListener('click', () => openMemoryFile(item.relativePath, btn));
+  btn.addEventListener('click', () => handler(item.relativePath, btn));
   return btn;
 }
 
@@ -524,6 +527,119 @@ async function saveConfig() {
     alert('Failed to save: ' + (err.message || 'Unknown error'));
   }
 }
+
+// ---------------------------------------------------------------------------
+// Outputs Tree
+// ---------------------------------------------------------------------------
+
+const TEXT_EXTENSIONS = new Set([
+  '.md', '.txt', '.json', '.js', '.ts', '.html', '.css', '.csv',
+  '.xml', '.yaml', '.yml', '.py', '.sh', '.bat', '.log', '.env',
+]);
+
+let currentOutputFile = null;
+let outputsDirty = false;
+
+async function loadOutputsTree() {
+  const tree = document.getElementById('outputs-tree');
+  tree.innerHTML = '<div style="padding:14px;color:#9A8B78;font-size:13px">Loading...</div>';
+  try {
+    const files = await window.electronAPI.listOutputFiles();
+    tree.innerHTML = '';
+    if (files.length === 0) {
+      tree.innerHTML = '<div style="padding:14px;color:#9A8B78;font-size:13px">No output files yet.</div>';
+      return;
+    }
+    buildTree(tree, files, openOutputFile);
+  } catch {
+    tree.innerHTML = '<div style="padding:14px;color:#9E4A3A;font-size:13px">Failed to load files</div>';
+  }
+}
+
+function isTextFile(name) {
+  const dot = name.lastIndexOf('.');
+  if (dot < 0) return false;
+  return TEXT_EXTENSIONS.has(name.slice(dot).toLowerCase());
+}
+
+async function openOutputFile(relativePath, btnEl) {
+  if (outputsDirty && !confirm('Discard unsaved changes?')) return;
+  document.querySelectorAll('#outputs-tree .memory-file').forEach(f => f.classList.remove('active'));
+  if (btnEl) btnEl.classList.add('active');
+
+  const textarea = document.getElementById('outputs-content');
+  const filename = document.getElementById('outputs-filename');
+  const saveBtn = document.getElementById('btn-save-output');
+  const deleteBtn = document.getElementById('btn-delete-output');
+  const openBtn = document.getElementById('btn-open-output');
+
+  filename.textContent = relativePath;
+  currentOutputFile = relativePath;
+  outputsDirty = false;
+  saveBtn.classList.add('hidden');
+  deleteBtn.classList.remove('hidden');
+  openBtn.classList.remove('hidden');
+
+  if (isTextFile(relativePath)) {
+    textarea.value = 'Loading...';
+    textarea.disabled = true;
+    try {
+      textarea.value = await window.electronAPI.readOutputFile(relativePath);
+      textarea.disabled = false;
+    } catch (err) {
+      textarea.value = 'Error: ' + (err.message || 'Could not load file');
+    }
+  } else {
+    textarea.value = 'Binary file — use "Open in App" to view.';
+    textarea.disabled = true;
+  }
+}
+
+document.getElementById('outputs-content')?.addEventListener('input', () => {
+  outputsDirty = true;
+  document.getElementById('btn-save-output').classList.remove('hidden');
+});
+
+document.getElementById('btn-save-output')?.addEventListener('click', async () => {
+  if (!currentOutputFile) return;
+  const saveBtn = document.getElementById('btn-save-output');
+  try {
+    await window.electronAPI.saveOutputFile(currentOutputFile, document.getElementById('outputs-content').value);
+    saveBtn.textContent = 'Saved!';
+    outputsDirty = false;
+    setTimeout(() => { saveBtn.textContent = 'Save'; saveBtn.classList.add('hidden'); }, 1500);
+  } catch (err) {
+    alert('Failed to save: ' + (err.message || 'Unknown error'));
+  }
+});
+
+document.getElementById('btn-delete-output')?.addEventListener('click', async () => {
+  if (!currentOutputFile) return;
+  if (!confirm('Delete ' + currentOutputFile + '?')) return;
+  try {
+    await window.electronAPI.deleteOutputFile(currentOutputFile);
+    currentOutputFile = null;
+    outputsDirty = false;
+    document.getElementById('outputs-filename').textContent = 'Select a file';
+    document.getElementById('outputs-content').value = '';
+    document.getElementById('outputs-content').disabled = true;
+    document.getElementById('btn-save-output').classList.add('hidden');
+    document.getElementById('btn-delete-output').classList.add('hidden');
+    document.getElementById('btn-open-output').classList.add('hidden');
+    await loadOutputsTree();
+  } catch (err) {
+    alert('Failed to delete: ' + (err.message || 'Unknown error'));
+  }
+});
+
+document.getElementById('btn-open-output')?.addEventListener('click', async () => {
+  if (!currentOutputFile) return;
+  try {
+    await window.electronAPI.openOutputFile(currentOutputFile);
+  } catch (err) {
+    alert('Failed to open: ' + (err.message || 'Unknown error'));
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Helpers

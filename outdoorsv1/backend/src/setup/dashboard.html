@@ -65,6 +65,7 @@
         <div class="settings-tabs">
           <button class="settings-tab active" data-tab="memory">Memory</button>
           <button class="settings-tab" data-tab="general">General</button>
+          <button class="settings-tab" data-tab="outputs">Outputs</button>
         </div>
 
         <!-- Memory tab -->
@@ -97,6 +98,24 @@
               <input type="number" id="cfg-timeout" value="300" min="30" max="3600">
             </div>
             <button class="btn-primary" id="btn-save-config">Save Settings</button>
+          </div>
+        </div>
+
+        <!-- Outputs tab -->
+        <div class="settings-content hidden" id="tab-outputs">
+          <div class="memory-editor">
+            <div class="memory-sidebar" id="outputs-tree"></div>
+            <div class="memory-edit-area">
+              <div class="memory-edit-header">
+                <span class="memory-filename" id="outputs-filename">Select a file</span>
+                <div class="output-actions">
+                  <button class="btn-save hidden" id="btn-save-output">Save</button>
+                  <button class="btn-delete hidden" id="btn-delete-output">Delete</button>
+                  <button class="btn-open hidden" id="btn-open-output">Open in App</button>
+                </div>
+              </div>
+              <textarea class="memory-textarea" id="outputs-content" placeholder="Select a file to view..." disabled></textarea>
+            </div>
           </div>
         </div>
       </div>

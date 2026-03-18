@@ -212,6 +212,56 @@ Updated: [YYYY-MM-DD]
 
 ---
 
+### `writing-voice.md`
+Always created when Gmail is scanned. This is the MOST IMPORTANT onboarding file — it enables the assistant to write like the user. Scan 20+ recent SENT emails, group by recipient type, and extract what makes this user's writing DISTINCTIVE.
+
+Scan: `search_gmail_messages` for 20-30 recent SENT emails across different recipients, read with `get_gmail_messages_content_batch`. Focus on variety — professional emails, casual emails, quick replies, longer messages.
+
+```markdown
+# Writing Voice
+
+## Tone & Register
+- **Default tone**: [e.g., warm but direct, casually professional]
+- **Formality spectrum**: [who gets formal treatment vs casual — with specific examples]
+- **Humor**: [uses humor? what kind? frequency?]
+- **Emotional range**: [reserved / expressive / varies by context]
+
+## Sentence Patterns
+- **Average sentence length**: [short punchy / medium / long complex]
+- **Sentence starters**: [commonly used openers, e.g., "Just wanted to...", "Hey — ", "Quick question:"]
+- **Connectors**: [how they link ideas — dashes, ellipses, "anyway", "also", etc.]
+- **Characteristic phrases**: [5-10 actual phrases the user frequently uses]
+
+## Email Structure
+- **Opening pattern**: [exact greeting style with examples]
+- **Body pattern**: [how they structure the main content]
+- **Closing pattern**: [exact sign-off with examples]
+- **Signature**: [what it contains]
+
+## Vocabulary & Quirks
+- **Preferred words**: [words they use often — e.g., "honestly", "super", "solid"]
+- **Avoided words**: [formal words they never use, or casual ones they avoid]
+- **Abbreviations**: [u/you, gonna/going to, etc.]
+- **Punctuation style**: [exclamation marks? ellipses? em-dashes? oxford comma?]
+- **Emoji/emoticon usage**: [frequency and which ones]
+- **Capitalization**: [proper / all lowercase / mixed]
+
+## Voice by Context
+- **Professional emails**: [how tone shifts]
+- **Personal emails**: [how tone shifts]
+- **Quick replies**: [style for brief responses]
+- **Longer messages**: [style for detailed messages]
+
+## Example Phrasings (anonymized)
+- [5-8 characteristic sentence patterns, with names/details replaced by [Name], [Topic], etc.]
+- e.g., "Hey [Name] — just saw this, looks good to me. Only thing I'd flag is..."
+- e.g., "Thanks for sending this over! I'll take a look tonight and get back to you."
+
+Updated: [YYYY-MM-DD]
+```
+
+---
+
 ### `slides-profile.md` (if selected)
 ### `forms-profile.md` (if selected)
 

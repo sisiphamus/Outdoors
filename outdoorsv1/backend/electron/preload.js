@@ -49,4 +49,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveMemoryFile: (relativePath, content) => ipcRenderer.invoke('save-memory-file', relativePath, content),
   getConfig: () => ipcRenderer.invoke('get-full-config'),
   saveConfig: (data) => ipcRenderer.invoke('save-full-config', data),
+
+  // Outputs
+  listOutputFiles: () => ipcRenderer.invoke('list-output-files'),
+  readOutputFile: (relativePath) => ipcRenderer.invoke('read-output-file', relativePath),
+  saveOutputFile: (relativePath, content) => ipcRenderer.invoke('save-output-file', relativePath, content),
+  deleteOutputFile: (relativePath) => ipcRenderer.invoke('delete-output-file', relativePath),
+  openOutputFile: (relativePath) => ipcRenderer.invoke('open-output-file', relativePath),
 });

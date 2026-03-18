@@ -14,7 +14,7 @@ const defaults = {
   allowedNumbers: [],
   allowAllNumbers: false,
   claudeCommand: 'claude',
-  claudeArgs: ['--print', '--max-turns', '25'],
+  claudeArgs: ['--print', '--max-turns', '40'],
   maxResponseLength: 4000,
   messageTimeout: 900000,
   rateLimitPerMinute: 10,
