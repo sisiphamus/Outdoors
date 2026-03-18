@@ -1761,6 +1761,7 @@ Start by reading the skill file, then scan each service systematically.`;
   // ── Filesystem Index (local scan, no Claude) ──────────────────────────────
 
   async function runFilesystemIndex() {
+    try {
     const home = process.env.HOME || process.env.USERPROFILE || '';
       const IS_WIN = process.platform === 'win32';
       const IS_MAC = process.platform === 'darwin';
