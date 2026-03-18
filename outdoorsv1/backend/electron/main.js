@@ -273,6 +273,113 @@ function createSetupWindow() {
 // ── IPC Handlers ────────────────────────────────────────────────────────────
 
 function setupIPC() {
+
+  // ── Auto-install system dependencies ────────────────────────────────────────
+  // Checks for Node.js, Git, Python and installs any missing ones via winget
+
+  function isCommandAvailable(cmd) {
+    try {
+      execSync(`${cmd} --version`, { encoding: 'utf-8', shell: true, timeout: 10000, windowsHide: true, stdio: 'pipe' });
+      return true;
+    } catch { return false; }
+  }
+
+  function wingetInstall(packageId, name) {
+    return new Promise((resolve) => {
+      console.log(`[deps] Installing ${name} via winget...`);
+      const proc = spawn('winget', ['install', '--id', packageId, '-e', '--accept-source-agreements', '--accept-package-agreements', '--silent'], {
+        shell: true,
+        windowsHide: true,
+        env: process.env,
+      });
+      let output = '';
+      proc.stdout?.on('data', (d) => { output += d.toString(); });
+      proc.stderr?.on('data', (d) => { output += d.toString(); });
+      proc.on('close', (code) => {
+        console.log(`[deps] ${name} install exited with code ${code}`);
+        resolve({ ok: code === 0, output });
+      });
+      proc.on('error', (err) => {
+        console.log(`[deps] ${name} install error:`, err.message);
+        resolve({ ok: false, output: err.message });
+      });
+    });
+  }
+
+  // Refresh PATH after installing tools so they're findable without restart
+  function refreshPath() {
+    try {
+      // Read the machine + user PATH from the registry and merge
+      const machinePath = execSync('reg query "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" /v Path', {
+        encoding: 'utf-8', shell: true, timeout: 5000, windowsHide: true, stdio: 'pipe',
+      }).match(/Path\s+REG_\w+\s+(.*)/)?.[1]?.trim() || '';
+      const userPath = execSync('reg query "HKCU\\Environment" /v Path', {
+        encoding: 'utf-8', shell: true, timeout: 5000, windowsHide: true, stdio: 'pipe',
+      }).match(/Path\s+REG_\w+\s+(.*)/)?.[1]?.trim() || '';
+      process.env.PATH = `${machinePath};${userPath}`;
+      console.log('[deps] PATH refreshed');
+    } catch (err) {
+      console.log('[deps] PATH refresh failed:', err.message);
+    }
+  }
+
+  ipcMain.handle('install-system-deps', async () => {
+    const IS_WIN = process.platform === 'win32';
+    const results = { node: 'skip', git: 'skip', python: 'skip' };
+
+    // Check winget availability (Windows 11 has it built in)
+    let hasWinget = false;
+    if (IS_WIN) {
+      try {
+        execSync('winget --version', { encoding: 'utf-8', shell: true, timeout: 5000, windowsHide: true, stdio: 'pipe' });
+        hasWinget = true;
+      } catch {}
+    }
+
+    // Node.js
+    if (!isCommandAvailable('node')) {
+      if (hasWinget) {
+        const r = await wingetInstall('OpenJS.NodeJS.LTS', 'Node.js');
+        results.node = r.ok ? 'installed' : 'failed';
+        if (r.ok) refreshPath();
+      } else {
+        results.node = 'missing';
+      }
+    } else {
+      results.node = 'ok';
+    }
+
+    // Git
+    if (!isCommandAvailable('git')) {
+      if (hasWinget) {
+        const r = await wingetInstall('Git.Git', 'Git');
+        results.git = r.ok ? 'installed' : 'failed';
+        if (r.ok) refreshPath();
+      } else {
+        results.git = 'missing';
+      }
+    } else {
+      results.git = 'ok';
+    }
+
+    // Python
+    if (!isCommandAvailable('python') && !isCommandAvailable('python3')) {
+      if (hasWinget) {
+        const r = await wingetInstall('Python.Python.3.13', 'Python');
+        results.python = r.ok ? 'installed' : 'failed';
+        if (r.ok) refreshPath();
+      } else {
+        results.python = 'missing';
+      }
+    } else {
+      results.python = 'ok';
+    }
+
+    const allOk = Object.values(results).every(v => v === 'ok' || v === 'installed' || v === 'skip');
+    const missing = Object.entries(results).filter(([, v]) => v === 'missing' || v === 'failed').map(([k]) => k);
+    return { ok: allOk, results, missing };
+  });
+
   // Install Node dependencies in workspace
   ipcMain.handle('install-node-deps', async () => {
     // Verify package.json exists first

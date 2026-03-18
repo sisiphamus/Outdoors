@@ -30,8 +30,12 @@
         <h2>Setting things up</h2>
         <p class="subtitle">Installing what Outdoors needs to run. This only happens once.</p>
         <div class="install-checklist">
-          <div class="install-item" id="install-node-deps">
+          <div class="install-item" id="install-system-deps">
             <div class="install-icon"><div class="spinner-small"></div></div>
+            <div class="install-label">System tools (Node.js, Git, Python)</div>
+          </div>
+          <div class="install-item" id="install-node-deps">
+            <div class="install-icon waiting-icon"></div>
             <div class="install-label">Node.js dependencies</div>
           </div>
           <div class="install-item" id="install-claude-cli">
@@ -43,7 +47,7 @@
             <div class="install-label">Python ML packages</div>
           </div>
         </div>
-        <p class="install-status" id="install-status">Installing Node dependencies...</p>
+        <p class="install-status" id="install-status">Checking system tools...</p>
       </div>
     </div>
 

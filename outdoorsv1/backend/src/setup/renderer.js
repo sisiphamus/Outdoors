@@ -86,17 +86,34 @@ function setInstallStatus(text) {
 async function runInstallPage() {
   if (!isElectron) { nextPage(); return; }
 
+  // Step 0: Install system dependencies (Node, Git, Python) if missing
+  setInstallItemState('install-system-deps', 'active');
+  setInstallStatus('Checking system tools...');
+  const sysDeps = await window.electronAPI.installSystemDeps();
+
+  if (!sysDeps.ok) {
+    setInstallItemState('install-system-deps', 'error');
+    const missing = sysDeps.missing || [];
+    const names = missing.map(d => ({ node: 'Node.js', git: 'Git', python: 'Python' }[d] || d));
+    setInstallStatus('Could not install: ' + names.join(', ') + '. Please install manually and restart Outdoors.');
+    return;
+  }
+
+  // Show what happened
+  const installed = Object.entries(sysDeps.results || {}).filter(([, v]) => v === 'installed').map(([k]) => k);
+  if (installed.length > 0) {
+    setInstallStatus('Installed ' + installed.join(', ') + '. Continuing setup...');
+  }
+  setInstallItemState('install-system-deps', 'done');
+
+  // Step 1: npm install
   setInstallItemState('install-node-deps', 'active');
   setInstallStatus('Installing Node dependencies...');
   const nodeDeps = await window.electronAPI.installNodeDeps();
   setInstallItemState('install-node-deps', nodeDeps.ok ? 'done' : 'error');
 
   if (!nodeDeps.ok) {
-    if (nodeDeps.output === 'npm_not_found' || nodeDeps.error?.includes('Node.js')) {
-      setInstallStatus('Node.js is not installed. Please install it from nodejs.org and restart Outdoors.');
-    } else {
-      setInstallStatus('Node dependency install failed: ' + (nodeDeps.error || nodeDeps.output || 'unknown error'));
-    }
+    setInstallStatus('Node dependency install failed: ' + (nodeDeps.error || nodeDeps.output || 'unknown error'));
     return;
   }
 

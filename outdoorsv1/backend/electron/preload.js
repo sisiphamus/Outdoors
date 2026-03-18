@@ -8,6 +8,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Dependency installation
+  installSystemDeps: () => ipcRenderer.invoke('install-system-deps'),
   installNodeDeps: () => ipcRenderer.invoke('install-node-deps'),
   installClaudeCLI: () => ipcRenderer.invoke('install-claude-cli'),
   checkClaudeInstalled: () => ipcRenderer.invoke('check-claude-installed'),
