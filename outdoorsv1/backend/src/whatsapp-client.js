@@ -313,10 +313,13 @@ async function startWhatsApp() {
       const remoteJid = msg.key.remoteJid;
       const isGroup = remoteJid?.endsWith('@g.us');
 
-      // If outdoorsGroupJid is configured, only accept messages from that group
-      // Otherwise, accept DMs and all groups
-      if (config.outdoorsGroupJid && isGroup && remoteJid !== config.outdoorsGroupJid) {
-        console.log(`[wa:skip] Message from group ${remoteJid} (not the configured group)`);
+      // Only accept messages from the Outdoors group — ignore DMs and other groups
+      if (config.outdoorsGroupJid) {
+        if (remoteJid !== config.outdoorsGroupJid) {
+          continue; // Not the Outdoors group — skip silently
+        }
+      } else {
+        // No group configured yet — skip everything until group is created
         continue;
       }
 

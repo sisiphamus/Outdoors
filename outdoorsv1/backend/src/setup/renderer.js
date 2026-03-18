@@ -296,12 +296,7 @@ async function handleStartAuth() {
   showConnectSection('connect-waiting');
   const waitText = document.getElementById('connect-waiting-text');
 
-  // Countdown
-  for (let i = 5; i > 0; i--) {
-    if (waitText) waitText.textContent = `Opening Google sign-in in ${i} seconds...`;
-    await delay(1000);
-  }
-  if (waitText) waitText.textContent = 'Opening Google sign-in...';
+  if (waitText) waitText.textContent = 'Setting up Google sign-in... This may take a few seconds.';
 
   try {
     // This will: start auth server, get URL, open in AutomationProfile Chrome

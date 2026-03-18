@@ -8,6 +8,7 @@ directories:
 files:
   - main.js
   - preload.js
+  - platform.js
   - "!dist"
   - "!node_modules/.cache"
 

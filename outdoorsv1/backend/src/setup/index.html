@@ -63,13 +63,11 @@
           <div id="auth-needed" class="auth-state hidden">
             <button class="btn-primary" id="btn-auth">Sign in to Claude</button>
             <p class="auth-hint">A terminal window will open. It takes about 10 seconds to load.<br>Once it loads, press <strong>1</strong> to sign in.</p>
-            <button class="btn-skip" id="btn-skip-auth">Skip for now</button>
           </div>
           <div id="auth-waiting" class="auth-state hidden">
             <div class="spinner"></div>
             <p class="auth-status-text" id="auth-waiting-text">Opening Claude login...</p>
             <p class="auth-hint">Press <strong>1</strong> in the terminal window, then complete sign-in in your browser.<br>This page will advance automatically.</p>
-            <button class="btn-skip" id="btn-skip-auth-waiting">Skip for now</button>
           </div>
           <div id="auth-success" class="auth-state hidden">
             <div class="complete-mark small-mark"></div>
@@ -133,14 +131,12 @@
             <label class="service-item"><input type="checkbox" value="search"><span class="service-name">Search</span><span class="service-desc">Custom search engine</span></label>
           </div>
           <button class="btn-primary" id="btn-start-auth">Continue</button>
-          <button class="btn-skip" id="btn-skip-connect">Skip for now</button>
         </div>
 
         <!-- Waiting for sign-in + consent -->
         <div id="connect-waiting" class="browser-status hidden">
           <div class="spinner-small"></div>
           <p class="browser-status-text" id="connect-waiting-text">Opening Google sign-in...</p>
-          <button class="btn-skip" id="btn-skip-connect-waiting">Skip for now</button>
         </div>
 
         <!-- Success -->
@@ -164,7 +160,6 @@
         <div id="connect-error" class="hidden">
           <p class="error-text" id="connect-error-text"></p>
           <button class="btn-skip" id="btn-retry-connect">Try again</button>
-          <button class="btn-skip" id="btn-skip-connect-error">Skip for now</button>
         </div>
 
         <!-- No OAuth creds configured -->
