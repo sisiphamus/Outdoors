@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkUvxInstalled: () => ipcRenderer.invoke('check-uvx-installed'),
   installUvx: () => ipcRenderer.invoke('install-uvx'),
   precacheWorkspaceMcp: () => ipcRenderer.invoke('precache-workspace-mcp'),
+  installWhisper: () => ipcRenderer.invoke('install-whisper'),
 
   // Claude authentication
   checkClaudeAuth: () => ipcRenderer.invoke('check-claude-auth'),

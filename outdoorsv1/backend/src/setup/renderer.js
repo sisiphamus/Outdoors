@@ -123,6 +123,9 @@ async function runInstallPage() {
   // Pre-download workspace-mcp so the auth step doesn't have to wait
   await window.electronAPI.precacheWorkspaceMcp();
 
+  // Download whisper.cpp + model in background (for voice message transcription)
+  window.electronAPI.installWhisper().catch(() => {});
+
   setInstallItemState('install-python', 'done');
 
   setInstallStatus('All set!');

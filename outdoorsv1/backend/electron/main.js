@@ -402,6 +402,86 @@ function setupIPC() {
     });
   });
 
+  // Install whisper.cpp and base model in background (for voice message transcription)
+  ipcMain.handle('install-whisper', async () => {
+    const IS_WIN = process.platform === 'win32';
+    const whisperDir = IS_WIN
+      ? path.join(process.env.LOCALAPPDATA || '', 'whisper-cpp')
+      : path.join(process.env.HOME || '', '.local', 'share', 'whisper-cpp');
+    const modelDir = path.join(whisperDir, 'models');
+    const modelPath = path.join(modelDir, 'ggml-base.bin');
+    const whisperBin = IS_WIN
+      ? path.join(whisperDir, 'whisper-cli.exe')
+      : path.join(whisperDir, 'whisper-cli');
+
+    // Skip if already installed
+    if (fs.existsSync(whisperBin) && fs.existsSync(modelPath)) {
+      return { ok: true, cached: true };
+    }
+
+    fs.mkdirSync(modelDir, { recursive: true });
+
+    // Download model if missing
+    if (!fs.existsSync(modelPath)) {
+      const modelUrl = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin';
+      try {
+        await new Promise((resolve, reject) => {
+          const cmd = IS_WIN ? 'curl' : 'curl';
+          execFile(cmd, ['-L', '-o', modelPath, modelUrl], {
+            shell: IS_WIN, timeout: 300000, windowsHide: true
+          }, (err) => err ? reject(err) : resolve());
+        });
+      } catch (err) {
+        return { ok: false, error: 'Failed to download whisper model: ' + err.message };
+      }
+    }
+
+    // Download whisper binary if missing
+    if (!fs.existsSync(whisperBin)) {
+      if (IS_WIN) {
+        // Download pre-built Windows binary
+        const zipUrl = 'https://github.com/ggerganov/whisper.cpp/releases/latest/download/whisper-cli-bin-x64.zip';
+        const zipPath = path.join(whisperDir, 'whisper.zip');
+        try {
+          await new Promise((resolve, reject) => {
+            execFile('curl', ['-L', '-o', zipPath, zipUrl], {
+              shell: true, timeout: 300000, windowsHide: true
+            }, (err) => err ? reject(err) : resolve());
+          });
+          // Extract zip
+          await new Promise((resolve, reject) => {
+            execFile('powershell.exe', ['-NoProfile', '-Command',
+              `Expand-Archive -Path '${zipPath}' -DestinationPath '${whisperDir}' -Force`],
+              { timeout: 30000, windowsHide: true },
+              (err) => err ? reject(err) : resolve());
+          });
+          // Clean up zip
+          try { fs.unlinkSync(zipPath); } catch {}
+        } catch (err) {
+          return { ok: false, error: 'Failed to download whisper binary: ' + err.message };
+        }
+      } else {
+        // macOS: build from source or use brew
+        try {
+          await new Promise((resolve, reject) => {
+            execFile('brew', ['install', 'whisper-cpp'], {
+              timeout: 300000
+            }, (err) => err ? reject(err) : resolve());
+          });
+        } catch {
+          return { ok: false, error: 'Install whisper.cpp via: brew install whisper-cpp' };
+        }
+      }
+    }
+
+    // Also check for ffmpeg (needed for audio conversion)
+    return new Promise((resolve) => {
+      execFile('ffmpeg', ['-version'], { shell: IS_WIN, timeout: 5000, windowsHide: true }, (err) => {
+        resolve({ ok: true, ffmpeg: !err });
+      });
+    });
+  });
+
   // Check Claude auth status
   ipcMain.handle('check-claude-auth', async () => {
     const cmd = getClaudeCmd();

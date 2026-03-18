@@ -6,6 +6,7 @@ import { writeFileSync, mkdirSync, readFileSync, existsSync, renameSync } from '
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { randomBytes } from 'crypto';
+import { execFile } from 'child_process';
 import { createRuntimeAwareProgress } from './runtime-health.js';
 import { createSession, closeSession } from '../../../outdoorsv4/session/session-manager.js';
 
@@ -120,6 +121,130 @@ async function downloadWhatsAppImage(message, imageDir) {
 }
 
 /**
+ * Downloads a voice/audio message and saves it.
+ */
+async function downloadWhatsAppAudio(message, audioDir) {
+  const audioMsg = message.message?.audioMessage;
+  if (!audioMsg) return null;
+
+  const dir = audioDir || SHORT_TERM_DIR;
+  try {
+    mkdirSync(dir, { recursive: true });
+    const stream = await downloadContentFromMessage(audioMsg, 'audio');
+    const chunks = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    const buffer = Buffer.concat(chunks);
+
+    const filename = `wa_voice_${randomBytes(4).toString('hex')}.ogg`;
+    const filepath = join(dir, filename);
+    writeFileSync(filepath, buffer);
+    return filepath;
+  } catch (err) {
+    console.log('[whatsapp:audio_download_error]', err.message);
+    return null;
+  }
+}
+
+/**
+ * Downloads a video message and saves it.
+ */
+async function downloadWhatsAppVideo(message, videoDir) {
+  const videoMsg = message.message?.videoMessage;
+  if (!videoMsg) return null;
+
+  const dir = videoDir || SHORT_TERM_DIR;
+  try {
+    mkdirSync(dir, { recursive: true });
+    const stream = await downloadContentFromMessage(videoMsg, 'video');
+    const chunks = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    const buffer = Buffer.concat(chunks);
+
+    const filename = `wa_video_${randomBytes(4).toString('hex')}.mp4`;
+    const filepath = join(dir, filename);
+    writeFileSync(filepath, buffer);
+    return filepath;
+  } catch (err) {
+    console.log('[whatsapp:video_download_error]', err.message);
+    return null;
+  }
+}
+
+/**
+ * Transcribe audio using whisper.cpp.
+ * Returns the transcribed text or null.
+ */
+async function transcribeAudio(audioPath) {
+  // Find whisper binary — check common install locations
+  const IS_WIN = process.platform === 'win32';
+  const whisperName = IS_WIN ? 'whisper-cli.exe' : 'whisper-cli';
+  const candidatePaths = IS_WIN ? [
+    join(process.env.LOCALAPPDATA || '', 'whisper-cpp', whisperName),
+    join(process.env.PROGRAMFILES || '', 'whisper-cpp', whisperName),
+    join(__dirname, '..', 'bin', whisperName),
+  ] : [
+    '/usr/local/bin/whisper-cli',
+    join(process.env.HOME || '', '.local', 'bin', whisperName),
+    join(__dirname, '..', 'bin', whisperName),
+  ];
+
+  let whisperBin = null;
+  for (const p of candidatePaths) {
+    if (existsSync(p)) { whisperBin = p; break; }
+  }
+
+  // Fallback: try PATH
+  if (!whisperBin) whisperBin = whisperName;
+
+  // Find model file
+  const modelDir = IS_WIN
+    ? join(process.env.LOCALAPPDATA || '', 'whisper-cpp', 'models')
+    : join(process.env.HOME || '', '.local', 'share', 'whisper-cpp', 'models');
+  const modelPath = join(modelDir, 'ggml-base.bin');
+
+  if (!existsSync(modelPath)) {
+    console.log('[whisper] Model not found at', modelPath);
+    return null;
+  }
+
+  // Convert ogg to wav first (whisper.cpp needs wav)
+  const wavPath = audioPath.replace(/\.ogg$/, '.wav');
+
+  // Try ffmpeg for conversion
+  try {
+    await new Promise((resolve, reject) => {
+      execFile('ffmpeg', ['-i', audioPath, '-ar', '16000', '-ac', '1', '-y', wavPath],
+        { timeout: 15000, shell: IS_WIN },
+        (err) => err ? reject(err) : resolve());
+    });
+  } catch {
+    // Try without ffmpeg — whisper.cpp might handle ogg directly on some builds
+    // If not, we can't transcribe
+    console.log('[whisper] ffmpeg not available for audio conversion');
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    execFile(whisperBin, ['-m', modelPath, '-f', wavPath, '--no-timestamps', '-otxt'],
+      { timeout: 60000, shell: IS_WIN },
+      (err, stdout) => {
+        if (err) {
+          console.log('[whisper:error]', err.message);
+          resolve(null);
+          return;
+        }
+        // whisper-cli outputs to stdout or creates a .txt file
+        const txtPath = wavPath + '.txt';
+        let text = stdout?.trim();
+        if (!text && existsSync(txtPath)) {
+          text = readFileSync(txtPath, 'utf-8').trim();
+        }
+        resolve(text || null);
+      });
+  });
+}
+
+/**
  * Processes an incoming WhatsApp message.
  * Returns { response, sender, prompt } or null if the message should be ignored.
  */
@@ -132,13 +257,16 @@ export async function handleMessage(message, emitLog) {
     message.message?.conversation ||
     message.message?.extendedTextMessage?.text ||
     message.message?.imageMessage?.caption ||
+    message.message?.videoMessage?.caption ||
     null;
 
-  // Check if there's an image attached
+  // Check for media attachments
   const hasImage = !!(message.message?.imageMessage);
+  const hasAudio = !!(message.message?.audioMessage);
+  const hasVideo = !!(message.message?.videoMessage);
 
-  // Need either text or an image
-  if (!text && !hasImage) return null;
+  // Need either text or media
+  if (!text && !hasImage && !hasAudio && !hasVideo) return null;
 
   // Self-messages and group messages bypass the prefix requirement
   const isSelfMessage = !!message.key.fromMe;
@@ -253,8 +381,47 @@ export async function handleMessage(message, emitLog) {
   // Create isolated session for this execution
   const session = createSession(processKey, 'whatsapp');
 
-  // Download image if present and prepend path to prompt (session-scoped dir)
+  // Download and process media attachments
   let finalPrompt = parsed.body;
+
+  if (hasAudio) {
+    const audioPath = await downloadWhatsAppAudio(message, session.shortTermDir);
+    if (audioPath) {
+      emitLog?.('voice', { sender, path: audioPath });
+      const transcript = await transcribeAudio(audioPath);
+      if (transcript) {
+        finalPrompt = transcript + (finalPrompt ? `\n\n${finalPrompt}` : '');
+        emitLog?.('transcription', { sender, text: transcript.slice(0, 100) });
+      } else {
+        finalPrompt = `[The user sent a voice message but transcription failed. The audio file is at: ${audioPath}]\n\n${finalPrompt || 'Voice message'}`;
+      }
+    }
+  }
+
+  if (hasVideo) {
+    const videoPath = await downloadWhatsAppVideo(message, session.shortTermDir);
+    if (videoPath) {
+      emitLog?.('video', { sender, path: videoPath });
+      // Extract audio from video for transcription
+      const audioFromVideo = videoPath.replace(/\.mp4$/, '_audio.ogg');
+      try {
+        await new Promise((resolve, reject) => {
+          execFile('ffmpeg', ['-i', videoPath, '-vn', '-acodec', 'libopus', '-y', audioFromVideo],
+            { timeout: 30000, shell: process.platform === 'win32' },
+            (err) => err ? reject(err) : resolve());
+        });
+        const transcript = await transcribeAudio(audioFromVideo);
+        if (transcript) {
+          finalPrompt = `[The user sent a video. Audio transcript: "${transcript}"]\n[Video file at: ${videoPath}]\n\n${finalPrompt || ''}`;
+        } else {
+          finalPrompt = `[The user sent a video at: ${videoPath}]\n\n${finalPrompt || 'Video message'}`;
+        }
+      } catch {
+        finalPrompt = `[The user sent a video at: ${videoPath}]\n\n${finalPrompt || 'Video message'}`;
+      }
+    }
+  }
+
   if (hasImage) {
     const imagePath = await downloadWhatsAppImage(message, session.shortTermDir);
     if (imagePath) {
