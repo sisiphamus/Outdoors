@@ -351,6 +351,7 @@ function setupSettings() {
       tab.classList.add('active');
       document.getElementById('tab-' + tab.dataset.tab).classList.remove('hidden');
       if (tab.dataset.tab === 'outputs') loadOutputsTree();
+      if (tab.dataset.tab === 'triggers') loadTriggers();
     });
   });
   document.getElementById('btn-save-config').addEventListener('click', saveConfig);
@@ -641,6 +642,241 @@ document.getElementById('btn-open-output')?.addEventListener('click', async () =
     alert('Failed to open: ' + (err.message || 'Unknown error'));
   }
 });
+
+// ---------------------------------------------------------------------------
+// Triggers
+// ---------------------------------------------------------------------------
+
+let triggersCache = [];
+let editingTriggerId = null;
+
+async function loadTriggers() {
+  const list = document.getElementById('triggers-list');
+  list.innerHTML = '<div class="triggers-empty">Loading...</div>';
+  showTriggersView();
+  try {
+    triggersCache = await window.electronAPI.getTriggers();
+    renderTriggersList();
+  } catch {
+    list.innerHTML = '<div class="triggers-empty">Failed to load triggers</div>';
+  }
+}
+
+function renderTriggersList() {
+  const list = document.getElementById('triggers-list');
+  list.innerHTML = '';
+  if (triggersCache.length === 0) {
+    list.innerHTML = '<div class="triggers-empty">No triggers yet. Create one to automate tasks.</div>';
+    return;
+  }
+  for (const trigger of triggersCache) {
+    const card = document.createElement('div');
+    card.className = 'trigger-card' + (trigger.enabled ? '' : ' disabled');
+    card.innerHTML =
+      '<label class="trigger-toggle">' +
+        '<input type="checkbox"' + (trigger.enabled ? ' checked' : '') + '>' +
+        '<span class="slider"></span>' +
+      '</label>' +
+      '<div class="trigger-info">' +
+        '<div class="trigger-name">' + esc(trigger.name || 'Untitled') + '</div>' +
+        '<div class="trigger-schedule">' + esc(formatSchedule(trigger.schedule)) + '</div>' +
+        '<div class="trigger-prompt-preview">' + esc(truncate(trigger.prompt || '', 100)) + '</div>' +
+      '</div>' +
+      '<div class="trigger-actions">' +
+        '<button class="trigger-btn edit">Edit</button>' +
+        '<button class="trigger-btn delete">Delete</button>' +
+      '</div>';
+    const toggleInput = card.querySelector('input[type="checkbox"]');
+    toggleInput.addEventListener('change', () => onToggleTrigger(trigger.id, toggleInput.checked));
+    card.querySelector('.trigger-btn.edit').addEventListener('click', () => openTriggerForm(trigger));
+    card.querySelector('.trigger-btn.delete').addEventListener('click', () => onDeleteTrigger(trigger.id, trigger.name));
+    list.appendChild(card);
+  }
+}
+
+function formatSchedule(schedule) {
+  if (!schedule) return 'No schedule';
+  switch (schedule.type) {
+    case 'interval': {
+      const mins = schedule.intervalMinutes || 60;
+      if (mins >= 1440 && mins % 1440 === 0) return 'Every ' + (mins / 1440) + ' day' + (mins / 1440 > 1 ? 's' : '');
+      if (mins >= 60 && mins % 60 === 0) return 'Every ' + (mins / 60) + ' hour' + (mins / 60 > 1 ? 's' : '');
+      return 'Every ' + mins + ' minute' + (mins > 1 ? 's' : '');
+    }
+    case 'daily':
+      return 'Daily at ' + formatTime(schedule.timeOfDay || '09:00');
+    case 'weekly': {
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      return days[schedule.dayOfWeek || 0] + 's at ' + formatTime(schedule.timeOfDay || '09:00');
+    }
+    case 'once': {
+      if (!schedule.datetime) return 'One time (no date set)';
+      const d = new Date(schedule.datetime);
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) + ' at ' + formatTime(schedule.timeOfDay || d.toTimeString().slice(0, 5));
+    }
+    default:
+      return 'Unknown schedule';
+  }
+}
+
+function formatTime(t) {
+  const [h, m] = t.split(':').map(Number);
+  const suffix = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return h12 + ':' + String(m).padStart(2, '0') + ' ' + suffix;
+}
+
+function showTriggersView() {
+  document.getElementById('triggers-view').classList.remove('hidden');
+  document.getElementById('trigger-form').classList.add('hidden');
+}
+
+function showTriggerForm() {
+  document.getElementById('triggers-view').classList.add('hidden');
+  document.getElementById('trigger-form').classList.remove('hidden');
+}
+
+function openTriggerForm(trigger) {
+  editingTriggerId = trigger ? trigger.id : null;
+  document.getElementById('trigger-form-title').textContent = trigger ? 'Edit Trigger' : 'New Trigger';
+  document.getElementById('tf-name').value = trigger ? trigger.name : '';
+  document.getElementById('tf-prompt').value = trigger ? trigger.prompt : '';
+
+  const schedule = trigger ? trigger.schedule : { type: 'interval', intervalMinutes: 1440 };
+  document.getElementById('tf-type').value = schedule.type || 'interval';
+
+  // Set interval fields
+  if (schedule.type === 'interval') {
+    const mins = schedule.intervalMinutes || 60;
+    if (mins >= 1440 && mins % 1440 === 0) {
+      document.getElementById('tf-interval-value').value = mins / 1440;
+      document.getElementById('tf-interval-unit').value = 'days';
+    } else if (mins >= 60 && mins % 60 === 0) {
+      document.getElementById('tf-interval-value').value = mins / 60;
+      document.getElementById('tf-interval-unit').value = 'hours';
+    } else {
+      document.getElementById('tf-interval-value').value = mins;
+      document.getElementById('tf-interval-unit').value = 'minutes';
+    }
+  } else {
+    document.getElementById('tf-interval-value').value = 1;
+    document.getElementById('tf-interval-unit').value = 'days';
+  }
+
+  // Set time/day fields
+  document.getElementById('tf-time').value = schedule.timeOfDay || '09:00';
+  document.getElementById('tf-day').value = schedule.dayOfWeek ?? 1;
+
+  // Set datetime field
+  if (schedule.datetime) {
+    document.getElementById('tf-datetime').value = schedule.datetime.slice(0, 16);
+  } else {
+    const d = new Date();
+    d.setHours(d.getHours() + 1, 0, 0, 0);
+    document.getElementById('tf-datetime').value = d.toISOString().slice(0, 16);
+  }
+
+  updateScheduleFields();
+  showTriggerForm();
+}
+
+function updateScheduleFields() {
+  const type = document.getElementById('tf-type').value;
+  document.getElementById('tf-interval-group').classList.toggle('hidden', type !== 'interval');
+  document.getElementById('tf-time-group').classList.toggle('hidden', type !== 'daily' && type !== 'weekly');
+  document.getElementById('tf-day-group').classList.toggle('hidden', type !== 'weekly');
+  document.getElementById('tf-datetime-group').classList.toggle('hidden', type !== 'once');
+}
+
+async function saveTriggerForm() {
+  const name = document.getElementById('tf-name').value.trim();
+  const prompt = document.getElementById('tf-prompt').value.trim();
+  if (!name || !prompt) { alert('Name and prompt are required.'); return; }
+
+  const type = document.getElementById('tf-type').value;
+  const schedule = { type };
+
+  switch (type) {
+    case 'interval': {
+      const val = parseInt(document.getElementById('tf-interval-value').value) || 1;
+      const unit = document.getElementById('tf-interval-unit').value;
+      const multiplier = unit === 'days' ? 1440 : unit === 'hours' ? 60 : 1;
+      schedule.intervalMinutes = val * multiplier;
+      break;
+    }
+    case 'daily':
+      schedule.timeOfDay = document.getElementById('tf-time').value;
+      break;
+    case 'weekly':
+      schedule.dayOfWeek = parseInt(document.getElementById('tf-day').value);
+      schedule.timeOfDay = document.getElementById('tf-time').value;
+      break;
+    case 'once':
+      schedule.datetime = document.getElementById('tf-datetime').value;
+      break;
+  }
+
+  const trigger = {
+    id: editingTriggerId || ('t_' + Math.random().toString(36).slice(2, 10)),
+    name,
+    prompt,
+    enabled: true,
+    schedule,
+    lastFiredAt: null,
+    createdAt: new Date().toISOString(),
+  };
+
+  // Preserve existing fields when editing
+  if (editingTriggerId) {
+    const existing = triggersCache.find(t => t.id === editingTriggerId);
+    if (existing) {
+      trigger.lastFiredAt = existing.lastFiredAt;
+      trigger.createdAt = existing.createdAt;
+      trigger.enabled = existing.enabled;
+    }
+  }
+
+  const saveBtn = document.getElementById('btn-trigger-save');
+  saveBtn.textContent = 'Saving...';
+  saveBtn.disabled = true;
+  try {
+    await window.electronAPI.saveTrigger(trigger);
+    await loadTriggers();
+  } catch (err) {
+    alert('Failed to save: ' + (err.message || 'Unknown error'));
+  } finally {
+    saveBtn.textContent = 'Save Trigger';
+    saveBtn.disabled = false;
+  }
+}
+
+async function onDeleteTrigger(id, name) {
+  if (!confirm('Delete trigger "' + name + '"?')) return;
+  try {
+    await window.electronAPI.deleteTrigger(id);
+    await loadTriggers();
+  } catch (err) {
+    alert('Failed to delete: ' + (err.message || 'Unknown error'));
+  }
+}
+
+async function onToggleTrigger(id, enabled) {
+  try {
+    await window.electronAPI.toggleTrigger(id, enabled);
+    const t = triggersCache.find(t => t.id === id);
+    if (t) t.enabled = enabled;
+    renderTriggersList();
+  } catch (err) {
+    alert('Failed to toggle: ' + (err.message || 'Unknown error'));
+  }
+}
+
+// Wire up trigger form events
+document.getElementById('btn-add-trigger')?.addEventListener('click', () => openTriggerForm(null));
+document.getElementById('btn-trigger-cancel')?.addEventListener('click', showTriggersView);
+document.getElementById('btn-trigger-form-cancel')?.addEventListener('click', showTriggersView);
+document.getElementById('btn-trigger-save')?.addEventListener('click', saveTriggerForm);
+document.getElementById('tf-type')?.addEventListener('change', updateScheduleFields);
 
 // ---------------------------------------------------------------------------
 // Helpers

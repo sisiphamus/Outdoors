@@ -1755,6 +1755,69 @@ Updated: ${today}
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
     return { ok: true };
   });
+
+  // ── Trigger CRUD ────────────────────────────────────────────────────────────
+
+  function readConfig() {
+    try {
+      if (fs.existsSync(CONFIG_PATH)) return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+    } catch {}
+    return {};
+  }
+
+  function writeConfig(cfg) {
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+  }
+
+  async function notifyBackendTriggersChanged() {
+    try {
+      const cfg = readConfig();
+      const port = cfg.port || 3847;
+      const http = require('http');
+      const req = http.request({ hostname: '127.0.0.1', port, path: '/api/triggers/reload', method: 'POST' });
+      req.on('error', () => {});
+      req.end();
+    } catch {}
+  }
+
+  ipcMain.handle('get-triggers', async () => {
+    const cfg = readConfig();
+    return cfg.triggers || [];
+  });
+
+  ipcMain.handle('save-trigger', async (_event, trigger) => {
+    const cfg = readConfig();
+    if (!cfg.triggers) cfg.triggers = [];
+    const idx = cfg.triggers.findIndex(t => t.id === trigger.id);
+    if (idx >= 0) {
+      cfg.triggers[idx] = trigger;
+    } else {
+      cfg.triggers.push(trigger);
+    }
+    writeConfig(cfg);
+    await notifyBackendTriggersChanged();
+    return { ok: true };
+  });
+
+  ipcMain.handle('delete-trigger', async (_event, triggerId) => {
+    const cfg = readConfig();
+    if (!cfg.triggers) return { ok: true };
+    cfg.triggers = cfg.triggers.filter(t => t.id !== triggerId);
+    writeConfig(cfg);
+    await notifyBackendTriggersChanged();
+    return { ok: true };
+  });
+
+  ipcMain.handle('toggle-trigger', async (_event, triggerId, enabled) => {
+    const cfg = readConfig();
+    if (!cfg.triggers) return { ok: false };
+    const trigger = cfg.triggers.find(t => t.id === triggerId);
+    if (!trigger) return { ok: false };
+    trigger.enabled = enabled;
+    writeConfig(cfg);
+    await notifyBackendTriggersChanged();
+    return { ok: true };
+  });
 }
 
 // ── MCP Config Writer ───────────────────────────────────────────────────────

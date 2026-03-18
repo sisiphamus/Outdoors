@@ -25,6 +25,7 @@ import { createSession, closeSession, listActiveSessions, cleanupOrphanedSession
 import { ensureBrowserReady } from './browser-health.js';
 
 import { registerStartup } from './register-startup.js';
+import { startTriggerScheduler, reloadTriggers } from './trigger-scheduler.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SHORT_TERM_DIR = join(__dirname, '..', 'bot', 'memory', 'short-term');
@@ -598,7 +599,16 @@ server.listen(config.port, async () => {
     // Start WhatsApp bridge
     console.log('  [WhatsApp] Starting...');
     startWhatsApp();
+
+    // Start trigger scheduler
+    startTriggerScheduler({ io, emitLog, executeClaudePrompt, config, saveConfig, loadConfig });
   } catch (err) {
     console.error('[startup] Failed:', err);
   }
+});
+
+// Trigger reload endpoint — called by Electron main after config changes
+app.post('/api/triggers/reload', (_req, res) => {
+  reloadTriggers();
+  res.json({ ok: true });
 });

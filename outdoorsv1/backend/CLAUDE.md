@@ -126,6 +126,7 @@ When doing anything remotely complex or requiring expertise, use a skill file fr
 (bot/memory/skills/applications)
 (bot/memory/skills/project-research)
 (bot/memory/skills/website-deployment)
+(bot/memory/skills/whatsapp-images)
 (bot/memory/skills/creating-skills.md)
 
 - All user-facing outputs go in the `bot/outputs/` folder.

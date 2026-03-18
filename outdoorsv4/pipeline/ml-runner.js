@@ -168,9 +168,9 @@ export async function runPhaseA(prompt) {
  * inventory is the array from getFullInventory().
  * Returns a JSON string compatible with parseAuditResult().
  */
-export async function runPhaseB(prompt, inventory, intent = 'query') {
+export async function runPhaseB(prompt, inventory, intent = 'query', outputLabels = {}) {
   try {
-    const result = await getWorker().call({ task: 'phase_b', prompt, inventory, intent });
+    const result = await getWorker().call({ task: 'phase_b', prompt, inventory, intent, output_labels: outputLabels });
     return JSON.stringify(result);
   } catch (err) {
     process.stderr.write(`[ml-runner] Phase B error: ${err.message}\n`);

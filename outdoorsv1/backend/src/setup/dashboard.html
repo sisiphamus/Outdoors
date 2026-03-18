@@ -65,6 +65,7 @@
         <div class="settings-tabs">
           <button class="settings-tab active" data-tab="memory">Memory</button>
           <button class="settings-tab" data-tab="general">General</button>
+          <button class="settings-tab" data-tab="triggers">Triggers</button>
           <button class="settings-tab" data-tab="outputs">Outputs</button>
         </div>
 
@@ -98,6 +99,79 @@
               <input type="number" id="cfg-timeout" value="300" min="30" max="3600">
             </div>
             <button class="btn-primary" id="btn-save-config">Save Settings</button>
+          </div>
+        </div>
+
+        <!-- Triggers tab -->
+        <div class="settings-content hidden" id="tab-triggers">
+          <div class="triggers-container" id="triggers-view">
+            <div class="triggers-header">
+              <p class="triggers-note">Triggers only fire while Outdoors is running.</p>
+              <button class="btn-primary btn-small" id="btn-add-trigger">+ Add Trigger</button>
+            </div>
+            <div class="triggers-list" id="triggers-list"></div>
+          </div>
+          <div class="trigger-form hidden" id="trigger-form">
+            <div class="trigger-form-header">
+              <h3 id="trigger-form-title">New Trigger</h3>
+              <button class="settings-close" id="btn-trigger-cancel">&times;</button>
+            </div>
+            <div class="settings-form">
+              <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="tf-name" placeholder="e.g. Morning briefing">
+              </div>
+              <div class="form-group">
+                <label>Prompt</label>
+                <textarea id="tf-prompt" class="trigger-prompt-input" rows="3" placeholder="The message to send to the bot..."></textarea>
+              </div>
+              <div class="form-group">
+                <label>Schedule</label>
+                <select id="tf-type">
+                  <option value="interval">Repeat on interval</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="once">One time</option>
+                </select>
+              </div>
+              <div class="trigger-schedule-fields">
+                <div class="form-group" id="tf-interval-group">
+                  <label>Every</label>
+                  <div class="trigger-inline">
+                    <input type="number" id="tf-interval-value" value="1" min="1">
+                    <select id="tf-interval-unit">
+                      <option value="minutes">minutes</option>
+                      <option value="hours">hours</option>
+                      <option value="days" selected>days</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-group hidden" id="tf-time-group">
+                  <label>Time</label>
+                  <input type="time" id="tf-time" value="09:00">
+                </div>
+                <div class="form-group hidden" id="tf-day-group">
+                  <label>Day of week</label>
+                  <select id="tf-day">
+                    <option value="0">Sunday</option>
+                    <option value="1" selected>Monday</option>
+                    <option value="2">Tuesday</option>
+                    <option value="3">Wednesday</option>
+                    <option value="4">Thursday</option>
+                    <option value="5">Friday</option>
+                    <option value="6">Saturday</option>
+                  </select>
+                </div>
+                <div class="form-group hidden" id="tf-datetime-group">
+                  <label>Date & Time</label>
+                  <input type="datetime-local" id="tf-datetime">
+                </div>
+              </div>
+              <div class="trigger-form-actions">
+                <button class="btn-secondary" id="btn-trigger-form-cancel">Cancel</button>
+                <button class="btn-primary" id="btn-trigger-save">Save Trigger</button>
+              </div>
+            </div>
           </div>
         </div>
 

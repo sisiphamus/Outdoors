@@ -82,6 +82,7 @@ SITE_TRIGGERS = {
     'mcmurtry': ['mcmurtry', 'ivp', 'committee'],
     'todoist': ['todoist', 'to-do', 'todo list', 'tasks', 'task list', 'google tasks'],
     'notion': ['notion', 'workspace', 'wiki'],
+    'whatsapp-images': ['screenshot', 'picture', 'photo', 'image', 'send image', 'show me', 'what does it look like'],
 }
 # Known contacts — when a name is mentioned, inject the contacts preference file
 CONTACT_NAMES = {'adam', 'julia', 'bunge', 'sophiya', 'sami', 'towner', 'cynthia'}
@@ -339,7 +340,7 @@ def _ensure_index(inventory):
     _phase_b_cache['doc_meta'] = doc_meta
 
 
-def run_phase_b(prompt, inventory, intent='query'):
+def run_phase_b(prompt, inventory, intent='query', output_labels=None):
     if not inventory:
         return {
             'selectedMemories': [],
@@ -394,6 +395,22 @@ def run_phase_b(prompt, inventory, intent='query'):
                     })
                     already_names.add(meta['name'])
 
+    # ── Tier 2b: Format-triggered (from Phase A output labels) ──
+    FORMAT_SKILL_MAP = {
+        'image': 'whatsapp-images',
+    }
+    if output_labels:
+        for fmt, skill_name in FORMAT_SKILL_MAP.items():
+            if output_labels.get(fmt) and skill_name not in already_names:
+                for i, meta in enumerate(doc_meta):
+                    if meta['name'] == skill_name:
+                        selected.append({
+                            'name': meta['name'],
+                            'category': meta['category'],
+                            'reason': 'format-triggered',
+                        })
+                        already_names.add(meta['name'])
+
     # ── Tier 3: TF-IDF similarity for skill-matched ──
     if intent not in ('converse', 'instruct'):
         query_vec = vec.transform([prompt])
@@ -428,13 +445,14 @@ def run_phase_b(prompt, inventory, intent='query'):
 
     always_count = sum(1 for s in selected if s['reason'] == 'always-include')
     site_count = sum(1 for s in selected if 'site-triggered' in s['reason'])
+    format_count = sum(1 for s in selected if s['reason'] == 'format-triggered')
     skill_count = sum(1 for s in selected if 'similarity' in s['reason'])
 
     return {
         'selectedMemories': selected,
         'missingMemories': [],
         'toolsNeeded': [],
-        'notes': f'Tiered selection from {len(doc_meta)} files: {always_count} always, {site_count} site-triggered, {skill_count} skill-matched',
+        'notes': f'Tiered selection from {len(doc_meta)} files: {always_count} always, {site_count} site-triggered, {format_count} format-triggered, {skill_count} skill-matched',
     }
 
 
@@ -458,6 +476,7 @@ def main():
                     req.get('prompt', ''),
                     req.get('inventory', []),
                     req.get('intent', 'query'),
+                    req.get('output_labels'),
                 )
             else:
                 result = {'error': f'unknown task: {task}'}

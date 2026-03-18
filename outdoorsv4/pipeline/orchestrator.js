@@ -14,7 +14,7 @@ import { config } from '../config.js';
 import { setClaudeSessionId } from '../session/session-manager.js';
 import { redactSecrets } from './redact-secrets.js';
 import { execSync } from 'child_process';
-import { mkdirSync, readdirSync, statSync } from 'fs';
+import { mkdirSync, readdirSync, statSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
 const MAX_FEEDBACK_LOOPS = 3;
@@ -149,7 +149,8 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
     const phaseBResponse = await runPhaseB(
       previousFailure ? `${prompt}\n\nPrevious failure context: ${previousFailure.slice(0, 500)}` : prompt,
       inventory,
-      intent
+      intent,
+      outputSpec.outputLabels || {}
     );
     const audit = parseAuditResult(phaseBResponse);
     const selectedSummary = (audit.selectedMemories || [])
@@ -564,9 +565,16 @@ function learnInBackground(prompt, outputSpec, executionResponse, fullEvents, on
       }
       if (executionTrace.length > 8000) executionTrace = '...(truncated)\n' + executionTrace.slice(-8000);
 
+      // Always give the learner the session-log-analyzer skill for structured analysis
+      let analyzerSkill = '';
+      const analyzerPath = join(MEMORY_ROOT, 'skills', 'session-log-analyzer', 'SKILL.md');
+      if (existsSync(analyzerPath)) {
+        try { analyzerSkill = `\n\n## Session Log Analysis Methodology\n${readFileSync(analyzerPath, 'utf-8')}`; } catch {}
+      }
+
       const result = await runModel({
         userPrompt: `Review this execution and save any useful knowledge.\n\nPrompt: ${prompt}\n\nFinal response: ${(executionResponse || '').slice(0, 1000)}${inefficiencyReport}\n\nExecution trace:\n${executionTrace}`,
-        systemPrompt: learnerPrompt(prompt, outputSpec, (executionResponse || '').slice(0, 2000), inventory),
+        systemPrompt: learnerPrompt(prompt, outputSpec, (executionResponse || '').slice(0, 2000), inventory) + analyzerSkill,
         model: 'sonnet',
         onProgress: (type, data) => agg.forward('learner', type, data),
         processKey: processKey ? `${processKey}:learner` : null,

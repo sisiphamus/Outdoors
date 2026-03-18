@@ -52,6 +52,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getConfig: () => ipcRenderer.invoke('get-full-config'),
   saveConfig: (data) => ipcRenderer.invoke('save-full-config', data),
 
+  // Triggers
+  getTriggers: () => ipcRenderer.invoke('get-triggers'),
+  saveTrigger: (trigger) => ipcRenderer.invoke('save-trigger', trigger),
+  deleteTrigger: (triggerId) => ipcRenderer.invoke('delete-trigger', triggerId),
+  toggleTrigger: (triggerId, enabled) => ipcRenderer.invoke('toggle-trigger', triggerId, enabled),
+
   // Outputs
   listOutputFiles: () => ipcRenderer.invoke('list-output-files'),
   readOutputFile: (relativePath) => ipcRenderer.invoke('read-output-file', relativePath),
