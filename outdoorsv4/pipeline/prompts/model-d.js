@@ -34,7 +34,7 @@ function _renderClassification(spec) {
 }
 
 // Browser-specific rules (~3000 tokens) — only injected when the task needs browser automation.
-function getBrowserRules(browserToolset) {
+function getBrowserRules(browserToolset, googleEmail) {
   return `## CRITICAL: Browser = User's Logged-In Session
 The browser MCP connects to the user's **already-running browser** with all sessions, cookies, and logins intact. This means:
 - **All the user's cookies, logins, and active sessions are available.** The user is already logged into Gmail, Canvas, Notion, LinkedIn, etc.
@@ -121,7 +121,7 @@ When your task produces files (code, reports, images, data, etc.), write them to
 - Create a descriptive subfolder per task, e.g. 'outputs/pdf-report-2024/', 'outputs/scrape-results/'
 - Always tell the user the full path of what you wrote
 
-${getBrowserRules(browserToolset)}
+${getBrowserRules(browserToolset, googleEmail)}
 
 ## Instructions
 1. Follow the output specification precisely — produce the exact output type and format described

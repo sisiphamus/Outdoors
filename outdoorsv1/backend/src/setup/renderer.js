@@ -5,7 +5,7 @@
 
 const isElectron = !!(window.electronAPI);
 let currentPage = 0;
-const totalPages = 7;
+const totalPages = 6; // Reduced: merged browser + google into one page
 
 // ---------------------------------------------------------------------------
 // Page navigation
@@ -31,9 +31,8 @@ function goToPage(index) {
   // Trigger page-specific logic
   if (currentPage === 1) runInstallPage();
   if (currentPage === 2) runAuthPage();
-  if (currentPage === 3) runBrowserPage();
-  if (currentPage === 4) runGooglePage();
-  if (currentPage === 5) runTelegramPage();
+  if (currentPage === 3) runConnectPage();
+  if (currentPage === 4) runTelegramPage();
 }
 
 function nextPage() {
@@ -46,9 +45,8 @@ function nextPage() {
 
 document.getElementById('btn-begin').addEventListener('click', () => {
   if (isElectron) {
-    nextPage(); // Go to install page
+    nextPage();
   } else {
-    // Non-Electron: skip install + auth pages, go straight to browser setup
     goToPage(3);
   }
 });
@@ -88,7 +86,6 @@ function setInstallStatus(text) {
 async function runInstallPage() {
   if (!isElectron) { nextPage(); return; }
 
-  // Step 1: Node deps
   setInstallItemState('install-node-deps', 'active');
   setInstallStatus('Installing Node dependencies...');
   const nodeDeps = await window.electronAPI.installNodeDeps();
@@ -99,7 +96,6 @@ async function runInstallPage() {
     return;
   }
 
-  // Step 2: Claude CLI
   setInstallItemState('install-claude-cli', 'active');
   setInstallStatus('Checking Claude CLI...');
 
@@ -116,9 +112,17 @@ async function runInstallPage() {
     }
   }
 
-  // Step 3: Python ML deps (non-blocking)
   setInstallItemState('install-python', 'active');
   setInstallStatus('Checking Python packages...');
+
+  // Install uvx + pre-cache workspace-mcp silently
+  const uvxCheck = await window.electronAPI.checkUvxInstalled();
+  if (!uvxCheck.installed) {
+    await window.electronAPI.installUvx();
+  }
+  // Pre-download workspace-mcp so the auth step doesn't have to wait
+  await window.electronAPI.precacheWorkspaceMcp();
+
   setInstallItemState('install-python', 'done');
 
   setInstallStatus('All set!');
@@ -185,16 +189,20 @@ document.getElementById('btn-skip-auth-waiting')?.addEventListener('click', () =
 });
 
 // ---------------------------------------------------------------------------
-// Page 4: Browser Setup (multi-step: detect → profile select → copy → launch → sign-in)
+// Page 4: Connect (Browser + Google merged into one step)
 // ---------------------------------------------------------------------------
 
-let browserSetupDone = false;
+let connectDone = false;
 let detectedExePath = null;
-let authPollTimer = null;
+let selectedGoogleServices = [];
 
-function showBrowserSection(id) {
-  const sections = ['browser-detect-btn', 'browser-detecting', 'browser-not-found', 'browser-profiles',
-    'browser-copying', 'browser-launching', 'browser-signin', 'browser-success', 'browser-error'];
+function showConnectSection(id) {
+  const sections = [
+    'connect-start', 'connect-detecting', 'connect-not-found',
+    'connect-profiles', 'connect-services', 'connect-copying',
+    'connect-waiting', 'connect-success', 'connect-error',
+    'connect-onboarding', 'connect-no-creds',
+  ];
   sections.forEach(s => {
     const el = document.getElementById(s);
     if (el) el.classList.add('hidden');
@@ -203,32 +211,45 @@ function showBrowserSection(id) {
   if (el) el.classList.remove('hidden');
 }
 
-async function runBrowserPage() {
-  if (browserSetupDone) return;
-  // Page is ready — buttons are wired below
+function getSelectedServices() {
+  const always = ['gmail', 'calendar', 'contacts'];
+  const checked = Array.from(document.querySelectorAll('#connect-services input[type="checkbox"]:checked'))
+    .map(el => el.value);
+  return [...new Set([...always, ...checked])];
 }
 
-async function handleSetupChrome() {
-  if (!isElectron) return;
+async function runConnectPage() {
+  if (connectDone) return;
+  if (!isElectron) { nextPage(); return; }
 
-  showBrowserSection('browser-detecting');
+  // Check if oauth-creds.json exists
+  const credsCheck = await window.electronAPI.checkGoogleCreds();
+  if (!credsCheck.hasCreds) {
+    showConnectSection('connect-no-creds');
+    return;
+  }
+
+  showConnectSection('connect-start');
+}
+
+// Step 1: Detect Chrome
+async function handleDetectChrome() {
+  if (!isElectron) return;
+  showConnectSection('connect-detecting');
 
   try {
     const result = await window.electronAPI.detectBrowser();
-
     if (!result.found) {
-      showBrowserSection('browser-not-found');
+      showConnectSection('connect-not-found');
       return;
     }
 
     detectedExePath = result.exePath;
 
     if (result.profiles.length <= 1) {
-      // Auto-select the only profile (or Default if none)
       const selectedProfile = result.profiles.length === 1 ? result.profiles[0].directory : 'Default';
-      await createAndLaunch(selectedProfile);
+      await handleProfileSelected(selectedProfile);
     } else {
-      // Show profile selector dropdown
       const select = document.getElementById('profile-select');
       select.innerHTML = '';
       result.profiles.forEach(p => {
@@ -237,240 +258,121 @@ async function handleSetupChrome() {
         opt.textContent = p.email ? `${p.email} (${p.directory})` : `${p.name} (${p.directory})`;
         select.appendChild(opt);
       });
-      showBrowserSection('browser-profiles');
+      showConnectSection('connect-profiles');
     }
   } catch (err) {
-    showBrowserError('Failed to detect Chrome: ' + err.message);
+    showConnectError('Failed to detect Chrome: ' + err.message);
   }
 }
 
-async function handleConfirmProfile() {
-  const select = document.getElementById('profile-select');
-  const selectedProfile = select.value;
-  await createAndLaunch(selectedProfile);
-}
-
-async function createAndLaunch(selectedProfile) {
-  showBrowserSection('browser-copying');
+// Step 2: After profile selected, show service selection
+async function handleProfileSelected(selectedProfile) {
+  showConnectSection('connect-copying');
 
   try {
-    // Create automation profile
     const createResult = await window.electronAPI.createAutomationProfile({
       selectedProfile,
       exePath: detectedExePath,
     });
 
     if (!createResult.ok) {
-      showBrowserError('Failed to create profile: ' + (createResult.error || 'unknown error'));
+      showConnectError('Failed to create profile: ' + (createResult.error || 'unknown error'));
       return;
     }
 
-    // Show countdown before launching Chrome
-    showBrowserSection('browser-launching');
-    const launchText = document.getElementById('browser-launch-text');
-    for (let i = 5; i > 0; i--) {
-      if (launchText) launchText.textContent = `Opening Chrome in ${i} seconds — please log in when it opens.`;
-      await delay(1000);
-    }
-    if (launchText) launchText.textContent = 'Opening Chrome...';
+    // Store the selected profile for later
+    window._selectedProfile = selectedProfile;
 
-    // Capture timestamp before launch — used to detect NEW sign-ins vs copied profile data
-    window._prelaunchTimestamp = Date.now();
-
-    const launchResult = await window.electronAPI.launchAutomationChrome(detectedExePath);
-
-    if (!launchResult.ok) {
-      showBrowserError('Failed to launch Chrome: ' + (launchResult.error || 'unknown error'));
-      return;
-    }
-
-    // Start polling for sign-in
-    showBrowserSection('browser-signin');
-    startAuthPolling();
+    // Show service selection
+    showConnectSection('connect-services');
   } catch (err) {
-    showBrowserError('Error: ' + err.message);
+    showConnectError('Error: ' + err.message);
   }
 }
 
-function startAuthPolling() {
-  if (authPollTimer) clearInterval(authPollTimer);
-
-  // Two-phase detection:
-  // Phase 1: Wait for page to LEAVE mail.google.com (redirected to sign-in)
-  // Phase 2: Wait for page to come BACK to mail.google.com/mail (sign-in complete)
-  let leftGmail = false;
-
-  authPollTimer = setInterval(async () => {
-    try {
-      const result = await window.electronAPI.checkBrowserAuth();
-
-      if (!leftGmail) {
-        // Phase 1: waiting for redirect away from Gmail
-        if (!result.signedIn) {
-          leftGmail = true;
-        }
-      } else {
-        // Phase 2: waiting for return to Gmail after sign-in
-        if (result.signedIn) {
-          clearInterval(authPollTimer);
-          authPollTimer = null;
-          browserSetupDone = true;
-          const emailEl = document.getElementById('browser-email');
-          if (emailEl) emailEl.textContent = result.email ? `(${result.email})` : '';
-          showBrowserSection('browser-success');
-
-          // Close Gmail tab — we'll reopen Chrome for consent
-          try { await window.electronAPI.closeAutomationChrome(); } catch {}
-
-          await delay(1000);
-          nextPage();
-        }
-      }
-    } catch { /* keep polling */ }
-  }, 2000);
-}
-
-function showBrowserError(msg) {
-  const errorText = document.getElementById('browser-error-text');
-  if (errorText) errorText.textContent = msg;
-  showBrowserSection('browser-error');
-}
-
-document.getElementById('btn-setup-chrome')?.addEventListener('click', handleSetupChrome);
-document.getElementById('btn-confirm-profile')?.addEventListener('click', handleConfirmProfile);
-document.getElementById('btn-retry-browser')?.addEventListener('click', () => {
-  showBrowserSection('browser-detect-btn');
-});
-
-// ---------------------------------------------------------------------------
-// Page 5: Google Account Access (workspace-mcp OAuth)
-// ---------------------------------------------------------------------------
-
-let googleSetupDone = false;
-
-let selectedGoogleServices = [];
-
-function getSelectedServices() {
-  // Always include gmail, calendar, contacts
-  const always = ['gmail', 'calendar', 'contacts'];
-  const checked = Array.from(document.querySelectorAll('#google-services input[type="checkbox"]:checked'))
-    .map(el => el.value);
-  return [...new Set([...always, ...checked])];
-}
-
-function showGoogleSection(id) {
-  const sections = ['google-services', 'google-waiting', 'google-success', 'google-error', 'google-no-creds'];
-  sections.forEach(s => {
-    const el = document.getElementById(s);
-    if (el) el.classList.add('hidden');
-  });
-  const el = document.getElementById(id);
-  if (el) el.classList.remove('hidden');
-}
-
-async function runGooglePage() {
-  if (googleSetupDone) return;
-  if (!isElectron) { nextPage(); return; }
-
-  // Check if oauth-creds.json exists
-  const credsCheck = await window.electronAPI.checkGoogleCreds();
-  if (!credsCheck.hasCreds) {
-    showGoogleSection('google-no-creds');
-    return;
-  }
-
-  // Show the service selection (both auto-flow and manual)
-  showGoogleSection('google-services');
-}
-
-async function handleGoogleAuth() {
-  if (!isElectron) return;
-
+// Step 3: Services selected → start auth flow
+async function handleStartAuth() {
   selectedGoogleServices = getSelectedServices();
+  showConnectSection('connect-waiting');
+  const waitText = document.getElementById('connect-waiting-text');
 
-  showGoogleSection('google-waiting');
-  const waitText = document.getElementById('google-waiting-text');
-
-  // 5-second countdown before opening consent screen
+  // Countdown
   for (let i = 5; i > 0; i--) {
-    if (waitText) waitText.textContent = `Opening Google consent screen in ${i} seconds...`;
+    if (waitText) waitText.textContent = `Opening Google sign-in in ${i} seconds...`;
     await delay(1000);
   }
-  if (waitText) waitText.textContent = 'Opening Google consent screen... (This may take a few seconds)';
-
-  // Update text after consent URL opens
-  setTimeout(() => {
-    if (waitText) waitText.textContent = 'Complete the authorization in your browser...';
-  }, 8000);
+  if (waitText) waitText.textContent = 'Opening Google sign-in...';
 
   try {
+    // This will: start auth server, get URL, open in AutomationProfile Chrome
     const result = await window.electronAPI.startGoogleAuth(selectedGoogleServices);
 
     if (result.ok && result.pendingAuth) {
-      // Auth URL opened in browser — now wait for the callback to complete
-      if (waitText) waitText.textContent = 'Complete the authorization in your browser...';
+      if (waitText) waitText.textContent = 'Sign in and grant permissions in the Chrome window...';
 
-      // Listen for auth completion from the credential file poller
+      // Wait for credential file to appear (polled by main process)
       const authDone = await new Promise((resolve) => {
-        // Set up listener for the IPC event from main process
         window.electronAPI.onGoogleAuthComplete((data) => {
           resolve(data);
         });
-
-        // Timeout after 3 minutes
-        setTimeout(() => resolve({ ok: false, error: 'Google sign-in timed out.' }), 180000);
+        setTimeout(() => resolve({ ok: false, error: 'Sign-in timed out.' }), 180000);
       });
 
       if (authDone.ok) {
-        googleSetupDone = true;
-        const emailEl = document.getElementById('google-email');
+        connectDone = true;
+        const emailEl = document.getElementById('connect-email');
         if (emailEl && authDone.email) emailEl.textContent = `(${authDone.email})`;
-        showGoogleSection('google-success');
+        showConnectSection('connect-success');
 
-        // Close the automation Chrome after consent is granted
+        // Close the automation Chrome
         try { await window.electronAPI.closeAutomationChrome(); } catch {}
 
         await delay(1500);
 
-        // Run onboarding personalization scan
+        // Run onboarding scan
         await runOnboardingScan();
 
         nextPage();
       } else {
-        const errorText = document.getElementById('google-error-text');
-        if (errorText) errorText.textContent = authDone.error || 'Google sign-in failed.';
-        showGoogleSection('google-error');
+        showConnectError(authDone.error || 'Google sign-in failed.');
       }
     } else if (result.ok) {
-      // Direct success (already had credentials)
-      googleSetupDone = true;
-      const emailEl = document.getElementById('google-email');
+      connectDone = true;
+      const emailEl = document.getElementById('connect-email');
       if (emailEl && result.email) emailEl.textContent = `(${result.email})`;
-      showGoogleSection('google-success');
+      showConnectSection('connect-success');
       try { await window.electronAPI.closeAutomationChrome(); } catch {}
       await delay(1500);
       await runOnboardingScan();
       nextPage();
     } else {
-      const errorText = document.getElementById('google-error-text');
-      if (errorText) errorText.textContent = result.error || 'Google sign-in failed.';
-      showGoogleSection('google-error');
+      showConnectError(result.error || 'Could not get Google auth URL.');
     }
   } catch (err) {
-    const errorText = document.getElementById('google-error-text');
-    if (errorText) errorText.textContent = 'Error: ' + err.message;
-    showGoogleSection('google-error');
+    showConnectError('Error: ' + err.message);
   }
 }
 
-document.getElementById('btn-google-auth')?.addEventListener('click', handleGoogleAuth);
-document.getElementById('btn-retry-google')?.addEventListener('click', () => {
-  showGoogleSection('google-services');
+function showConnectError(msg) {
+  const errorText = document.getElementById('connect-error-text');
+  if (errorText) errorText.textContent = msg;
+  showConnectSection('connect-error');
+}
+
+// Wire up buttons
+document.getElementById('btn-setup-chrome')?.addEventListener('click', handleDetectChrome);
+document.getElementById('btn-confirm-profile')?.addEventListener('click', () => {
+  const select = document.getElementById('profile-select');
+  handleProfileSelected(select.value);
 });
-document.getElementById('btn-skip-google')?.addEventListener('click', () => nextPage());
-document.getElementById('btn-skip-google-waiting')?.addEventListener('click', () => nextPage());
-document.getElementById('btn-skip-google-error')?.addEventListener('click', () => nextPage());
-document.getElementById('btn-skip-google-nocreds')?.addEventListener('click', () => nextPage());
+document.getElementById('btn-start-auth')?.addEventListener('click', handleStartAuth);
+document.getElementById('btn-retry-connect')?.addEventListener('click', () => {
+  showConnectSection('connect-start');
+});
+document.getElementById('btn-skip-connect')?.addEventListener('click', () => nextPage());
+document.getElementById('btn-skip-connect-waiting')?.addEventListener('click', () => nextPage());
+document.getElementById('btn-skip-connect-error')?.addEventListener('click', () => nextPage());
+document.getElementById('btn-skip-connect-nocreds')?.addEventListener('click', () => nextPage());
 document.getElementById('btn-skip-onboarding')?.addEventListener('click', () => nextPage());
 
 // ---------------------------------------------------------------------------
@@ -482,7 +384,7 @@ let onboardingSkipped = false;
 async function runOnboardingScan() {
   if (!isElectron || selectedGoogleServices.length === 0) return;
 
-  showGoogleSection('google-onboarding');
+  showConnectSection('connect-onboarding');
   const statusEl = document.getElementById('onboarding-status');
   const barEl = document.getElementById('onboarding-bar');
 
@@ -492,11 +394,9 @@ async function runOnboardingScan() {
     slides: 'Slides', tasks: 'Tasks', forms: 'Forms', search: 'Search',
   };
 
-  // Show which services will be scanned
   const names = selectedGoogleServices.map(s => serviceNames[s] || s).join(', ');
   if (statusEl) statusEl.textContent = `Scanning ${names}...`;
 
-  // Listen for progress updates
   let progressPct = 5;
   if (barEl) barEl.style.width = progressPct + '%';
 
@@ -505,7 +405,6 @@ async function runOnboardingScan() {
 
   window.electronAPI.onOnboardingProgress?.((text) => {
     if (onboardingSkipped) return;
-    // Try to detect which service is being scanned from Claude's output
     for (const [key, name] of Object.entries(serviceNames)) {
       if (text.toLowerCase().includes(key) && selectedGoogleServices.includes(key)) {
         if (statusEl) statusEl.textContent = `Scanning ${name}...`;
@@ -517,7 +416,6 @@ async function runOnboardingScan() {
     }
   });
 
-  // Slowly advance progress bar while waiting
   const progressTimer = setInterval(() => {
     if (progressPct < 85) {
       progressPct += 2;
@@ -545,7 +443,7 @@ async function runOnboardingScan() {
 }
 
 // ---------------------------------------------------------------------------
-// Page 6: WhatsApp Setup (starts backend, shows QR code inline)
+// Page 5: WhatsApp Setup
 // ---------------------------------------------------------------------------
 
 let waSocket = null;
@@ -565,7 +463,6 @@ async function runTelegramPage() {
 
   if (!isElectron) { nextPage(); return; }
 
-  // Start the backend
   const result = await window.electronAPI.startBackend();
   if (!result.ok && !result.alreadyRunning) {
     document.getElementById('wa-error-text').textContent =
@@ -576,7 +473,6 @@ async function runTelegramPage() {
 
   setWaStartingText('Connecting to backend...');
 
-  // Connect to backend via Socket.IO to receive QR code
   const backendUrl = await window.electronAPI.getBackendUrl();
   loadWaSocketIO(backendUrl);
 }
@@ -592,7 +488,6 @@ function loadWaSocketIO(backendUrl) {
     return;
   }
 
-  // Remove any previous failed script tags
   const old = document.querySelector('script[data-socketio]');
   if (old) old.remove();
 
@@ -635,7 +530,6 @@ function connectWaSocket(backendUrl) {
     if (entry.type === 'connected') {
       onWaConnected();
     }
-    // QR can also come as a log event
     if (entry.type === 'qr' && entry.data?.dataUrl) {
       const img = document.getElementById('wa-qr-img');
       if (img) img.src = entry.data.dataUrl;

@@ -11,20 +11,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installNodeDeps: () => ipcRenderer.invoke('install-node-deps'),
   installClaudeCLI: () => ipcRenderer.invoke('install-claude-cli'),
   checkClaudeInstalled: () => ipcRenderer.invoke('check-claude-installed'),
+  checkUvxInstalled: () => ipcRenderer.invoke('check-uvx-installed'),
+  installUvx: () => ipcRenderer.invoke('install-uvx'),
+  precacheWorkspaceMcp: () => ipcRenderer.invoke('precache-workspace-mcp'),
 
   // Claude authentication
   checkClaudeAuth: () => ipcRenderer.invoke('check-claude-auth'),
   startClaudeAuth: () => ipcRenderer.invoke('start-claude-auth'),
   cancelAuthPoll: () => ipcRenderer.invoke('cancel-auth-poll'),
 
-  // Browser setup
+  // Browser + Google setup (merged)
   detectBrowser: () => ipcRenderer.invoke('detect-browser'),
   createAutomationProfile: (data) => ipcRenderer.invoke('create-automation-profile', data),
-  launchAutomationChrome: (exePath) => ipcRenderer.invoke('launch-automation-chrome', exePath),
-  checkBrowserAuth: () => ipcRenderer.invoke('check-browser-auth'),
   closeAutomationChrome: () => ipcRenderer.invoke('close-automation-chrome'),
-
-  // Google Account Access
   checkGoogleCreds: () => ipcRenderer.invoke('check-google-creds'),
   startGoogleAuth: (services) => ipcRenderer.invoke('start-google-auth', services),
   onGoogleAuthComplete: (callback) => ipcRenderer.on('google-auth-complete', (_event, data) => callback(data)),

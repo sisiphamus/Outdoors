@@ -2,31 +2,19 @@
  * browser-health.js
  *
  * Ensures the user's preferred browser is ready for automation.
- *
- * Two modes depending on browser type (read from browser-preferences.md):
- *
- *   CHROME → Uses chrome-devtools-mcp with --autoConnect.
- *     Chrome M144+ supports autoConnect: no CDP port needed, no shortcut patching,
- *     never kills Chrome. On first use, Chrome shows a one-time permission dialog.
- *     This preserves ALL existing sessions/logins.
- *
- *   EDGE / OTHER CHROMIUM → Uses @playwright/mcp with --cdp-endpoint.
- *     Requires browser running with --remote-debugging-port.
- *     If not running: auto-launches with CDP flag.
- *     If running without CDP: patches shortcuts, warns user to restart.
- *     (Killing the browser would destroy sessions — never force-kill.)
- *
- * Self-healing on any machine: reads all settings from
- * bot/memory/preferences/browser-preferences.md.
+ * Cross-platform: works on Windows, macOS, and Linux.
  */
 
 import { readFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
-import { execFile } from 'child_process';
+import { execFile, execSync, spawn } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PREFS_PATH = join(__dirname, '..', 'bot', 'memory', 'preferences', 'browser-preferences.md');
+
+const IS_WIN = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
 
 function readBrowserPrefs() {
   if (!existsSync(PREFS_PATH)) return {};
@@ -62,11 +50,42 @@ function isCdpReachable(port) {
   });
 }
 
+function getDefaultAutomationDir() {
+  if (IS_WIN) {
+    return join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile');
+  }
+  if (IS_MAC) {
+    return join(process.env.HOME || '', 'Library', 'Application Support', 'Google', 'Chrome', 'AutomationProfile');
+  }
+  return join(process.env.HOME || '', '.config', 'google-chrome', 'AutomationProfile');
+}
+
+function getDefaultChromePaths() {
+  if (IS_WIN) {
+    return [
+      join(process.env.PROGRAMFILES || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      join(process.env['PROGRAMFILES(X86)'] || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      join(process.env.PROGRAMFILES || '', 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      join(process.env['PROGRAMFILES(X86)'] || '', 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    ];
+  }
+  if (IS_MAC) {
+    return [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      join(process.env.HOME || '', 'Applications', 'Google Chrome.app', 'Contents', 'MacOS', 'Google Chrome'),
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    ];
+  }
+  return ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium-browser'];
+}
+
 /**
- * Patches browser shortcuts to permanently include --remote-debugging-port.
- * Used only for non-Chrome browsers. Safe to call repeatedly.
+ * Patches browser shortcuts to include --remote-debugging-port.
+ * Windows only — macOS/Linux don't use .lnk shortcuts.
  */
 function patchShortcuts(browserName, cdpPort, userDataDir) {
+  if (!IS_WIN) return Promise.resolve();
+
   return new Promise((resolve) => {
     const args = `--remote-debugging-port=${cdpPort} --user-data-dir="${userDataDir}"`;
     const isEdge = /edge/i.test(browserName);
@@ -88,9 +107,8 @@ foreach ($path in $shortcuts) {
     Write-Host "Patched: $path"
   } catch { Write-Host "Skip (no access): $path" }
 }`;
-    execFile('powershell.exe', ['-NoProfile', '-Command', script], { timeout: 10000 }, (err, stdout) => {
+    execFile('powershell.exe', ['-NoProfile', '-Command', script], { timeout: 10000, windowsHide: true }, (err, stdout) => {
       if (stdout) stdout.trim().split('\n').forEach(l => l.trim() && console.log(`  [BrowserHealth] ${l.trim()}`));
-      if (err) console.warn(`  [BrowserHealth] Shortcut patch warning: ${err.message}`);
       resolve();
     });
   });
@@ -99,20 +117,27 @@ foreach ($path in $shortcuts) {
 /** Returns true if the given process name is currently running. */
 function isProcessRunning(processName) {
   return new Promise((resolve) => {
-    const tasklist = `${process.env.SystemRoot || 'C:\\Windows'}\\System32\\tasklist.exe`;
-    execFile(tasklist, ['/FI', `IMAGENAME eq ${processName}`, '/NH'], { shell: false }, (err, stdout) => {
-      resolve(!err && stdout.toLowerCase().includes(processName.toLowerCase()));
-    });
+    if (IS_WIN) {
+      const tasklist = `${process.env.SystemRoot || 'C:\\Windows'}\\System32\\tasklist.exe`;
+      execFile(tasklist, ['/FI', `IMAGENAME eq ${processName}`, '/NH'], { shell: false, windowsHide: true }, (err, stdout) => {
+        resolve(!err && stdout.toLowerCase().includes(processName.toLowerCase()));
+      });
+    } else {
+      const name = basename(processName, '.exe');
+      execFile('pgrep', ['-f', name], { timeout: 5000 }, (err) => {
+        resolve(!err);
+      });
+    }
   });
 }
 
 /**
- * Launches a browser with CDP flag via PowerShell Start-Process.
- * Uses PowerShell because execFile detached is unreliable on Windows.
+ * Launches a browser with CDP flag.
+ * Windows: PowerShell Start-Process. macOS/Linux: spawn detached.
  */
 function openBrowser(executablePath, cdpPort, userDataDir, profileDir, firstRun = false) {
   return new Promise((resolve, reject) => {
-    const args = [
+    const chromeArgs = [
       `--remote-debugging-port=${cdpPort}`,
       `--user-data-dir=${userDataDir}`,
       `--profile-directory=${profileDir}`,
@@ -120,11 +145,18 @@ function openBrowser(executablePath, cdpPort, userDataDir, profileDir, firstRun 
       `--no-default-browser-check`,
       `--disable-extensions-except=`,
       `--disable-background-extensions`,
-      // On first run, open Google sign-in directly instead of showing extension popups
       ...(firstRun ? [`https://accounts.google.com/`] : []),
-    ].join("','");
-    const script = `Start-Process '${executablePath}' -ArgumentList '${args}'`;
-    execFile('powershell.exe', ['-NoProfile', '-Command', script], { timeout: 5000 }, () => {});
+    ];
+
+    if (IS_WIN) {
+      const argStr = chromeArgs.join("','");
+      const script = `Start-Process '${executablePath}' -ArgumentList '${argStr}'`;
+      execFile('powershell.exe', ['-NoProfile', '-Command', script], { timeout: 5000, windowsHide: true }, () => {});
+    } else {
+      const proc = spawn(executablePath, chromeArgs, { detached: true, stdio: 'ignore' });
+      proc.on('error', (err) => console.warn(`  [BrowserHealth] spawn error: ${err.message}`));
+      proc.unref();
+    }
 
     let attempts = 0;
     const interval = setInterval(async () => {
@@ -132,7 +164,7 @@ function openBrowser(executablePath, cdpPort, userDataDir, profileDir, firstRun 
       if (await isCdpReachable(cdpPort)) {
         clearInterval(interval);
         resolve();
-      } else if (attempts >= 24) { // 12 seconds
+      } else if (attempts >= 24) {
         clearInterval(interval);
         reject(new Error(`CDP did not become reachable on port ${cdpPort} after launch`));
       }
@@ -144,25 +176,13 @@ export async function ensureBrowserReady() {
   const prefs = readBrowserPrefs();
   const preferredBrowser = prefs.preferredBrowser || 'Google Chrome';
 
-  // --- CHROME: use chrome-devtools-mcp --autoConnect ---
-  // autoConnect connects to the already-running Chrome (M144+) without requiring
-  // a CDP port, shortcut patching, or killing Chrome. Sessions are preserved.
-  // On first use, Chrome shows a one-time permission dialog — just click Allow.
   if (isChrome(preferredBrowser)) {
-    // Chrome uses chrome-devtools-mcp which connects via DevToolsActivePort.
-    // This file is created when Chrome runs with --remote-debugging-port.
-    // We use AutomationProfile (a separate user-data-dir) because Chrome 136+
-    // ignores --remote-debugging-port on the default profile.
-    // Fall through to the CDP launch logic below.
+    // Fall through to CDP launch logic below
   }
 
-  // --- EDGE / OTHER CHROMIUM: use @playwright/mcp with --cdp-endpoint ---
   const cdpPort = prefs.cdpPort || 9222;
   let executablePath = prefs.executablePath;
-  // Default to AutomationProfile — Chrome 136+ ignores --remote-debugging-port on the default
-  // user data dir. A separate dir is required. See browser-preferences.md for full explanation.
-  const userDataDir = prefs.userDataDir ||
-    join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile');
+  const userDataDir = prefs.userDataDir || getDefaultAutomationDir();
   const profileDir = prefs.profileDir || 'Default';
 
   if (await isCdpReachable(cdpPort)) {
@@ -170,47 +190,36 @@ export async function ensureBrowserReady() {
     return;
   }
 
-  // Auto-detect browser if prefs file is missing or has wrong paths
   if (!executablePath || !existsSync(executablePath)) {
-    const candidates = [
-      join(process.env.PROGRAMFILES || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-      join(process.env['PROGRAMFILES(X86)'] || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-      join(process.env.PROGRAMFILES || '', 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-      join(process.env['PROGRAMFILES(X86)'] || '', 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-    ];
+    const candidates = getDefaultChromePaths();
     const detected = candidates.find(p => existsSync(p));
     if (detected) {
       console.log(`  [BrowserHealth] Auto-detected browser: ${detected}`);
       executablePath = detected;
     } else {
       console.warn(`  [BrowserHealth] No browser found at prefs path (${executablePath}) or common locations`);
-      console.warn(`  [BrowserHealth] Update 'Executable Path' in bot/memory/preferences/browser-preferences.md`);
       return;
     }
   }
 
-  // Permanently patch shortcuts so future launches always have CDP
   await patchShortcuts(preferredBrowser, cdpPort, userDataDir);
 
-  const processName = executablePath.split('\\').pop();
+  const processName = basename(executablePath);
   const running = await isProcessRunning(processName);
   if (running) {
     console.warn(`  [BrowserHealth] ${preferredBrowser} is running WITHOUT CDP on port ${cdpPort}.`);
-    console.warn(`  [BrowserHealth] Shortcuts have been patched. Please restart ${preferredBrowser} manually`);
-    console.warn(`  [BrowserHealth] to enable CDP. Browser tasks will not work until then.`);
+    console.warn(`  [BrowserHealth] Please restart ${preferredBrowser} manually to enable CDP.`);
     return;
   }
 
-  // Detect first run: no account signed in yet in the AutomationProfile
   let firstRun = false;
   try {
     const prefsPath = join(userDataDir, profileDir, 'Preferences');
     if (existsSync(prefsPath)) {
       const prefs = JSON.parse(readFileSync(prefsPath, 'utf-8'));
-      const accounts = prefs?.account_info || [];
-      firstRun = accounts.length === 0;
+      firstRun = (prefs?.account_info || []).length === 0;
     } else {
-      firstRun = true; // No Preferences file at all — definitely first run
+      firstRun = true;
     }
   } catch { firstRun = true; }
 
@@ -224,6 +233,5 @@ export async function ensureBrowserReady() {
     console.log(`  [BrowserHealth] ${preferredBrowser} launched with CDP on port ${cdpPort} ✓`);
   } catch (err) {
     console.warn(`  [BrowserHealth] Failed to launch ${preferredBrowser}: ${err.message}`);
-    console.warn(`  [BrowserHealth] Start it manually — the CDP flag is now in your shortcut.`);
   }
 }

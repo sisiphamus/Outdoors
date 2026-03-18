@@ -12,6 +12,7 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell } = require(
 const path = require('path');
 const fs = require('fs');
 const { spawn, execSync, execFile } = require('child_process');
+const platform = require('./platform');
 
 // ── Dev vs Prod ──────────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ let authPollTimer = null; // track auth polling so we can cancel on skip
 // Read the signed-in email from Chrome AutomationProfile Preferences
 function getAutomationProfileEmail() {
   try {
-    const prefsPath = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile', 'Default', 'Preferences');
+    const prefsPath = path.join(platform.getAutomationProfileDir(), 'Default', 'Preferences');
     if (!fs.existsSync(prefsPath)) return null;
     const prefs = JSON.parse(fs.readFileSync(prefsPath, 'utf-8'));
     const accounts = prefs.account_info || [];
@@ -63,12 +64,23 @@ function getUserGoogleEmail() {
 let backendRestarts = 0;
 const MAX_BACKEND_RESTARTS = 5;
 let resolvedClaudeCmd = 'claude'; // updated after install or PATH lookup
+let resolvedUvxCmd = null; // cached full path to uvx.exe
+
+// Find uvx full path — checks PATH then common install locations
+function findUvxPath() {
+  const found = platform.findCommand('uvx');
+  if (found) return found;
+
+  const candidates = platform.getUvxCandidatePaths();
+  for (const c of candidates) {
+    try { if (fs.existsSync(c)) return c; } catch {}
+  }
+  return null;
+}
 
 // Resolve the claude command — caches after first successful lookup
 function getClaudeCmd() {
-  // Already resolved to a full path — use cached value
   if (resolvedClaudeCmd !== 'claude') return resolvedClaudeCmd;
-  // Check config for saved path
   try {
     if (fs.existsSync(CONFIG_PATH)) {
       const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
@@ -78,23 +90,9 @@ function getClaudeCmd() {
       }
     }
   } catch {}
-  // PATH lookup — only runs once, then cached
-  try {
-    const findCmd = process.platform === 'win32' ? 'where claude' : 'which claude';
-    const found = execSync(findCmd, { encoding: 'utf-8', shell: true, timeout: 5000, windowsHide: true }).trim();
-    if (found) {
-      const candidates = found.split('\n').map(l => l.trim()).filter(Boolean);
-      // On Windows, prefer .cmd over POSIX shell script
-      if (process.platform === 'win32') {
-        const cmdVersion = candidates.find(c => c.endsWith('.cmd'));
-        resolvedClaudeCmd = cmdVersion || candidates[0];
-      } else {
-        resolvedClaudeCmd = candidates[0];
-      }
-      return resolvedClaudeCmd;
-    }
-  } catch {}
-  return 'claude';
+  const found = platform.getClaudeCmdPath();
+  if (found) resolvedClaudeCmd = found;
+  return resolvedClaudeCmd;
 }
 
 // ── First-Run: Copy Project to Writable Location ────────────────────────────
@@ -340,6 +338,69 @@ function setupIPC() {
     }
   });
 
+  // Check if uvx is installed
+  ipcMain.handle('check-uvx-installed', async () => {
+    const found = findUvxPath();
+    if (found) {
+      resolvedUvxCmd = found;
+      return { installed: true };
+    }
+    return { installed: false };
+  });
+
+  // Install uvx (via pip install uv)
+  ipcMain.handle('install-uvx', async () => {
+    return new Promise((resolve) => {
+      // Try pip first, then pip3, then python -m pip
+      const commands = [
+        { cmd: 'pip', args: ['install', 'uv'] },
+        { cmd: 'pip3', args: ['install', 'uv'] },
+        { cmd: 'python', args: ['-m', 'pip', 'install', 'uv'] },
+        { cmd: 'python3', args: ['-m', 'pip', 'install', 'uv'] },
+      ];
+
+      let tried = 0;
+      function tryNext() {
+        if (tried >= commands.length) {
+          resolve({ ok: false, error: 'Could not install uv. Please run "pip install uv" manually.' });
+          return;
+        }
+        const { cmd, args } = commands[tried++];
+        const proc = spawn(cmd, args, { shell: true, env: process.env, windowsHide: true });
+        let output = '';
+        proc.stdout?.on('data', (d) => { output += d.toString(); });
+        proc.stderr?.on('data', (d) => { output += d.toString(); });
+        proc.on('error', () => tryNext());
+        proc.on('close', (code) => {
+          if (code === 0) {
+            // Cache the path after successful install
+            resolvedUvxCmd = findUvxPath();
+            resolve({ ok: true });
+          } else {
+            tryNext();
+          }
+        });
+      }
+      tryNext();
+    });
+  });
+
+  // Pre-download workspace-mcp so it's cached for the auth step
+  ipcMain.handle('precache-workspace-mcp', async () => {
+    const uvx = resolvedUvxCmd || findUvxPath();
+    if (!uvx) return { ok: false };
+    return new Promise((resolve) => {
+      const proc = spawn(uvx, ['workspace-mcp', '--help'], {
+        shell: true, windowsHide: true, timeout: 120000,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      proc.on('close', () => resolve({ ok: true }));
+      proc.on('error', () => resolve({ ok: false }));
+      // Timeout after 2 minutes
+      setTimeout(() => { try { proc.kill(); } catch {} resolve({ ok: true }); }, 120000);
+    });
+  });
+
   // Check Claude auth status
   ipcMain.handle('check-claude-auth', async () => {
     const cmd = getClaudeCmd();
@@ -357,17 +418,8 @@ function setupIPC() {
     const cmd = getClaudeCmd();
     return new Promise((resolve) => {
       // Open claude /login in a visible terminal — user needs to press 1
-      if (process.platform === 'win32') {
-        spawn('cmd.exe', ['/k', 'claude', '/login'], {
-          detached: true,
-          stdio: 'inherit',
-        }).unref();
-      } else {
-        spawn('open', ['-a', 'Terminal', '--args', 'claude', '/login'], {
-          detached: true,
-          stdio: 'ignore',
-        }).unref();
-      }
+      const termProc = platform.openTerminalWithCommand('claude', ['/login']);
+      if (termProc) termProc.unref();
 
       // Poll auth status every 3s until authenticated or timeout
       authPollTimer = setInterval(() => {
@@ -407,20 +459,12 @@ function setupIPC() {
   // Step 1: Detect Chrome and list profiles
   ipcMain.handle('detect-browser', async () => {
     try {
-      const CHROME_PATHS = [
-        path.join(process.env.PROGRAMFILES || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-        path.join(process.env['PROGRAMFILES(X86)'] || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-        path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-      ];
-
-      const exePath = CHROME_PATHS.find(p => {
-        try { return fs.existsSync(p) && fs.statSync(p).isFile(); } catch { return false; }
-      });
+      const exePath = platform.findChrome();
 
       if (!exePath) return { found: false, profiles: [] };
 
       // Read profiles from Local State
-      const userDataDir = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'User Data');
+      const userDataDir = platform.getChromeUserDataDir();
       const localStatePath = path.join(userDataDir, 'Local State');
       let profiles = [];
 
@@ -453,8 +497,8 @@ function setupIPC() {
   // Step 2: Create automation profile from selected Chrome profile
   ipcMain.handle('create-automation-profile', async (_event, { selectedProfile, exePath }) => {
     try {
-      const userDataDir = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'User Data');
-      const automationDir = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile');
+      const userDataDir = platform.getChromeUserDataDir();
+      const automationDir = platform.getAutomationProfileDir();
       const srcDir = path.join(userDataDir, selectedProfile);
       const destDir = path.join(automationDir, 'Default');
 
@@ -608,10 +652,10 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
   // Step 3: Launch Chrome with AutomationProfile on sign-in page
   ipcMain.handle('launch-automation-chrome', async (_event, exePath) => {
     try {
-      const automationDir = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile');
+      const automationDir = platform.getAutomationProfileDir();
       const cdpPort = 9222;
 
-      const args = [
+      const chromeArgs = [
         `--remote-debugging-port=${cdpPort}`,
         `--user-data-dir=${automationDir}`,
         `--profile-directory=Default`,
@@ -620,9 +664,8 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
         `--disable-extensions-except=`,
         `--disable-background-extensions`,
         `https://mail.google.com/`,
-      ].join("','");
-      const script = `Start-Process '${exePath}' -ArgumentList '${args}'`;
-      execFile('powershell.exe', ['-NoProfile', '-Command', script], { timeout: 5000 }, () => {});
+      ];
+      await platform.launchChrome(exePath, chromeArgs);
 
       // Wait for CDP to become reachable
       const http = require('http');
@@ -666,16 +709,19 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
 
       if (pages.length === 0) return { signedIn: false, email: null };
 
-      // Gmail only loads after full authentication (including SSO, 2FA, etc.)
-      // Since we opened mail.google.com, sign-in is complete when Gmail renders
-      const signedInPage = pages.find(p => {
+      // Only check actual pages — not iframes, service workers, or background pages
+      // (Gmail embeds iframes and service workers with mail.google.com URLs that are always present)
+      const realPages = pages.filter(p => p.type === 'page');
+
+      // Sign-in is complete when a top-level page is on mail.google.com
+      const signedInPage = realPages.find(p => {
         const url = (p.url || '').toLowerCase();
-        return url.includes('mail.google.com/mail');
+        return url.includes('mail.google.com');
       });
 
       if (signedInPage) {
         // Read email from Preferences
-        const automationDir = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile');
+        const automationDir = platform.getAutomationProfileDir();
         const prefsPath = path.join(automationDir, 'Default', 'Preferences');
         let email = null;
         try {
@@ -738,11 +784,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
       }
 
       // Kill Chrome processes using AutomationProfile
-      try {
-        execFile('powershell.exe', ['-NoProfile', '-Command',
-          "Get-CimInstance Win32_Process -Filter \"name='chrome.exe'\" | Where-Object { $_.CommandLine -match 'AutomationProfile' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
-        ], { timeout: 5000, windowsHide: true }, () => {});
-      } catch {}
+      platform.killProcessByName(platform.IS_WIN ? 'chrome.exe' : 'Google Chrome', 'AutomationProfile');
 
       return { ok: true };
     } catch (err) {
@@ -781,17 +823,14 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
         return { ok: false, error: 'Invalid oauth-creds.json — missing clientId or clientSecret.' };
       }
 
-      // Find uvx — must resolve to the actual .exe on Windows (not a shell wrapper)
-      let uvxCmd = 'uvx';
-      try {
-        const findCmd = process.platform === 'win32' ? 'where uvx' : 'which uvx';
-        const found = execSync(findCmd, { encoding: 'utf-8', shell: true, timeout: 5000, windowsHide: true }).trim();
-        if (found) {
-          // 'where' may return multiple lines — pick the .exe if available
-          const lines = found.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-          uvxCmd = lines.find(l => l.endsWith('.exe')) || lines[0];
-        }
-      } catch {}
+      // Use cached uvx path, or try to find it now, or fall back to python -m uv tool run
+      let uvxCmd = resolvedUvxCmd || findUvxPath();
+      let useUvx = !!uvxCmd;
+      if (!uvxCmd) {
+        // Fallback: use python -m uv tool run instead of uvx
+        uvxCmd = 'python';
+      }
+      resolvedUvxCmd = uvxCmd;
 
       // workspace-mcp auth flow using --cli mode:
       // 1. Run start_google_auth via --cli — prints auth URL and spawns callback server on port 8000
@@ -800,7 +839,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
       // 4. Poll for credential file to confirm success
 
       // Snapshot existing credential files
-      const credsDir = path.join(process.env.USERPROFILE || '', '.google_workspace_mcp', 'credentials');
+      const credsDir = path.join(process.env.HOME || process.env.USERPROFILE || '', '.google_workspace_mcp', 'credentials');
       let existingCredFiles = new Set();
       try {
         if (fs.existsSync(credsDir)) {
@@ -816,28 +855,20 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
         };
 
         // Kill anything already on port 8000 before starting auth server
-        try {
-          const portCheck = execSync(
-            'powershell.exe -NoProfile -Command "Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"',
-            { encoding: 'utf-8', timeout: 5000, windowsHide: true }
-          ).trim();
-          if (portCheck) {
-            for (const pid of portCheck.split(/\r?\n/).filter(Boolean)) {
-              try { execSync(`taskkill /F /PID ${pid}`, { timeout: 3000, windowsHide: true }); } catch {}
-            }
-          }
-        } catch {}
+        platform.killPort(8000);
 
         // ── Phase 1: Start workspace-mcp with streamable-http transport ──
         // This starts an HTTP server on port 8000 that:
         // - Accepts MCP JSON-RPC calls via HTTP POST
         // - Handles the OAuth callback at /oauth2callback
         // - Stays alive until we kill it
-        const serverArgs = ['workspace-mcp', '--single-user', '--transport', 'streamable-http', '--tools', ...toolsList];
+        const serverArgs = useUvx
+          ? ['workspace-mcp', '--single-user', '--transport', 'streamable-http', '--tools', ...toolsList]
+          : ['-m', 'uv', 'tool', 'run', 'workspace-mcp', '--single-user', '--transport', 'streamable-http', '--tools', ...toolsList];
 
         console.log('[google-auth] Starting MCP HTTP server:', uvxCmd, serverArgs.join(' '));
         const mcpProc = spawn(uvxCmd, serverArgs, {
-          env, windowsHide: true,
+          env, windowsHide: true, shell: true,
           stdio: ['pipe', 'pipe', 'pipe'],
         });
         mcpProc.on('error', (err) => {
@@ -851,21 +882,51 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
         let urlFound = false;
         let sessionId = null;
 
+        let stderrLog = '';
         mcpProc.stderr?.on('data', (d) => {
           const text = d.toString();
+          stderrLog += text;
           console.log('[google-auth:stderr]', text.trim().slice(0, 200));
-          // Detect when the HTTP server is ready — check for various startup messages
-          if (!serverReady && (text.includes('Uvicorn running') || text.includes('Application startup complete') || text.includes('Transport: streamable-http') || text.includes('Transport:'))) {
-            serverReady = true;
-            console.log('[google-auth] HTTP server detected, waiting for port 8000...');
-            // Give the server a moment to actually bind the port
-            setTimeout(() => {
-              console.log('[google-auth] Calling doMcpAuth');
-              doMcpAuth();
-            }, 3000);
-          }
         });
         mcpProc.stdout?.on('data', (d) => console.log('[google-auth:stdout]', d.toString().trim().slice(0, 200)));
+
+        mcpProc.on('close', (code) => {
+          console.log('[google-auth] process exited with code:', code);
+          if (!serverReady) {
+            const debugInfo = `uvxCmd=${uvxCmd}, useUvx=${useUvx}, code=${code}, stderr=${stderrLog.slice(-300)}`;
+            console.error('[google-auth] Process died before server ready:', debugInfo);
+            // Write debug log for user to share
+            try { fs.writeFileSync(path.join(app.getPath('userData'), 'google-auth-error.log'), `${new Date().toISOString()}\n${debugInfo}\n`); } catch {}
+            resolve({ ok: false, error: `Auth server crashed (code ${code}). Debug: ${stderrLog.slice(-200) || 'no output'}` });
+          }
+        });
+
+        // Poll port 8000 until the server is ready (more reliable than stderr parsing)
+        const http = require('http');
+        let pollAttempts = 0;
+        const portPoll = setInterval(() => {
+          pollAttempts++;
+          if (pollAttempts > 120) { // 60 seconds — first run downloads workspace-mcp package
+            clearInterval(portPoll);
+            if (!serverReady) {
+              console.error('[google-auth] Server never bound to port 8000');
+              try { mcpProc.kill(); } catch {}
+              resolve({ ok: false, error: 'Auth server failed to start.' });
+            }
+            return;
+          }
+          const req = http.get('http://localhost:8000/mcp', { timeout: 1000 }, (res) => {
+            res.resume();
+            if (!serverReady) {
+              serverReady = true;
+              clearInterval(portPoll);
+              console.log('[google-auth] Port 8000 ready, calling doMcpAuth');
+              doMcpAuth();
+            }
+          });
+          req.on('error', () => {}); // not ready yet
+          req.on('timeout', () => req.destroy());
+        }, 500);
 
         // Use HTTP to communicate with the MCP server
         async function doMcpAuth() {
@@ -924,13 +985,8 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
               console.log('[google-auth] Got auth URL, length:', authUrl.length);
 
               // ── Phase 2: Open auth URL in AutomationProfile Chrome ──
-              const automationDir = path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'AutomationProfile');
-              const CHROME_PATHS = [
-                path.join(process.env.PROGRAMFILES || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-                path.join(process.env['PROGRAMFILES(X86)'] || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-                path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-              ];
-              const chromeExe = CHROME_PATHS.find(p => { try { return fs.existsSync(p); } catch { return false; } });
+              const automationDir = platform.getAutomationProfileDir();
+              const chromeExe = platform.findChrome();
 
               if (chromeExe) {
                 const chromeArgs = [
@@ -940,10 +996,9 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
                   `--no-first-run`,
                   `--no-default-browser-check`,
                   authUrl,
-                ].map(a => `'${a}'`).join(',');
-                const script = `Start-Process '${chromeExe}' -ArgumentList ${chromeArgs}`;
-                execFile('powershell.exe', ['-NoProfile', '-Command', script], { timeout: 10000 }, (err) => {
-                  if (err) console.error('[google-auth] PowerShell error:', err.message);
+                ];
+                platform.launchChrome(chromeExe, chromeArgs).catch(err => {
+                  console.error('[google-auth] Chrome launch error:', err.message);
                 });
               } else {
                 shell.openExternal(authUrl);
@@ -959,15 +1014,6 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
             resolve({ ok: false, error: 'Failed to communicate with auth server: ' + err.message });
           }
         }
-
-        // Timeout: if server doesn't start in 20 seconds, fail
-        setTimeout(() => {
-          if (!serverReady) {
-            console.error('[google-auth] Server startup timed out');
-            try { mcpProc.kill(); } catch {}
-            resolve({ ok: false, error: 'Auth server failed to start.' });
-          }
-        }, 20000);
 
         // Timeout: if no URL after 35 seconds total, fail
         setTimeout(() => {
@@ -1164,7 +1210,11 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
         } catch {}
 
         if (oauthClientId && oauthClientSecret) {
-          const wsArgs = ['workspace-mcp', '--single-user'];
+          const uvxIsReal = uvxCommand && uvxCommand !== 'uvx' && fs.existsSync(uvxCommand);
+          const wsCmd = uvxIsReal ? uvxCommand : (process.platform === 'win32' ? 'python' : 'python3');
+          const wsArgs = uvxIsReal
+            ? ['workspace-mcp', '--single-user']
+            : ['-m', 'uv', 'tool', 'run', 'workspace-mcp', '--single-user'];
           if (services && services.length > 0) wsArgs.push('--tools', ...services);
 
           // Get the user's Google email from AutomationProfile
@@ -1174,7 +1224,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
             mcpServers: {
               google_workspace: {
                 type: 'stdio',
-                command: uvxCommand,
+                command: wsCmd,
                 args: wsArgs,
                 env: {
                   GOOGLE_OAUTH_CLIENT_ID: oauthClientId,
@@ -1390,12 +1440,7 @@ function writeMcpConfig(browserKey, browser) {
   };
 
   // Google Workspace (centralized OAuth)
-  let uvxCommand = 'uvx';
-  try {
-    const findCmd = process.platform === 'win32' ? 'where uvx' : 'which uvx';
-    const found = execSync(findCmd, { encoding: 'utf-8', shell: true, timeout: 5000, windowsHide: true }).trim();
-    if (found) uvxCommand = found.split('\n')[0].trim();
-  } catch {}
+  let uvxCommand = resolvedUvxCmd || findUvxPath() || 'uvx';
 
   // Google Workspace OAuth creds — read from oauth-creds.json (not committed to git)
   let oauthClientId = '';
@@ -1425,7 +1470,7 @@ function writeMcpConfig(browserKey, browser) {
     // Filter to only services with valid scopes in the credential
     // Without this, workspace-mcp demands re-auth for missing scopes
     try {
-      const credDir = path.join(process.env.USERPROFILE || '', '.google_workspace_mcp', 'credentials');
+      const credDir = path.join(process.env.HOME || process.env.USERPROFILE || '', '.google_workspace_mcp', 'credentials');
       if (fs.existsSync(credDir)) {
         const credFiles = fs.readdirSync(credDir).filter(f => f.endsWith('.json'));
         if (credFiles.length > 0) {
@@ -1482,7 +1527,13 @@ function writeMcpConfig(browserKey, browser) {
 
   // Add google_workspace to bot runtime config too
   if (oauthClientId && oauthClientSecret) {
-    const wsArgs = ['workspace-mcp', '--single-user'];
+    // If uvxCommand is a real path to uvx.exe, use it directly
+    // Otherwise fall back to python -m uv tool run
+    const uvxIsReal = uvxCommand && uvxCommand !== 'uvx' && fs.existsSync(uvxCommand);
+    const wsCmd = uvxIsReal ? uvxCommand : (process.platform === 'win32' ? 'python' : 'python3');
+    const wsArgs = uvxIsReal
+      ? ['workspace-mcp', '--single-user']
+      : ['-m', 'uv', 'tool', 'run', 'workspace-mcp', '--single-user'];
     let googleTools = [];
     try {
       if (fs.existsSync(CONFIG_PATH)) {
@@ -1494,7 +1545,7 @@ function writeMcpConfig(browserKey, browser) {
 
     botMcpConfig.mcpServers.google_workspace = {
       type: 'stdio',
-      command: uvxCommand,
+      command: wsCmd,
       args: wsArgs,
       env: {
         GOOGLE_OAUTH_CLIENT_ID: oauthClientId,

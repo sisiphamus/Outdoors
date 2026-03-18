@@ -79,69 +79,50 @@
       </div>
     </div>
 
-    <!-- Page 4: Browser Setup -->
+    <!-- Page 4: Connect (Browser + Google merged) -->
     <div class="page" data-page="3">
       <div class="page-content">
-        <h2>Set up your browser</h2>
+        <h2>Connect your accounts</h2>
         <p class="subtitle">
-          Outdoors uses your browser to take actions on your behalf.
-          Your logins will carry over.
+          Outdoors uses your browser and Google services to act on your behalf.
+          You'll set up Chrome and sign in to Google in one step.
         </p>
-        <div id="browser-detect-btn">
+
+        <!-- Step 1: Set up Chrome button -->
+        <div id="connect-start">
           <button class="btn-primary" id="btn-setup-chrome">Set Up Chrome</button>
         </div>
-        <div id="browser-detecting" class="browser-status hidden">
+
+        <!-- Detecting Chrome -->
+        <div id="connect-detecting" class="browser-status hidden">
           <div class="spinner-small"></div>
           <p class="browser-status-text">Detecting Chrome...</p>
         </div>
-        <div id="browser-not-found" class="hidden">
+
+        <!-- Chrome not found -->
+        <div id="connect-not-found" class="hidden">
           <p class="error-text">Chrome not found. Please install Google Chrome first.</p>
           <p class="auth-hint">Download from <a href="https://www.google.com/chrome/" target="_blank">google.com/chrome</a></p>
         </div>
-        <div id="browser-profiles" class="hidden">
+
+        <!-- Profile selection -->
+        <div id="connect-profiles" class="hidden">
           <p class="profile-label">Select which Chrome profile to use as the base:</p>
           <select id="profile-select" class="profile-select"></select>
           <p class="auth-hint">Outdoors will create a separate automation profile from this one.</p>
           <button class="btn-primary" id="btn-confirm-profile">Use This Profile</button>
         </div>
-        <div id="browser-copying" class="browser-status hidden">
+
+        <!-- Copying profile -->
+        <div id="connect-copying" class="browser-status hidden">
           <div class="spinner-small"></div>
           <p class="browser-status-text">Creating automation profile...</p>
         </div>
-        <div id="browser-launching" class="browser-status hidden">
-          <div class="spinner-small"></div>
-          <p class="browser-status-text" id="browser-launch-text">Opening Chrome in 5 seconds — please log in when it opens.</p>
-        </div>
-        <div id="browser-signin" class="hidden">
-          <p class="signin-instruction">Chrome opened on the Google sign-in page.</p>
-          <p class="signin-instruction"><strong>Sign into your Google account</strong> in the Chrome window that just appeared.</p>
-          <div class="browser-status">
-            <div class="spinner-small"></div>
-            <p class="browser-status-text" id="signin-status-text">Waiting for sign-in...</p>
-          </div>
-        </div>
-        <div id="browser-success" class="browser-status hidden">
-          <div class="complete-mark small-mark"></div>
-          <p class="browser-status-text">Browser ready <span id="browser-email"></span></p>
-        </div>
-        <div id="browser-error" class="hidden">
-          <p class="error-text" id="browser-error-text"></p>
-          <button class="btn-skip" id="btn-retry-browser">Try again</button>
-        </div>
-      </div>
-    </div>
 
-    <!-- Page 5: Google Account Access -->
-    <div class="page" data-page="4">
-      <div class="page-content">
-        <h2>Connect Google</h2>
-        <p class="subtitle">
-          Choose which Google services Outdoors should manage for you.
-          You'll only be asked to grant access for the services you select.
-        </p>
-        <div id="google-services">
+        <!-- Service selection (shown after profile is created) -->
+        <div id="connect-services" class="hidden">
           <p class="auth-hint" style="margin-bottom:8px">Gmail, Calendar, and Contacts are always included.</p>
-          <p class="auth-hint" style="margin-bottom:12px">Select any additional services you'd like Outdoors to manage:</p>
+          <p class="auth-hint" style="margin-bottom:12px">Select any additional services:</p>
           <div class="service-list">
             <label class="service-item"><input type="checkbox" value="drive" checked><span class="service-name">Drive</span><span class="service-desc">Access and manage files</span></label>
             <label class="service-item"><input type="checkbox" value="docs"><span class="service-name">Docs</span><span class="service-desc">Read and edit documents</span></label>
@@ -151,19 +132,25 @@
             <label class="service-item"><input type="checkbox" value="forms"><span class="service-name">Forms</span><span class="service-desc">Create and read forms</span></label>
             <label class="service-item"><input type="checkbox" value="search"><span class="service-name">Search</span><span class="service-desc">Custom search engine</span></label>
           </div>
-          <button class="btn-primary" id="btn-google-auth">Continue</button>
-          <button class="btn-skip" id="btn-skip-google">Skip for now</button>
+          <button class="btn-primary" id="btn-start-auth">Continue</button>
+          <button class="btn-skip" id="btn-skip-connect">Skip for now</button>
         </div>
-        <div id="google-waiting" class="browser-status hidden">
+
+        <!-- Waiting for sign-in + consent -->
+        <div id="connect-waiting" class="browser-status hidden">
           <div class="spinner-small"></div>
-          <p class="browser-status-text" id="google-waiting-text">Opening Google consent screen... (This may take a few seconds)</p>
-          <button class="btn-skip" id="btn-skip-google-waiting">Skip for now</button>
+          <p class="browser-status-text" id="connect-waiting-text">Opening Google sign-in...</p>
+          <button class="btn-skip" id="btn-skip-connect-waiting">Skip for now</button>
         </div>
-        <div id="google-success" class="browser-status hidden">
+
+        <!-- Success -->
+        <div id="connect-success" class="browser-status hidden">
           <div class="complete-mark small-mark"></div>
-          <p class="browser-status-text">Google account connected <span id="google-email"></span></p>
+          <p class="browser-status-text">Connected <span id="connect-email"></span></p>
         </div>
-        <div id="google-onboarding" class="hidden">
+
+        <!-- Onboarding scan -->
+        <div id="connect-onboarding" class="hidden">
           <div class="spinner-small"></div>
           <p class="onboarding-title">Personalizing Outdoors...</p>
           <p class="browser-status-text" id="onboarding-status">Starting scan...</p>
@@ -172,20 +159,24 @@
           </div>
           <button class="btn-primary" id="btn-skip-onboarding">Next - Will continue in the background</button>
         </div>
-        <div id="google-error" class="hidden">
-          <p class="error-text" id="google-error-text"></p>
-          <button class="btn-skip" id="btn-retry-google">Try aganowin</button>
-          <button class="btn-skip" id="btn-skip-google-error">Skip for now</button>
+
+        <!-- Error -->
+        <div id="connect-error" class="hidden">
+          <p class="error-text" id="connect-error-text"></p>
+          <button class="btn-skip" id="btn-retry-connect">Try again</button>
+          <button class="btn-skip" id="btn-skip-connect-error">Skip for now</button>
         </div>
-        <div id="google-no-creds" class="hidden">
+
+        <!-- No OAuth creds configured -->
+        <div id="connect-no-creds" class="hidden">
           <p class="auth-hint">Google integration not configured. You can set it up later.</p>
-          <button class="btn-primary" id="btn-skip-google-nocreds">Continue</button>
+          <button class="btn-primary" id="btn-skip-connect-nocreds">Continue</button>
         </div>
       </div>
     </div>
 
-    <!-- Page 6: WhatsApp Setup -->
-    <div class="page" data-page="5">
+    <!-- Page 5: WhatsApp Setup -->
+    <div class="page" data-page="4">
       <div class="page-content">
         <h2>Connect WhatsApp</h2>
         <p class="subtitle">
@@ -223,8 +214,8 @@
       </div>
     </div>
 
-    <!-- Page 7: Complete -->
-    <div class="page" data-page="6">
+    <!-- Page 6: Complete -->
+    <div class="page" data-page="5">
       <div class="page-content complete-page">
         <div class="complete-mark"></div>
         <h2>You're all set.</h2>
@@ -254,7 +245,6 @@
       <span class="dot" data-dot="3"></span>
       <span class="dot" data-dot="4"></span>
       <span class="dot" data-dot="5"></span>
-      <span class="dot" data-dot="6"></span>
     </div>
   </div>
 
