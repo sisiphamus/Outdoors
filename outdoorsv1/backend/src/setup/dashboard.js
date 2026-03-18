@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadSocketIO(backendUrl);
   setupTitlebar();
   setupSettings();
+  initOnboardingBar();
 });
 
 // ---------------------------------------------------------------------------
@@ -886,4 +887,37 @@ function esc(text) {
   const d = document.createElement('div');
   d.textContent = text;
   return d.innerHTML;
+}
+
+// ---------------------------------------------------------------------------
+// Onboarding progress bar
+// ---------------------------------------------------------------------------
+
+function initOnboardingBar() {
+  if (!window.electronAPI?.getOnboardingScanState) return;
+
+  const container = document.getElementById('onboarding-bar-container');
+  const fill = document.getElementById('onboarding-bar-fill');
+  if (!container || !fill) return;
+
+  function updateBar(state) {
+    if (!state) return;
+    if (state.running) {
+      container.classList.remove('hidden');
+      fill.style.width = state.progress + '%';
+      container.title = `Onboarding scan ${state.progress}% complete`;
+    } else if (state.progress >= 100) {
+      fill.style.width = '100%';
+      container.title = 'Onboarding scan complete';
+      setTimeout(() => container.classList.add('hidden'), 2000);
+    } else {
+      container.classList.add('hidden');
+    }
+  }
+
+  // Check initial state
+  window.electronAPI.getOnboardingScanState().then(updateBar);
+
+  // Listen for live updates
+  window.electronAPI.onOnboardingScanState?.(updateBar);
 }

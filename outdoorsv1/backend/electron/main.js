@@ -37,6 +37,9 @@ let mainWindow = null;
 let tray = null;
 let backendProcess = null;
 let devLogWindow = null;
+
+// Onboarding scan state (shared between setup wizard and dashboard)
+let onboardingScan = { running: false, progress: 0, status: '' };
 let authPollTimer = null; // track auth polling so we can cancel on skip
 
 // Read the signed-in email from Chrome AutomationProfile Preferences
@@ -1558,12 +1561,39 @@ Start by reading the skill file, then scan each service systematically.`;
         const runLog = path.join(app.getPath('userData'), 'onboarding-run.log');
         try { fs.writeFileSync(runLog, `[${new Date().toISOString()}] Scan started\n`); } catch {}
 
+        onboardingScan = { running: true, progress: 5, status: 'Starting scan...' };
+        const broadcastScanProgress = () => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('onboarding-progress', onboardingScan.status);
+            mainWindow.webContents.send('onboarding-scan-state', { ...onboardingScan });
+          }
+        };
+        broadcastScanProgress();
+
+        // Estimate progress from service keywords in stdout
+        const serviceOrder = services || [];
+        let lastServiceIdx = 0;
+        const totalServices = serviceOrder.length || 1;
+
         proc.stdout?.on('data', (d) => {
           stdout += d.toString();
           try { fs.appendFileSync(runLog, `[stdout] ${d.toString()}\n`); } catch {}
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('onboarding-progress', d.toString());
+
+          // Estimate progress from service mentions
+          const chunk = d.toString().toLowerCase();
+          for (let i = lastServiceIdx; i < serviceOrder.length; i++) {
+            if (chunk.includes(serviceOrder[i])) {
+              lastServiceIdx = i + 1;
+              onboardingScan.progress = Math.min(90, Math.round((lastServiceIdx / totalServices) * 85) + 5);
+              onboardingScan.status = `Scanning ${serviceOrder[i]}...`;
+              break;
+            }
           }
+          // Slow tick if no service keyword found
+          if (onboardingScan.progress < 85) {
+            onboardingScan.progress = Math.min(85, onboardingScan.progress + 1);
+          }
+          broadcastScanProgress();
         });
         proc.stderr?.on('data', (d) => {
           stderr += d.toString();
@@ -1572,6 +1602,8 @@ Start by reading the skill file, then scan each service systematically.`;
 
         proc.on('close', (code) => {
           try { fs.appendFileSync(scanLog, `[close] code=${code}\nstdout_len=${stdout.length}\nstderr_last500=${stderr.slice(-500)}\n`); } catch {}
+          onboardingScan = { running: false, progress: 100, status: code === 0 ? 'Complete' : 'Failed' };
+          broadcastScanProgress();
           if (code === 0 && stdout) {
             resolve({ ok: true, summary: stdout.slice(-500) });
           } else {
@@ -1594,6 +1626,9 @@ Start by reading the skill file, then scan each service systematically.`;
       return { ok: false, error: 'Error: ' + err.message };
     }
   });
+
+  // Query onboarding scan state (used by dashboard after setup wizard skips)
+  ipcMain.handle('get-onboarding-scan-state', () => ({ ...onboardingScan }));
 
   // ── Filesystem Index (local scan, no Claude) ──────────────────────────────
 
