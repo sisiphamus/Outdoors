@@ -78,3 +78,4 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Outdoors
+  include: installer.nsh
