@@ -81,6 +81,16 @@ async function createOutdoorsGroup(sock, emitLog) {
 
     await sock.groupUpdateDescription(groupJid, 'Send messages here to chat with Outdoors.').catch(() => {});
 
+    // Set group profile picture
+    try {
+      const iconPath = join(__dirname, 'setup', 'icon.png');
+      const iconBuffer = readFileSync(iconPath);
+      await sock.updateProfilePicture(groupJid, iconBuffer);
+      console.log('[WhatsApp] Set group profile picture');
+    } catch (err) {
+      console.log('[WhatsApp] Failed to set group picture:', err.message);
+    }
+
     // Send welcome message
     if (isOnboardingNeeded()) {
       await sendOnboardingWelcome(sock, groupJid);
