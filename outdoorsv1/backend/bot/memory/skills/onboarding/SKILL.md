@@ -36,7 +36,7 @@ Updated: [YYYY-MM-DD]
 ---
 
 ### `gmail-profile.md`
-Scan: `search_gmail_messages` for 20 recent SENT emails, read with `get_gmail_messages_content_batch`.
+Scan: `search_gmail_messages` for **50+ SENT emails spanning the last 3 months** (use `in:sent newer_than:3m`), plus **20 recent RECEIVED emails** (`in:inbox newer_than:1m`). Read with `get_gmail_messages_content_batch`. Search across categories: `in:sent category:primary`, `in:sent label:important`. Group analysis by recipient type (professional, personal, family, transactional).
 
 ```markdown
 # Gmail Profile
@@ -65,7 +65,7 @@ Updated: [YYYY-MM-DD]
 ---
 
 ### `calendar-profile.md`
-Scan: `get_events` for last 2 weeks + next 2 weeks across all calendars.
+Scan: `get_events` for **last 4 weeks + next 4 weeks** across all calendars. Also check recurring events over a longer window to identify stable commitments.
 
 ```markdown
 # Calendar Profile
@@ -97,7 +97,7 @@ Updated: [YYYY-MM-DD]
 ---
 
 ### `contacts-profile.md`
-Scan: `list_contacts` (top 50), `list_contact_groups`.
+Scan: `list_contacts` (**top 200 or all contacts**), `list_contact_groups`. Cross-reference with Gmail frequent recipients to identify the user's actual inner circle vs stored-but-inactive contacts.
 
 ```markdown
 # Contacts Profile
@@ -122,7 +122,7 @@ Updated: [YYYY-MM-DD]
 ---
 
 ### `drive-profile.md`
-Scan: `list_drive_items` (root + 2 levels deep), `search_drive_files` for recent files.
+Scan: `list_drive_items` (**root + 3 levels deep**), `search_drive_files` for files modified in the **last 30 days**. Identify active projects by modification recency. Note shared vs personal folders.
 
 ```markdown
 # Drive Profile
@@ -147,7 +147,7 @@ Updated: [YYYY-MM-DD]
 ---
 
 ### `docs-profile.md`
-Scan: `search_drive_files` for 3-5 recent Google Docs, `get_doc_as_markdown`.
+Scan: `search_drive_files` for **10-15 recent Google Docs** across different types (notes, essays, reports, project docs), `get_doc_as_markdown`. Read enough content to identify structural patterns, formatting preferences, and recurring topics.
 
 ```markdown
 # Docs Profile
@@ -213,9 +213,9 @@ Updated: [YYYY-MM-DD]
 ---
 
 ### `writing-voice.md`
-Always created when Gmail is scanned. This is the MOST IMPORTANT onboarding file — it enables the assistant to write like the user. Scan 20+ recent SENT emails, group by recipient type, and extract what makes this user's writing DISTINCTIVE.
+Always created when Gmail is scanned. This is the MOST IMPORTANT onboarding file — it enables the assistant to write like the user. Scan **50+ SENT emails across 3+ months**, group by recipient type, and extract what makes this user's writing DISTINCTIVE.
 
-Scan: `search_gmail_messages` for 20-30 recent SENT emails across different recipients, read with `get_gmail_messages_content_batch`. Focus on variety — professional emails, casual emails, quick replies, longer messages.
+Scan: `search_gmail_messages` for **50+ SENT emails** spanning at least 3 months across different recipients, read with `get_gmail_messages_content_batch`. Focus on variety — professional emails, casual emails, quick replies, longer messages. Also analyze **email threads** to see how tone shifts through a conversation. Extract **subject line patterns** (how they title emails). This file can be up to **100 lines**.
 
 ```markdown
 # Writing Voice
@@ -276,7 +276,7 @@ This file is created automatically by the setup wizard (not by the Claude scan).
 
 ## Rules for the Scan
 1. **Never store raw content** — no email bodies, no document text, no contact details beyond first name + relationship
-2. **Keep each file under 60 lines**
+2. **Keep each file under 80 lines** (except writing-voice.md which can be up to 100 lines)
 3. **Be specific** — "uses casual tone with friends, formal with professors" is better than "mixed tone"
 4. **Date everything** — add `Updated: YYYY-MM-DD` at the bottom
 5. **If a service is empty or fails**, write a brief note: "No data found" and move on

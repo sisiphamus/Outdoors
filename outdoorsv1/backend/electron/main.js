@@ -1388,14 +1388,24 @@ For each service:
 4. Fill in every field in the template with real observations — be specific, not generic
 5. Always create bot/memory/knowledge/user-profile.md as a synthesis of all services
 
+DEPTH — GO DEEP, NOT SHALLOW:
+This scan should be THOROUGH. Shallow profiles are useless. Specific instructions:
+- Gmail: Read at least 50 SENT emails spanning the last 3 months (use in:sent newer_than:3m). Also read 20 RECEIVED emails to understand communication dynamics. Search across categories.
+- Calendar: Scan last 4 weeks + next 4 weeks. Check recurring events over a longer window.
+- Contacts: Scan top 200 or all contacts. Cross-reference with Gmail frequent recipients.
+- Drive: Go 3 levels deep. Search for files modified in the last 30 days.
+- Docs: Read 10-15 recent Google Docs across different types (notes, essays, reports, project docs).
+
 CRITICAL — WRITING VOICE:
 The writing-voice.md file is the MOST IMPORTANT output of this scan. It enables the assistant to write like the user instead of sounding like a robot. To create it:
-- Read at least 20 recent SENT emails (use search_gmail_messages with in:sent, then get_gmail_messages_content_batch)
-- Include emails to different types of recipients (professional, personal, casual)
+- Read at least 50 SENT emails spanning 3+ months (use search_gmail_messages with in:sent newer_than:3m, then get_gmail_messages_content_batch)
+- Include emails to different types of recipients (professional, personal, casual, family)
+- Analyze email THREADS to see how tone shifts through a conversation
 - Extract ACTUAL phrases and sentence patterns the user uses — not generic descriptions
+- Extract subject line patterns (how they title emails)
 - Focus on what makes this person's writing DISTINCTIVE from generic email
-- Include 5-8 real anonymized example phrasings (replace names with [Name], topics with [Topic])
-- Note how their voice shifts between contexts (professional vs personal vs quick reply)
+- Include 8-12 real anonymized example phrasings (replace names with [Name], topics with [Topic])
+- Note how their voice shifts between contexts (professional vs personal vs quick reply vs thread)
 
 RULES:
 - Only READ, never modify the user's data
@@ -1403,7 +1413,7 @@ RULES:
 - Be specific: "uses casual tone, typically 2-3 short sentences, signs off with 'cheers'" beats "mixed tone"
 - Replace [YYYY-MM-DD] with ${today}
 - If a service has no data or fails, write "No data available" in that file and move on
-- Keep each file under 60 lines (except writing-voice.md which can be up to 80 lines)
+- Keep each file under 80 lines (except writing-voice.md which can be up to 100 lines)
 
 Start by reading the skill file, then scan each service systematically.`;
 
@@ -1494,10 +1504,10 @@ Start by reading the skill file, then scan each service systematically.`;
           resolve({ ok: false, error: 'Failed to start scan: ' + err.message });
         });
 
-        // Timeout after 30 minutes — scan may take a while with many services
+        // Timeout after 45 minutes — deep scan reads 50+ emails and 10+ docs
         setTimeout(() => {
           try { proc.kill(); } catch {}
-        }, 1800000);
+        }, 2700000);
       });
 
     } catch (err) {
