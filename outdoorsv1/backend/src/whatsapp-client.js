@@ -101,6 +101,7 @@ const seenTimestampKeys = new Set();
 
 // Track message IDs sent by the bot to prevent infinite loops
 const botSentIds = new Set();
+const processedMsgIds = new Set(); // dedup incoming messages
 // Track message IDs currently being processed to deduplicate Baileys' multiple upsert events
 const processingIds = new Set();
 // Store sent messages for getMessage callback (needed for sender key retries).
@@ -305,6 +306,16 @@ async function startWhatsApp() {
           sock.sendMessage(failJid, { text: '\u26a0\ufe0f Couldn\'t read that message (decryption issue). Please send it again.' }).catch(() => {});
         }
         continue;
+      }
+
+      // Deduplicate — skip if we've already processed this message ID
+      if (processedMsgIds.has(msgId)) continue;
+      processedMsgIds.add(msgId);
+      // Keep the set from growing forever — prune old entries
+      if (processedMsgIds.size > 500) {
+        const arr = [...processedMsgIds];
+        processedMsgIds.clear();
+        arr.slice(-200).forEach(id => processedMsgIds.add(id));
       }
 
       // Store incoming messages so getMessage can fulfill group retry requests

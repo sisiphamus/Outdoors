@@ -475,18 +475,48 @@ function learnInBackground(prompt, outputSpec, executionResponse, fullEvents, on
         let lastToolName = null;
 
         for (const ev of fullEvents) {
-          if (ev.type === 'tool_use') {
-            const key = ev.tool;
-            toolCallCounts[key] = (toolCallCounts[key] || 0) + 1;
-            const inputStr = JSON.stringify(ev.input || {}).slice(0, 200);
-            traceLines.push(`TOOL_USE[${toolCallCounts[key]}]: ${ev.tool} ${inputStr}`);
-            lastToolName = ev.tool;
-          } else if (ev.type === 'tool_result') {
-            const out = typeof ev.output === 'string' ? ev.output : JSON.stringify(ev.output || '');
-            const isError = out.toLowerCase().includes('error') || out.toLowerCase().includes('failed') || out.toLowerCase().includes('timed out');
-            traceLines.push(`TOOL_RESULT${isError ? '[ERROR]' : '[OK]'}: ${out.slice(0, 300)}`);
-            if (lastToolName) {
-              methodAttempts.push({ tool: lastToolName, succeeded: !isError });
+          // Handle raw stream-json format from Claude CLI
+          if (ev.type === 'assistant') {
+            if (ev.subtype === 'tool_use') {
+              // Legacy format: tool_use at top level
+              const key = ev.tool_name || 'unknown';
+              toolCallCounts[key] = (toolCallCounts[key] || 0) + 1;
+              const inputStr = JSON.stringify(ev.input || {}).slice(0, 200);
+              traceLines.push(`TOOL_USE[${toolCallCounts[key]}]: ${key} ${inputStr}`);
+              lastToolName = key;
+            } else if (ev.message?.content) {
+              // Current format: tool_use inside message.content blocks
+              for (const block of ev.message.content) {
+                if (block.type === 'tool_use') {
+                  const key = block.name || 'unknown';
+                  toolCallCounts[key] = (toolCallCounts[key] || 0) + 1;
+                  const inputStr = JSON.stringify(block.input || {}).slice(0, 200);
+                  traceLines.push(`TOOL_USE[${toolCallCounts[key]}]: ${key} ${inputStr}`);
+                  lastToolName = key;
+                } else if (block.type === 'text' && block.text) {
+                  traceLines.push(`ASSISTANT: ${block.text.slice(0, 300)}`);
+                }
+              }
+            }
+          } else if (ev.type === 'user') {
+            if (ev.subtype === 'tool_result') {
+              const out = typeof ev.output === 'string' ? ev.output : JSON.stringify(ev.output || '');
+              const isError = (ev.is_error) || out.toLowerCase().includes('error') || out.toLowerCase().includes('failed');
+              traceLines.push(`TOOL_RESULT${isError ? '[ERROR]' : '[OK]'}: ${out.slice(0, 300)}`);
+              if (lastToolName) {
+                methodAttempts.push({ tool: lastToolName, succeeded: !isError });
+              }
+            } else if (ev.message?.content) {
+              for (const block of ev.message.content) {
+                if (block.type === 'tool_result') {
+                  const out = typeof block.content === 'string' ? block.content : JSON.stringify(block.content || '');
+                  const isError = block.is_error || out.toLowerCase().includes('error');
+                  traceLines.push(`TOOL_RESULT${isError ? '[ERROR]' : '[OK]'}: ${out.slice(0, 300)}`);
+                  if (lastToolName) {
+                    methodAttempts.push({ tool: lastToolName, succeeded: !isError });
+                  }
+                }
+              }
             }
           } else if (ev.type === 'assistant_text' && ev.text) {
             traceLines.push(`ASSISTANT: ${ev.text.slice(0, 300)}`);
