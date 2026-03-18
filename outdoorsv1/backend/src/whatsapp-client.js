@@ -81,9 +81,28 @@ async function createOutdoorsGroup(sock, emitLog) {
 
     await sock.groupUpdateDescription(groupJid, 'Send messages here to chat with Outdoors.').catch(() => {});
 
-    // Send hardcoded welcome + Round 1 instantly (no LLM call)
+    // Send welcome message
     if (isOnboardingNeeded()) {
       await sendOnboardingWelcome(sock, groupJid);
+    } else {
+      try {
+        const welcome = formatOutdoorsResponse(
+          `Hello! I'm Outdoors 🌲\n\n` +
+          `I'm your personal assistant — I live right here in this chat.\n` +
+          `Send me a message and I'll get to work. When you see 🌱🌿🌳 on your message, that means I'm thinking.\n\n` +
+          `You can run multiple conversations at once:\n` +
+          `*1 email my friend about friday*\n` +
+          `*2 research for my econ project*\n\n` +
+          `That's it. No apps to open, no windows to manage.`
+        );
+        const sent = await sock.sendMessage(groupJid, { text: welcome });
+        if (sent?.key?.id) {
+          botSentIds.add(sent.key.id);
+          storeMessage(sent.key.id, sent.message);
+        }
+      } catch (err) {
+        console.log('[WhatsApp] Failed to send welcome:', err.message);
+      }
     }
   } catch (err) {
     console.log('[WhatsApp] Failed to create Outdoors group:', err.message);
@@ -468,12 +487,9 @@ async function startWhatsApp() {
         }
 
         if (!result) {
-          console.log(`[wa:no_result] handleMessage returned null for ${msgId} from ${jid}`);
-          try {
-            const fallback = formatOutdoorsResponse('Something went wrong \u2014 I didn\'t get a response. Try again?');
-            const sent = await sendWithRetry(jid, { text: fallback }, { quoted: msg });
-            if (sent?.key?.id) { botSentIds.add(sent.key.id); storeMessage(sent.key.id, sent.message); }
-          } catch {}
+          // null means handleMessage intentionally ignored this message (no text/media, protocol msg, etc.)
+          // Don't send an error — just log and move on
+          console.log(`[wa:ignored] handleMessage returned null for ${msgId} from ${jid} (not a user message)`);
         } else if (result && !result.response) {
           try {
             const fallback = formatOutdoorsResponse('I processed your message but the response was empty. Try again?');
