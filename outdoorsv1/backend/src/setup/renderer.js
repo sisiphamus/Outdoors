@@ -423,6 +423,9 @@ async function runOnboardingScan() {
     clearInterval(progressTimer);
 
     if (result.ok) {
+      if (barEl) barEl.style.width = '95%';
+      if (statusEl) statusEl.textContent = 'Indexing local files...';
+      try { await window.electronAPI.runFilesystemIndex(); } catch {}
       if (barEl) barEl.style.width = '100%';
       if (statusEl) statusEl.textContent = 'Personalization complete!';
       await delay(1500);

@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Onboarding scan
   runOnboardingScan: (services) => ipcRenderer.invoke('run-onboarding-scan', services),
   onOnboardingProgress: (callback) => ipcRenderer.on('onboarding-progress', (_event, data) => callback(data)),
+  runFilesystemIndex: () => ipcRenderer.invoke('run-filesystem-index'),
 
   // Backend
   startBackend: () => ipcRenderer.invoke('start-backend'),

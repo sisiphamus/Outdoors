@@ -269,6 +269,11 @@ Follow the same pattern: scan recent items, document types/topics/style, keep co
 
 ---
 
+### `filesystem-index.md` (auto-generated, not by Claude)
+This file is created automatically by the setup wizard (not by the Claude scan). It contains a map of the user's local filesystem — key directories, project folders, and cloud sync locations. Model D uses this to find files and understand the user's workspace layout.
+
+---
+
 ## Rules for the Scan
 1. **Never store raw content** — no email bodies, no document text, no contact details beyond first name + relationship
 2. **Keep each file under 60 lines**

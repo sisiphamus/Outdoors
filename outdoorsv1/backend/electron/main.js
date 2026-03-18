@@ -1505,6 +1505,152 @@ Start by reading the skill file, then scan each service systematically.`;
     }
   });
 
+  // ── Filesystem Index (local scan, no Claude) ──────────────────────────────
+
+  ipcMain.handle('run-filesystem-index', async () => {
+    try {
+      const home = process.env.HOME || process.env.USERPROFILE || '';
+      const IS_WIN = process.platform === 'win32';
+      const IS_MAC = process.platform === 'darwin';
+
+      const SKIP_DIRS = new Set([
+        'node_modules', '.git', '__pycache__', '.cache', '.vscode',
+        '.idea', 'dist', 'build', '.next', '.nuxt', 'vendor',
+        'AppData', '$Recycle.Bin', 'System Volume Information',
+      ]);
+
+      // Candidate directories to scan
+      const candidates = [
+        path.join(home, 'Desktop'),
+        path.join(home, 'Documents'),
+        path.join(home, 'Downloads'),
+        path.join(home, 'Pictures'),
+        IS_WIN ? path.join(home, 'Videos') : IS_MAC ? path.join(home, 'Movies') : null,
+        path.join(home, 'Music'),
+        path.join(home, 'Code'),
+        path.join(home, 'Projects'),
+        path.join(home, 'repos'),
+        IS_MAC ? path.join(home, 'Developer') : null,
+        path.join(home, 'OneDrive'),
+        path.join(home, 'OneDrive - Personal'),
+        path.join(home, 'Google Drive'),
+        path.join(home, 'Dropbox'),
+        IS_WIN ? path.join(home, 'source', 'repos') : null,
+      ].filter(Boolean);
+
+      function scanDir(dir, maxDepth, currentDepth = 0) {
+        const result = { path: dir, folders: [], files: 0, extCounts: {} };
+        try {
+          const entries = fs.readdirSync(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            if (entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) continue;
+            if (entry.isDirectory()) {
+              result.folders.push(entry.name);
+              if (currentDepth < maxDepth) {
+                const sub = scanDir(path.join(dir, entry.name), maxDepth, currentDepth + 1);
+                result.files += sub.files;
+                for (const [ext, count] of Object.entries(sub.extCounts)) {
+                  result.extCounts[ext] = (result.extCounts[ext] || 0) + count;
+                }
+              }
+            } else {
+              result.files++;
+              const dot = entry.name.lastIndexOf('.');
+              if (dot > 0) {
+                const ext = entry.name.slice(dot).toLowerCase();
+                result.extCounts[ext] = (result.extCounts[ext] || 0) + 1;
+              }
+            }
+          }
+        } catch {}
+        return result;
+      }
+
+      function detectProjectType(dir) {
+        const markers = [
+          ['package.json', 'Node.js'],
+          ['requirements.txt', 'Python'],
+          ['Pipfile', 'Python'],
+          ['pyproject.toml', 'Python'],
+          ['Cargo.toml', 'Rust'],
+          ['go.mod', 'Go'],
+          ['pom.xml', 'Java/Maven'],
+          ['build.gradle', 'Java/Gradle'],
+          ['Gemfile', 'Ruby'],
+          ['composer.json', 'PHP'],
+          ['.sln', 'C#/.NET'],
+        ];
+        for (const [file, lang] of markers) {
+          try {
+            if (fs.existsSync(path.join(dir, file))) return lang;
+          } catch {}
+        }
+        return null;
+      }
+
+      const sections = [];
+      const projects = [];
+      const cloudSync = [];
+
+      for (const dir of candidates) {
+        if (!fs.existsSync(dir)) continue;
+        const scan = scanDir(dir, 2);
+        const topExts = Object.entries(scan.extCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 4)
+          .map(([ext, count]) => `${count} ${ext}`)
+          .join(', ');
+
+        sections.push(`| ${dir} | ${scan.files} files, ${scan.folders.length} folders | ${topExts || 'empty'} |`);
+
+        // Check for project directories (folders with package.json, etc.)
+        if (['Code', 'Projects', 'repos', 'source', 'Developer'].some(k => dir.includes(k))) {
+          for (const folder of scan.folders) {
+            const projectDir = path.join(dir, folder);
+            const type = detectProjectType(projectDir);
+            if (type) {
+              const subScan = scanDir(projectDir, 1);
+              const exts = Object.entries(subScan.extCounts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 3)
+                .map(([ext, count]) => `${count} ${ext}`)
+                .join(', ');
+              projects.push(`- ${projectDir} — ${type} (${exts || 'no files'})`);
+            }
+          }
+        }
+
+        // Detect cloud sync
+        if (dir.includes('OneDrive')) cloudSync.push(`- OneDrive: ${dir}`);
+        if (dir.includes('Google Drive')) cloudSync.push(`- Google Drive: ${dir}`);
+        if (dir.includes('Dropbox')) cloudSync.push(`- Dropbox: ${dir}`);
+      }
+
+      const today = new Date().toISOString().split('T')[0];
+      const content = `# Filesystem Index
+
+## Key Directories
+| Path | Contents | Notable |
+|------|----------|---------|
+${sections.join('\n')}
+
+${projects.length > 0 ? `## Project Directories\n${projects.join('\n')}` : '## Project Directories\nNo project directories detected.'}
+
+${cloudSync.length > 0 ? `## Cloud Sync\n${cloudSync.join('\n')}` : '## Cloud Sync\nNo cloud sync folders detected.'}
+
+Updated: ${today}
+`;
+
+      const knowledgeDir = path.join(BACKEND_DIR, 'bot', 'memory', 'knowledge');
+      fs.mkdirSync(knowledgeDir, { recursive: true });
+      fs.writeFileSync(path.join(knowledgeDir, 'filesystem-index.md'), content, 'utf-8');
+
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('get-full-config', async () => {
     try {
       if (fs.existsSync(CONFIG_PATH)) return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
