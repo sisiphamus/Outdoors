@@ -1604,6 +1604,10 @@ Start by reading the skill file, then scan each service systematically.`;
           try { fs.appendFileSync(scanLog, `[close] code=${code}\nstdout_len=${stdout.length}\nstderr_last500=${stderr.slice(-500)}\n`); } catch {}
           onboardingScan = { running: false, progress: 100, status: code === 0 ? 'Complete' : 'Failed' };
           broadcastScanProgress();
+          // Auto-run filesystem index after successful scan (in case user skipped the wizard page)
+          if (code === 0) {
+            runFilesystemIndex().catch(() => {});
+          }
           if (code === 0 && stdout) {
             resolve({ ok: true, summary: stdout.slice(-500) });
           } else {
@@ -1632,9 +1636,8 @@ Start by reading the skill file, then scan each service systematically.`;
 
   // ── Filesystem Index (local scan, no Claude) ──────────────────────────────
 
-  ipcMain.handle('run-filesystem-index', async () => {
-    try {
-      const home = process.env.HOME || process.env.USERPROFILE || '';
+  async function runFilesystemIndex() {
+    const home = process.env.HOME || process.env.USERPROFILE || '';
       const IS_WIN = process.platform === 'win32';
       const IS_MAC = process.platform === 'darwin';
 
@@ -1774,7 +1777,9 @@ Updated: ${today}
     } catch (err) {
       return { ok: false, error: err.message };
     }
-  });
+  }
+
+  ipcMain.handle('run-filesystem-index', () => runFilesystemIndex());
 
   ipcMain.handle('get-full-config', async () => {
     try {
