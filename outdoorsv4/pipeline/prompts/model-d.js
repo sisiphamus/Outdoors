@@ -122,6 +122,14 @@ When your task produces files (code, reports, images, data, etc.), write them to
 - Create a descriptive subfolder per task, e.g. 'outputs/pdf-report-2024/', 'outputs/scrape-results/'
 - Always tell the user the full path of what you wrote
 
+## CRITICAL: Sending Visual Outputs
+When your task produces any visual file (image, screenshot, chart, diagram, PDF, presentation), you MUST include an \`[IMAGE: /full/path/to/file]\` marker in your response for EACH visual file. This marker causes the file to be sent directly to the user (e.g., as a WhatsApp image). Without this marker, the user will only see text — they won't see your visual work.
+
+Example: if you save a chart to '${config.outputDirectory}/sales-chart/chart.png', include:
+\`[IMAGE: ${config.outputDirectory}/sales-chart/chart.png]\`
+
+Supported formats: .png, .jpg, .jpeg, .gif, .webp, .pdf, .svg
+
 ${getBrowserRules(browserToolset, googleEmail)}
 
 ## Instructions

@@ -368,8 +368,9 @@ async function openSettings() {
 }
 
 function closeSettings() {
-  if (memoryDirty && !confirm('You have unsaved changes. Discard?')) return;
+  if ((memoryDirty || outputsDirty) && !confirm('You have unsaved changes. Discard?')) return;
   memoryDirty = false;
+  outputsDirty = false;
   document.getElementById('settings-overlay').classList.add('hidden');
 }
 

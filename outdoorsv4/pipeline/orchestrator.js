@@ -14,7 +14,7 @@ import { config } from '../config.js';
 import { setClaudeSessionId } from '../session/session-manager.js';
 import { redactSecrets } from './redact-secrets.js';
 import { execSync } from 'child_process';
-import { mkdirSync } from 'fs';
+import { mkdirSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 
 const MAX_FEEDBACK_LOOPS = 3;
@@ -335,12 +335,53 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
   // ── Post-task learning (fire-and-forget) ──
   learnInBackground(prompt, outputSpec, lastDResponse, lastDFullEvents, onProgress, processKey, timeout);
 
+  // Auto-attach visual outputs that Model D created but forgot to mark with [IMAGE:]
+  const finalResponse = attachUnmarkedImages(lastDResponse || '', outputDir);
+
   return {
     status: 'completed',
-    response: redactSecrets(lastDResponse),
+    response: redactSecrets(finalResponse),
     sessionId: lastDSessionId,
     fullEvents: lastDFullEvents,
   };
+}
+
+// Scan outputs directory for recently created image files not already marked in the response.
+// Appends [IMAGE: path] markers so the transport layer (WhatsApp, web) sends them to the user.
+function attachUnmarkedImages(response, outputDir) {
+  const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf']);
+  const cutoff = Date.now() - 300000; // files created in last 5 minutes
+
+  const alreadyMarked = new Set();
+  const markerPattern = /\[IMAGE:\s*([^\]]+)\]/g;
+  let m;
+  while ((m = markerPattern.exec(response)) !== null) {
+    alreadyMarked.add(m[1].trim());
+  }
+
+  const newImages = [];
+  function walk(dir) {
+    try {
+      const entries = readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) { walk(full); continue; }
+        const ext = entry.name.slice(entry.name.lastIndexOf('.')).toLowerCase();
+        if (!IMAGE_EXTS.has(ext)) continue;
+        try {
+          const stat = statSync(full);
+          if (stat.mtimeMs > cutoff && !alreadyMarked.has(full)) {
+            newImages.push(full);
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+  walk(outputDir);
+
+  if (newImages.length === 0) return response;
+  const markers = newImages.map(p => `[IMAGE: ${p}]`).join('\n');
+  return response + '\n\n' + markers;
 }
 
 // Maps a [NEEDS_MORE_TOOLS] description to a targeted missingMemories entry for Model C.
