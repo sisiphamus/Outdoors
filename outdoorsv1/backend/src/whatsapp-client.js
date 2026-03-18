@@ -516,6 +516,7 @@ async function startWhatsApp() {
               }
             }
             sendSucceeded = true;
+            console.log(`Sent to ${result.sender} (${result.response.length} chars)`);
             emitLog('sent', { to: result.sender, responseLength: result.response.length, imageCount: images.length });
           } catch (err) {
             emitLog('send_error', { to: result.sender, error: err.message });

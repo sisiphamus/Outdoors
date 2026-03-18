@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Backend
   startBackend: () => ipcRenderer.invoke('start-backend'),
+  stopBackend: () => ipcRenderer.invoke('stop-backend'),
   getBackendUrl: () => ipcRenderer.invoke('get-backend-url'),
 
   // Setup lifecycle

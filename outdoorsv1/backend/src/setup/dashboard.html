@@ -16,6 +16,12 @@
         <span class="status-dot"></span>
         <span class="status-text" id="status-text">Connecting...</span>
       </span>
+      <button class="power-btn on" id="btn-power" title="Shut down Outdoors">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M7.5 1v7h1V1h-1z"/>
+          <path d="M3.904 3.404a.5.5 0 00-.707.707 6 6 0 109.606 0 .5.5 0 10-.707-.707 5 5 0 11-8.192 0z"/>
+        </svg>
+      </button>
     </div>
     <div class="titlebar-actions">
       <button class="titlebar-btn" id="btn-settings" title="Settings">
@@ -40,10 +46,10 @@
   <!-- Main content -->
   <div class="main-content">
     <div class="feed" id="feed">
-      <div class="feed-welcome">
-        <p class="feed-welcome-title">Outdoors</p>
-        <p class="feed-welcome-text">Activity will appear here as tasks are processed.</p>
-        <p class="feed-welcome-hint">Text your Outdoors WhatsApp group to get started.</p>
+      <div class="feed-welcome" id="feed-welcome">
+        <p class="feed-welcome-title">Outdoors is running</p>
+        <p class="feed-welcome-text">Send a message to your Outdoors WhatsApp group.</p>
+        <p class="feed-welcome-hint">Activity will appear here as tasks are processed.</p>
       </div>
     </div>
   </div>

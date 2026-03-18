@@ -105,6 +105,13 @@ export function formatOutdoorsResponse(text) {
     footer = DEFAULT_FOOTER;
   }
 
+  // Strip markdown heading markers (###, ##, #) — they're just clutter on WhatsApp
+  let cleaned = text.trim()
+    .replace(/^#{1,6}\s+/gm, '')       // Remove heading markers
+    .replace(/\*\*([^*]+)\*\*/g, '*$1*') // Convert **bold** to *bold* (WhatsApp format)
+    .replace(/```[\s\S]*?```/g, (m) => m) // Keep code blocks as-is
+    .replace(/^---+$/gm, '');            // Remove horizontal rules
+
   const separator = '\u2501'.repeat(24);
-  return `${header}\n${separator}\n\n${text.trim()}\n\n${separator}\n${footer}`;
+  return `${header}\n${separator}\n${cleaned}`;
 }

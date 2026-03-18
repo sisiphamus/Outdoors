@@ -8,7 +8,7 @@
  * 4. Lives in system tray
  */
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell, powerSaveBlocker } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn, execSync, execFile } = require('child_process');
@@ -63,6 +63,7 @@ function getUserGoogleEmail() {
 }
 let backendRestarts = 0;
 const MAX_BACKEND_RESTARTS = 5;
+let backendStoppedByUser = false; // true when user clicks power button
 let resolvedClaudeCmd = 'claude'; // updated after install or PATH lookup
 let resolvedUvxCmd = null; // cached full path to uvx.exe
 
@@ -1092,7 +1093,28 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
   // ── WhatsApp Setup (QR pairing happens automatically via backend) ────────
 
   // Start the backend
+  ipcMain.handle('stop-backend', async () => {
+    backendStoppedByUser = true;
+    if (backendProcess) {
+      const pid = backendProcess.pid;
+      try {
+        if (platform.IS_WIN) {
+          // Kill entire process tree on Windows
+          execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000, windowsHide: true, stdio: 'ignore' });
+        } else {
+          process.kill(-pid, 'SIGTERM');
+        }
+      } catch {}
+      backendProcess = null;
+      // Also kill any Chrome automation instances
+      platform.killProcessByName(platform.IS_WIN ? 'chrome.exe' : 'Google Chrome', 'AutomationProfile');
+      return { ok: true };
+    }
+    return { ok: true, alreadyStopped: true };
+  });
+
   ipcMain.handle('start-backend', async () => {
+    backendStoppedByUser = false;
     if (backendProcess) return { ok: true, alreadyRunning: true };
 
     // Pre-check: node_modules must exist (npm install must have succeeded)
@@ -1620,6 +1642,18 @@ function startBackend() {
         started = true;
         resolve({ ok: true });
       }
+      // Show system notification when bot sends a response
+      const sentMatch = text.match(/Sent to (.+?) \((\d+) chars\)/);
+      if (sentMatch) {
+        const { Notification } = require('electron');
+        if (Notification.isSupported()) {
+          new Notification({
+            title: 'Outdoors',
+            body: `Replied to ${sentMatch[1]}`,
+            silent: true,
+          }).show();
+        }
+      }
     };
 
     backendProcess.stdout.on('data', onOutput);
@@ -1640,8 +1674,10 @@ function startBackend() {
         return;
       }
 
-      // Auto-restart if backend crashes after successful startup
-      if (fs.existsSync(SETUP_DONE_FLAG) && backendRestarts < MAX_BACKEND_RESTARTS) {
+      // Auto-restart if backend crashes after successful startup (but not if user stopped it)
+      if (backendStoppedByUser) {
+        console.log('[backend] Stopped by user — not restarting.');
+      } else if (fs.existsSync(SETUP_DONE_FLAG) && backendRestarts < MAX_BACKEND_RESTARTS) {
         backendRestarts++;
         const delay = Math.min(3000 * backendRestarts, 15000);
         console.log(`[backend] Crashed (code ${code}). Restarting in ${delay / 1000}s (attempt ${backendRestarts}/${MAX_BACKEND_RESTARTS})...`);
@@ -1768,6 +1804,9 @@ function createDashboardWindow() {
 // ── App Lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  // Prevent system sleep so the bot stays connected with lid closed
+  powerSaveBlocker.start('prevent-app-suspension');
+
   const isFirstRun = ensureWorkspace();
   const setupDone = fs.existsSync(SETUP_DONE_FLAG);
 

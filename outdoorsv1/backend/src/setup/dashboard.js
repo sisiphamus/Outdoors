@@ -49,7 +49,7 @@ function connectSocket(backendUrl) {
   // Replay buffered history on connect
   socket.on('log_history', (entries) => {
     if (Array.isArray(entries) && entries.length > 0) {
-      clearWelcome();
+      if (entries.some(e => e.type === 'incoming')) clearWelcome();
       entries.slice(-50).forEach(entry => handleLogEntry(entry, true));
     }
   });
@@ -79,7 +79,8 @@ function connectSocket(backendUrl) {
 
 function handleLogEntry(entry, isHistory) {
   if (!entry || !entry.type) return;
-  clearWelcome();
+  // Only clear welcome on actual user activity, not status events
+  if (entry.type === 'incoming') clearWelcome();
 
   const d = entry.data || {};
   const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : now();
@@ -125,7 +126,7 @@ function handleLogEntry(entry, isHistory) {
       break;
     }
     case 'connected':
-      setStatus('connected', 'WhatsApp connected');
+      setStatus('connected', 'Connected');
       break;
     case 'disconnected':
       addFeedEntry('info', 'WhatsApp disconnected');
@@ -291,10 +292,42 @@ function removeAllSpinners() {
 // Titlebar
 // ---------------------------------------------------------------------------
 
+let outdoorsRunning = true;
+
 function setupTitlebar() {
   document.getElementById('btn-settings').addEventListener('click', openSettings);
   document.getElementById('btn-minimize').addEventListener('click', () => window.electronAPI.minimizeWindow());
   document.getElementById('btn-close').addEventListener('click', () => window.electronAPI.closeWindow());
+
+  const powerBtn = document.getElementById('btn-power');
+  if (powerBtn) {
+    powerBtn.title = 'Turn off Outdoors';
+    powerBtn.addEventListener('click', async () => {
+      powerBtn.style.pointerEvents = 'none';
+      powerBtn.style.opacity = '0.5';
+      if (outdoorsRunning) {
+        setStatus('offline', 'Shutting down...');
+        await window.electronAPI.stopBackend();
+        outdoorsRunning = false;
+        powerBtn.classList.remove('on');
+        powerBtn.classList.add('off');
+        powerBtn.title = 'Turn on Outdoors';
+        setStatus('offline', 'Stopped');
+      } else {
+        setStatus('', 'Starting...');
+        await window.electronAPI.startBackend();
+        outdoorsRunning = true;
+        powerBtn.classList.remove('off');
+        powerBtn.classList.add('on');
+        powerBtn.title = 'Turn off Outdoors';
+        setStatus('connected', 'Connected');
+        const backendUrl = await window.electronAPI.getBackendUrl();
+        connectSocket(backendUrl);
+      }
+      powerBtn.style.pointerEvents = '';
+      powerBtn.style.opacity = '';
+    });
+  }
 }
 
 function setStatus(state, text) {
