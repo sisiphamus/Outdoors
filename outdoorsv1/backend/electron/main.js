@@ -933,14 +933,18 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
       // 3. Open the auth URL in AutomationProfile Chrome
       // 4. Poll for credential file to confirm success
 
-      // Snapshot existing credential files
+      // Clear any existing Google credentials so the user always authenticates fresh.
+      // This prevents stale tokens synced via Claude CLI from another account being reused.
       const credsDir = path.join(process.env.HOME || process.env.USERPROFILE || '', '.google_workspace_mcp', 'credentials');
-      let existingCredFiles = new Set();
       try {
         if (fs.existsSync(credsDir)) {
-          existingCredFiles = new Set(fs.readdirSync(credsDir).filter(f => f.endsWith('.json')));
+          for (const file of fs.readdirSync(credsDir)) {
+            try { fs.unlinkSync(path.join(credsDir, file)); } catch {}
+          }
+          console.log('[google-auth] Cleared existing credentials to force fresh sign-in');
         }
       } catch {}
+      let existingCredFiles = new Set();
 
       return new Promise((resolve) => {
         const env = {
