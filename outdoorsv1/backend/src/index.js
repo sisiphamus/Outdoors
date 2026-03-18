@@ -93,8 +93,11 @@ app.post('/api/config', (req, res) => {
   res.json({ ok: true });
 });
 
-// Bluetooth connect endpoint — runs connect-bt.ps1
+// Bluetooth connect endpoint — runs connect-bt.ps1 (Windows only)
 app.post('/api/bluetooth/connect', (_req, res) => {
+  if (process.platform !== 'win32') {
+    return res.json({ ok: false, error: 'Bluetooth connect not available on this platform' });
+  }
   const scriptPath = join(__dirname, '..', 'connect-bt.ps1');
   execFile('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath], { timeout: 30000 }, (err, stdout, stderr) => {
     if (err) {
