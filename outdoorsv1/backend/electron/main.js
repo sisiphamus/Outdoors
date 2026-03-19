@@ -2315,6 +2315,17 @@ function setupAutoLaunch() {
 
 // ── Dashboard Window ─────────────────────────────────────────────────────
 
+function checkClaudeAuthAndNotify() {
+  const cmd = getClaudeCmd();
+  execFile(cmd, ['auth', 'status'], { shell: true, timeout: 15000, windowsHide: true }, (err, stdout, stderr) => {
+    const output = (stdout || '') + (stderr || '');
+    const authed = !err && (output.includes('"loggedIn": true') || output.includes('"loggedIn":true'));
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('claude-auth-status', { authenticated: authed });
+    }
+  });
+}
+
 function createDashboardWindow() {
   if (mainWindow) {
     mainWindow.setResizable(true);
@@ -2345,6 +2356,12 @@ function createDashboardWindow() {
       if (tray) { e.preventDefault(); mainWindow.hide(); }
     });
   }
+
+  // Check Claude auth on load and every 60 seconds
+  mainWindow.webContents.once('did-finish-load', () => {
+    checkClaudeAuthAndNotify();
+    setInterval(checkClaudeAuthAndNotify, 60000);
+  });
 }
 
 // ── App Lifecycle ───────────────────────────────────────────────────────────

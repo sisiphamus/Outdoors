@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupTitlebar();
   setupSettings();
   initOnboardingBar();
+  initClaudeAuthCheck();
 });
 
 // ---------------------------------------------------------------------------
@@ -955,4 +956,23 @@ function initOnboardingBar() {
 
   // Listen for live updates
   window.electronAPI.onOnboardingScanState?.(updateBar);
+}
+
+// ---------------------------------------------------------------------------
+// Claude auth check
+// ---------------------------------------------------------------------------
+
+function initClaudeAuthCheck() {
+  if (!window.electronAPI?.onClaudeAuthStatus) return;
+
+  const overlay = document.getElementById('auth-overlay');
+  if (!overlay) return;
+
+  window.electronAPI.onClaudeAuthStatus((data) => {
+    if (data.authenticated) {
+      overlay.classList.add('hidden');
+    } else {
+      overlay.classList.remove('hidden');
+    }
+  });
 }

@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   closeWindow: () => ipcRenderer.invoke('close-window'),
 
   // Dashboard
+  onClaudeAuthStatus: (callback) => ipcRenderer.on('claude-auth-status', (_event, data) => callback(data)),
   openDashboard: () => ipcRenderer.invoke('open-dashboard'),
   minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
   listMemoryFiles: () => ipcRenderer.invoke('list-memory-files'),
