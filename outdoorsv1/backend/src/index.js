@@ -14,7 +14,7 @@ import QRCode from 'qrcode';
 import { readdirSync, readFileSync, unlinkSync, mkdirSync, writeFileSync } from 'fs';
 import { randomBytes } from 'crypto';
 import { config, saveConfig, loadConfig } from './config.js';
-import { startWhatsApp, setSocketIO, getStatus, getLastQR } from './whatsapp-client.js';
+import { startWhatsApp, setSocketIO, getStatus, getLastQR, reconnectWhatsApp } from './whatsapp-client.js';
 
 import { execFile, execFileSync } from 'child_process';
 import { executeClaudePrompt, killProcess, codeAgentOptions, getActiveProcessSummary, setProcessChangeListener, setProcessActivityListener, clearClarificationState } from './claude-bridge.js';
@@ -611,4 +611,13 @@ server.listen(config.port, async () => {
 app.post('/api/triggers/reload', (_req, res) => {
   reloadTriggers();
   res.json({ ok: true });
+});
+
+app.post('/api/whatsapp/reconnect', async (_req, res) => {
+  try {
+    const result = await reconnectWhatsApp();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });

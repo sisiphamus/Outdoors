@@ -357,6 +357,7 @@ function setupSettings() {
     });
   });
   document.getElementById('btn-save-config').addEventListener('click', saveConfig);
+  document.getElementById('btn-reconnect-wa')?.addEventListener('click', reconnectWhatsApp);
   document.getElementById('btn-save-memory').addEventListener('click', saveMemoryFile);
   document.getElementById('memory-content').addEventListener('input', () => {
     memoryDirty = true;
@@ -529,6 +530,52 @@ async function saveConfig() {
     setTimeout(() => { btn.textContent = 'Save Settings'; }, 1500);
   } catch (err) {
     alert('Failed to save: ' + (err.message || 'Unknown error'));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp Reconnect
+// ---------------------------------------------------------------------------
+
+async function reconnectWhatsApp() {
+  const btn = document.getElementById('btn-reconnect-wa');
+  const qrContainer = document.getElementById('wa-qr-inline');
+  const qrImg = document.getElementById('wa-qr-inline-img');
+
+  btn.textContent = 'Disconnecting...';
+  btn.disabled = true;
+
+  try {
+    const backendUrl = await window.electronAPI.getBackendUrl();
+    const resp = await fetch(backendUrl + '/api/whatsapp/reconnect', { method: 'POST' });
+    const result = await resp.json();
+
+    if (result.ok) {
+      btn.textContent = 'Waiting for QR code...';
+      // The socket.io connection will receive the QR code event
+      if (socket) {
+        const onQR = (dataUrl) => {
+          qrContainer.classList.remove('hidden');
+          qrImg.src = dataUrl;
+          btn.textContent = 'Scan the QR code below';
+        };
+        socket.on('qr', onQR);
+        socket.on('log', (entry) => {
+          if (entry?.type === 'qr' && entry.data?.dataUrl) onQR(entry.data.dataUrl);
+          if (entry?.type === 'connected') {
+            qrContainer.classList.add('hidden');
+            btn.textContent = 'Reconnect WhatsApp';
+            btn.disabled = false;
+          }
+        });
+      }
+    } else {
+      btn.textContent = 'Failed — try again';
+      btn.disabled = false;
+    }
+  } catch (err) {
+    btn.textContent = 'Error — try again';
+    btn.disabled = false;
   }
 }
 

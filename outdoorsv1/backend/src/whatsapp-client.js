@@ -271,7 +271,26 @@ async function startWhatsApp() {
       }
 
       if (!config.outdoorsGroupJid) {
-        createOutdoorsGroup(sock, emitLog);
+        // Search for an existing Outdoors group before creating a new one
+        (async () => {
+          try {
+            const groups = await sock.groupFetchAllParticipating();
+            const outdoorsGroup = Object.values(groups).find(g =>
+              g.subject && g.subject.toLowerCase().includes('outdoors')
+            );
+            if (outdoorsGroup) {
+              config.outdoorsGroupJid = outdoorsGroup.id;
+              saveConfig(config);
+              console.log(`[WhatsApp] Found existing Outdoors group: ${outdoorsGroup.id} ("${outdoorsGroup.subject}")`);
+              emitLog('group_found', { groupJid: outdoorsGroup.id, subject: outdoorsGroup.subject });
+            } else {
+              createOutdoorsGroup(sock, emitLog);
+            }
+          } catch (err) {
+            console.log('[WhatsApp] Failed to search for existing groups:', err.message);
+            createOutdoorsGroup(sock, emitLog);
+          }
+        })();
       } else {
         // Rename existing group to Outdoors
         (async () => {
@@ -604,4 +623,31 @@ function getLastQR() {
   return lastQR;
 }
 
-export { startWhatsApp, setSocketIO, getStatus, getLastQR };
+async function reconnectWhatsApp() {
+  // Close existing connection and wipe auth state to force new QR
+  if (sock) {
+    try { sock.end(new Error('User requested reconnect')); } catch {}
+    sock = null;
+  }
+  connectionStatus = 'disconnected';
+  lastQR = null;
+  reconnectAttempt = 0;
+
+  // Wipe auth state to force fresh QR code
+  const authDir = join(__dirname, '..', config.authDir || 'auth_state');
+  try {
+    const { rmSync } = await import('fs');
+    rmSync(authDir, { recursive: true, force: true });
+    console.log('[WhatsApp] Wiped auth state for reconnect');
+  } catch {}
+
+  // Clear saved group JID so it searches for existing group on reconnect
+  config.outdoorsGroupJid = '';
+  saveConfig(config);
+
+  // Restart
+  await startWhatsApp();
+  return { ok: true };
+}
+
+export { startWhatsApp, setSocketIO, getStatus, getLastQR, reconnectWhatsApp };

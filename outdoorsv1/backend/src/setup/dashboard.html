@@ -102,6 +102,16 @@
               <input type="number" id="cfg-timeout" value="300" min="30" max="3600">
             </div>
             <button class="btn-primary" id="btn-save-config">Save Settings</button>
+            <hr class="settings-divider">
+            <div class="form-group">
+              <label>WhatsApp</label>
+              <p class="form-hint">Disconnect and scan a new QR code to link a different phone.</p>
+              <button class="btn-secondary" id="btn-reconnect-wa">Reconnect WhatsApp</button>
+              <div class="wa-qr-inline hidden" id="wa-qr-inline">
+                <img id="wa-qr-inline-img" alt="WhatsApp QR Code" />
+                <p class="form-hint">Scan with WhatsApp → Linked Devices → Link a Device</p>
+              </div>
+            </div>
           </div>
         </div>
 
