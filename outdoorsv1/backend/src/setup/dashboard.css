@@ -33,19 +33,23 @@ html, body {
 
 .hidden { display: none !important; }
 
-/* ── Onboarding progress bar ─────────────────────────────── */
+/* ── Onboarding progress bar (inline in titlebar) ────────── */
 
 .onboarding-bar-container {
-  height: 3px;
-  background: var(--bg-secondary);
-  position: relative;
+  width: 48px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  margin-left: 8px;
   cursor: default;
+  -webkit-app-region: no-drag;
 }
 
 .onboarding-bar-fill {
   height: 100%;
   width: 0%;
-  background: var(--accent);
+  background: var(--bg);
+  border-radius: 2px;
   transition: width 0.6s ease;
 }
 
