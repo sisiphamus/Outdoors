@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Outputs
   listOutputFiles: () => ipcRenderer.invoke('list-output-files'),
   readOutputFile: (relativePath) => ipcRenderer.invoke('read-output-file', relativePath),
+  getOutputFilePath: (relativePath) => ipcRenderer.invoke('get-output-file-path', relativePath),
   saveOutputFile: (relativePath, content) => ipcRenderer.invoke('save-output-file', relativePath, content),
   deleteOutputFile: (relativePath) => ipcRenderer.invoke('delete-output-file', relativePath),
   openOutputFile: (relativePath) => ipcRenderer.invoke('open-output-file', relativePath),

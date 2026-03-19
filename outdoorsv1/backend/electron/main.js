@@ -1441,6 +1441,11 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
     return fs.readFileSync(path.join(BACKEND_DIR, 'bot', 'outputs', relativePath), 'utf-8');
   });
 
+  ipcMain.handle('get-output-file-path', async (_event, relativePath) => {
+    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
+    return path.join(BACKEND_DIR, 'bot', 'outputs', relativePath);
+  });
+
   ipcMain.handle('save-output-file', async (_event, relativePath, content) => {
     if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
     const filePath = path.join(BACKEND_DIR, 'bot', 'outputs', relativePath);

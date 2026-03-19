@@ -539,6 +539,8 @@ const TEXT_EXTENSIONS = new Set([
   '.md', '.txt', '.json', '.js', '.ts', '.html', '.css', '.csv',
   '.xml', '.yaml', '.yml', '.py', '.sh', '.bat', '.log', '.env',
 ]);
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.ico']);
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv']);
 
 let currentOutputFile = null;
 let outputsDirty = false;
@@ -559,11 +561,13 @@ async function loadOutputsTree() {
   }
 }
 
-function isTextFile(name) {
+function getExtension(name) {
   const dot = name.lastIndexOf('.');
-  if (dot < 0) return false;
-  return TEXT_EXTENSIONS.has(name.slice(dot).toLowerCase());
+  return dot < 0 ? '' : name.slice(dot).toLowerCase();
 }
+function isTextFile(name) { return TEXT_EXTENSIONS.has(getExtension(name)); }
+function isImageFile(name) { return IMAGE_EXTENSIONS.has(getExtension(name)); }
+function isVideoFile(name) { return VIDEO_EXTENSIONS.has(getExtension(name)); }
 
 async function openOutputFile(relativePath, btnEl) {
   if (outputsDirty && !confirm('Discard unsaved changes?')) return;
@@ -583,7 +587,38 @@ async function openOutputFile(relativePath, btnEl) {
   deleteBtn.classList.remove('hidden');
   openBtn.classList.remove('hidden');
 
-  if (isTextFile(relativePath)) {
+  const mediaContainer = document.getElementById('outputs-media');
+  const mediaImg = document.getElementById('outputs-media-img');
+  const mediaVideo = document.getElementById('outputs-media-video');
+
+  // Reset media state
+  mediaContainer.classList.add('hidden');
+  mediaImg.classList.add('hidden');
+  mediaVideo.classList.add('hidden');
+  mediaImg.src = '';
+  mediaVideo.src = '';
+  textarea.classList.remove('hidden');
+
+  if (isImageFile(relativePath) || isVideoFile(relativePath)) {
+    textarea.classList.add('hidden');
+    mediaContainer.classList.remove('hidden');
+    try {
+      const filePath = await window.electronAPI.getOutputFilePath(relativePath);
+      const fileUrl = 'file:///' + filePath.replace(/\\/g, '/');
+      if (isImageFile(relativePath)) {
+        mediaImg.src = fileUrl;
+        mediaImg.classList.remove('hidden');
+      } else {
+        mediaVideo.src = fileUrl;
+        mediaVideo.classList.remove('hidden');
+      }
+    } catch (err) {
+      textarea.classList.remove('hidden');
+      mediaContainer.classList.add('hidden');
+      textarea.value = 'Error loading media: ' + (err.message || 'unknown');
+      textarea.disabled = true;
+    }
+  } else if (isTextFile(relativePath)) {
     textarea.value = 'Loading...';
     textarea.disabled = true;
     try {
