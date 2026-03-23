@@ -148,15 +148,17 @@ function ensureWorkspace() {
   const isFirstRun = !workspaceExists;
   const destBackend = path.join(WORKSPACE, 'outdoorsv1', 'backend');
 
-  // On update: back up user data, wipe workspace, copy fresh from bundle, restore user data
+  // On update: move user data to a safe location, wipe workspace, copy fresh, move user data back.
+  // Bot data (memory, skills, outputs, logs) is NEVER deleted — it lives in a persistent
+  // safe dir during the upgrade so even if the copy/restore fails, the data survives.
   // On first run: just copy fresh from bundle
   if (!isFirstRun) {
     console.log(`[workspace] Version update: ${installedVersion} → ${currentVersion}. Clean reinstall.`);
 
-    // Back up user data to temp dir
-    const tmpDir = path.join(app.getPath('temp'), 'outdoors-upgrade-backup');
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
-    fs.mkdirSync(tmpDir, { recursive: true });
+    // Persistent safe dir (NOT temp — survives reboots and crash recovery)
+    const safeDir = path.join(app.getPath('userData'), '.upgrade-safe');
+    try { fs.rmSync(safeDir, { recursive: true, force: true }); } catch {}
+    fs.mkdirSync(safeDir, { recursive: true });
 
     // Files to preserve
     const keepFiles = ['config.json', '.env', '.claude.json', 'oauth-creds.json'];
@@ -164,28 +166,38 @@ function ensureWorkspace() {
       const src = path.join(destBackend, file);
       if (fs.existsSync(src)) {
         try {
-          fs.copyFileSync(src, path.join(tmpDir, file));
+          fs.copyFileSync(src, path.join(safeDir, file));
         } catch (err) {
           console.error(`[workspace] Failed to back up ${file}:`, err.message);
         }
       }
     }
 
-    // Directories to preserve (includes bot/memory which contains skills)
+    // MOVE (not copy) directories to safe location — this is atomic on same filesystem
+    // and ensures data is never at risk during wipe. Includes ALL bot data.
     const keepDirs = ['auth_state', 'bot/memory', 'bot/logs', 'bot/outputs'];
     for (const dir of keepDirs) {
       const src = path.join(destBackend, dir);
       if (fs.existsSync(src)) {
+        const dest = path.join(safeDir, dir);
         try {
-          copyDirSync(src, path.join(tmpDir, dir));
-          console.log(`[workspace] Backed up ${dir}`);
+          fs.mkdirSync(path.dirname(dest), { recursive: true });
+          fs.renameSync(src, dest);
+          console.log(`[workspace] Moved ${dir} to safe location`);
         } catch (err) {
-          console.error(`[workspace] Failed to back up ${dir}:`, err.message);
+          // renameSync fails across filesystems — fall back to copy
+          console.log(`[workspace] rename failed for ${dir}, falling back to copy: ${err.message}`);
+          try {
+            copyDirSync(src, dest);
+            console.log(`[workspace] Copied ${dir} to safe location`);
+          } catch (copyErr) {
+            console.error(`[workspace] CRITICAL: Failed to preserve ${dir}:`, copyErr.message);
+          }
         }
       }
     }
 
-    // Wipe workspace
+    // Wipe workspace (bot data has already been moved out)
     try { fs.rmSync(WORKSPACE, { recursive: true, force: true }); } catch {}
 
     // Fresh copy from bundle
@@ -199,22 +211,44 @@ function ensureWorkspace() {
       console.error('[workspace] Copy failed:', err);
     }
 
-    // Restore user data
-    try {
-      const entries = fs.readdirSync(tmpDir, { withFileTypes: true });
-      for (const entry of entries) {
-        const src = path.join(tmpDir, entry.name);
-        const dest = path.join(destBackend, entry.name);
-        if (entry.isDirectory()) copyDirSync(src, dest);
-        else fs.copyFileSync(src, dest);
+    // Move user data back from safe location
+    // Files first
+    for (const file of keepFiles) {
+      const src = path.join(safeDir, file);
+      if (fs.existsSync(src)) {
+        try {
+          fs.copyFileSync(src, path.join(destBackend, file));
+        } catch (err) {
+          console.error(`[workspace] Failed to restore ${file}:`, err.message);
+        }
       }
-      console.log('[workspace] User data restored successfully');
-    } catch (err) {
-      console.error('[workspace] Restore failed:', err);
     }
+    // Directories — move back
+    for (const dir of keepDirs) {
+      const src = path.join(safeDir, dir);
+      const dest = path.join(destBackend, dir);
+      if (fs.existsSync(src)) {
+        try {
+          fs.mkdirSync(path.dirname(dest), { recursive: true });
+          // Remove any empty dir created by bundle copy
+          if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true });
+          fs.renameSync(src, dest);
+          console.log(`[workspace] Restored ${dir}`);
+        } catch (err) {
+          // Fall back to copy
+          try {
+            copyDirSync(src, dest);
+            console.log(`[workspace] Restored ${dir} (via copy)`);
+          } catch (copyErr) {
+            console.error(`[workspace] CRITICAL: Failed to restore ${dir}:`, copyErr.message);
+          }
+        }
+      }
+    }
+    console.log('[workspace] User data restored successfully');
 
-    // Clean up temp backup
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    // Clean up safe dir (data is back in workspace now)
+    try { fs.rmSync(safeDir, { recursive: true, force: true }); } catch {}
 
     // Remove setup-done flag so wizard re-runs (npm install needed after wipe)
     try { fs.unlinkSync(SETUP_DONE_FLAG); } catch {}
