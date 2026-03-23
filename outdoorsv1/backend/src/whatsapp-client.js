@@ -172,6 +172,12 @@ function getStatus() {
 }
 
 async function startWhatsApp() {
+  // Close any existing socket before creating a new one to prevent duplicates
+  if (sock) {
+    try { sock.ev.removeAllListeners(); sock.end(undefined); } catch {}
+    sock = null;
+  }
+
   mkdirSync(config.authDir, { recursive: true });
   const { state, saveCreds } = await useMultiFileAuthState(config.authDir);
 
@@ -278,17 +284,23 @@ async function startWhatsApp() {
       }
 
       if (!config.outdoorsGroupJid) {
-        // Search for an existing Outdoors group before creating a new one
+        // Search for the most recently active Outdoors group, or create a new one
         (async () => {
           try {
             const groups = await sock.groupFetchAllParticipating();
-            const outdoorsGroup = Object.values(groups).find(g =>
-              g.subject && g.subject.toLowerCase().includes('outdoors')
-            );
-            if (outdoorsGroup) {
+            const outdoorsGroups = Object.values(groups)
+              .filter(g => g.subject && g.subject.toLowerCase().includes('outdoors'))
+              .sort((a, b) => {
+                // Sort by most recent activity (descending) — use creation time as fallback
+                const aTime = a.conversationTimestamp || a.creation || 0;
+                const bTime = b.conversationTimestamp || b.creation || 0;
+                return bTime - aTime;
+              });
+            if (outdoorsGroups.length > 0) {
+              const outdoorsGroup = outdoorsGroups[0]; // most recently active
               config.outdoorsGroupJid = outdoorsGroup.id;
               saveConfig(config);
-              console.log(`[WhatsApp] Found existing Outdoors group: ${outdoorsGroup.id} ("${outdoorsGroup.subject}")`);
+              console.log(`[WhatsApp] Found ${outdoorsGroups.length} Outdoors group(s), using most recent: ${outdoorsGroup.id} ("${outdoorsGroup.subject}")`);
               emitLog('group_found', { groupJid: outdoorsGroup.id, subject: outdoorsGroup.subject });
             } else {
               createOutdoorsGroup(sock, emitLog);
@@ -299,20 +311,15 @@ async function startWhatsApp() {
           }
         })();
       } else {
-        // Rename existing group to Outdoors
+        // Group already configured — just log and send welcome if needed
+        console.log(`[WhatsApp] Using existing Outdoors group: ${config.outdoorsGroupJid}`);
         (async () => {
           try {
-            await sock.groupUpdateSubject(config.outdoorsGroupJid, 'Outdoors 🌲🏔️');
-            await sock.groupUpdateDescription(config.outdoorsGroupJid, 'Send messages here to chat with Outdoors.').catch(() => {});
-            console.log('[WhatsApp] Renamed group to Outdoors 🌲🏔️');
             if (isOnboardingNeeded()) {
               await sendOnboardingWelcome(sock, config.outdoorsGroupJid);
             }
           } catch (err) {
-            console.log('[WhatsApp] Failed to rename group:', err.message, '— creating new group');
-            config.outdoorsGroupJid = '';
-            saveConfig(config);
-            createOutdoorsGroup(sock, emitLog);
+            console.log('[WhatsApp] Onboarding check failed:', err.message);
           }
         })();
       }
