@@ -7,6 +7,7 @@
 
 import { loadConfig, saveConfig } from './config.js';
 import { createSession, closeSession } from '../../../outdoorsv4/session/session-manager.js';
+import { sendToOutdoorsGroup } from './whatsapp-client.js';
 
 let deps = null;
 let checkInterval = null;
@@ -115,7 +116,19 @@ async function fireTrigger(trigger, now) {
       sessionContext: session,
     });
 
-    const responseLen = result?.response?.length || 0;
+    const responseText = result?.response;
+    const responseLen = responseText?.length || 0;
+
+    // Send trigger response to WhatsApp group
+    if (responseText) {
+      const sent = await sendToOutdoorsGroup(responseText);
+      if (sent) {
+        console.log(`[Triggers] Sent "${trigger.name}" response to WhatsApp (${responseLen} chars)`);
+      } else {
+        console.error(`[Triggers] Failed to send "${trigger.name}" response to WhatsApp`);
+      }
+    }
+
     emitLog('sent', { to: `Trigger: ${trigger.name}`, responseLength: responseLen });
   } finally {
     closeSession(session.id);

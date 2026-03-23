@@ -671,4 +671,45 @@ async function reconnectWhatsApp() {
   return { ok: true };
 }
 
-export { startWhatsApp, setSocketIO, getStatus, getLastQR, reconnectWhatsApp };
+/**
+ * Send a text message to the Outdoors WhatsApp group.
+ * Used by trigger scheduler to deliver trigger responses.
+ * Retries up to 3 times, waits for reconnect if disconnected.
+ */
+async function sendToOutdoorsGroup(text) {
+  const groupJid = config.outdoorsGroupJid;
+  if (!groupJid) {
+    console.log('[WhatsApp] Cannot send — no Outdoors group configured');
+    return null;
+  }
+  if (!sock || connectionStatus !== 'connected') {
+    // Wait up to 30 seconds for reconnection
+    console.log('[WhatsApp] Disconnected — waiting up to 30s for reconnect before sending trigger response...');
+    const start = Date.now();
+    while (Date.now() - start < 30000) {
+      if (sock && connectionStatus === 'connected') break;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    if (!sock || connectionStatus !== 'connected') {
+      console.error('[WhatsApp] Still disconnected after 30s — trigger response lost');
+      return null;
+    }
+  }
+  const formatted = formatOutdoorsResponse(text);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const sent = await sock.sendMessage(groupJid, { text: formatted });
+      if (sent?.key?.id) {
+        botSentIds.add(sent.key.id);
+        storeMessage(sent.key.id, sent.message);
+      }
+      return sent;
+    } catch (err) {
+      console.log(`[WhatsApp] Trigger send attempt ${attempt}/3 failed:`, err.message);
+      if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * attempt));
+    }
+  }
+  return null;
+}
+
+export { startWhatsApp, setSocketIO, getStatus, getLastQR, reconnectWhatsApp, sendToOutdoorsGroup };
