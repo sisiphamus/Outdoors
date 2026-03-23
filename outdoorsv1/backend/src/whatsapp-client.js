@@ -125,6 +125,7 @@ let io = null;
 let connectionStatus = 'disconnected';
 let lastQR = null;
 let reconnectAttempt = 0;
+let manualReconnecting = false; // prevents close handler from auto-reconnecting during manual reconnect
 const MAX_RECONNECT_ATTEMPTS = 10;
 const seenTimestampKeys = new Set();
 
@@ -231,6 +232,12 @@ async function startWhatsApp() {
     if (connection === 'close') {
       connectionStatus = 'disconnected';
       io?.emit('status', connectionStatus);
+
+      // Skip auto-reconnect if manual reconnect is in progress (it will call startWhatsApp itself)
+      if (manualReconnecting) {
+        console.log('[WhatsApp] Manual reconnect in progress — skipping auto-reconnect');
+        return;
+      }
 
       const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
@@ -624,6 +631,9 @@ function getLastQR() {
 }
 
 async function reconnectWhatsApp() {
+  // Prevent the close handler from auto-reconnecting while we do a manual reconnect
+  manualReconnecting = true;
+
   // Close existing connection and wipe auth state to force new QR
   if (sock) {
     try { sock.end(new Error('User requested reconnect')); } catch {}
@@ -644,6 +654,10 @@ async function reconnectWhatsApp() {
   // Clear saved group JID so it searches for existing group on reconnect
   config.outdoorsGroupJid = '';
   saveConfig(config);
+
+  // Small delay to let the close event fire and be ignored
+  await new Promise(r => setTimeout(r, 500));
+  manualReconnecting = false;
 
   // Restart
   await startWhatsApp();
