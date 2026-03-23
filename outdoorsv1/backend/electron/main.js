@@ -136,13 +136,22 @@ function ensureWorkspace() {
 
   if (workspaceExists && versionMatch) return false;
 
+  // Workspace files exist but version file is missing/corrupted (crash recovery)
+  // Just rewrite the version file — don't wipe and reinstall
+  if (workspaceExists && !versionMatch && !installedVersion) {
+    console.log(`[workspace] Version file missing (likely crash). Rewriting version file, skipping reinstall.`);
+    fs.mkdirSync(path.dirname(versionFile), { recursive: true });
+    fs.writeFileSync(versionFile, currentVersion);
+    return false;
+  }
+
   const isFirstRun = !workspaceExists;
   const destBackend = path.join(WORKSPACE, 'outdoorsv1', 'backend');
 
   // On update: back up user data, wipe workspace, copy fresh from bundle, restore user data
   // On first run: just copy fresh from bundle
   if (!isFirstRun) {
-    console.log(`[workspace] Version mismatch: ${installedVersion || 'unknown'} → ${currentVersion}. Clean reinstall.`);
+    console.log(`[workspace] Version update: ${installedVersion} → ${currentVersion}. Clean reinstall.`);
 
     // Back up user data to temp dir
     const tmpDir = path.join(app.getPath('temp'), 'outdoors-upgrade-backup');
@@ -154,16 +163,25 @@ function ensureWorkspace() {
     for (const file of keepFiles) {
       const src = path.join(destBackend, file);
       if (fs.existsSync(src)) {
-        try { fs.copyFileSync(src, path.join(tmpDir, file)); } catch {}
+        try {
+          fs.copyFileSync(src, path.join(tmpDir, file));
+        } catch (err) {
+          console.error(`[workspace] Failed to back up ${file}:`, err.message);
+        }
       }
     }
 
-    // Directories to preserve
+    // Directories to preserve (includes bot/memory which contains skills)
     const keepDirs = ['auth_state', 'bot/memory', 'bot/logs', 'bot/outputs'];
     for (const dir of keepDirs) {
       const src = path.join(destBackend, dir);
       if (fs.existsSync(src)) {
-        try { copyDirSync(src, path.join(tmpDir, dir)); } catch {}
+        try {
+          copyDirSync(src, path.join(tmpDir, dir));
+          console.log(`[workspace] Backed up ${dir}`);
+        } catch (err) {
+          console.error(`[workspace] Failed to back up ${dir}:`, err.message);
+        }
       }
     }
 
@@ -190,6 +208,7 @@ function ensureWorkspace() {
         if (entry.isDirectory()) copyDirSync(src, dest);
         else fs.copyFileSync(src, dest);
       }
+      console.log('[workspace] User data restored successfully');
     } catch (err) {
       console.error('[workspace] Restore failed:', err);
     }
@@ -1040,15 +1059,33 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
       // 3. Open the auth URL in AutomationProfile Chrome
       // 4. Poll for credential file to confirm success
 
-      // Clear any existing Google credentials so the user always authenticates fresh.
-      // This prevents stale tokens synced via Claude CLI from another account being reused.
+      // Clear Google credentials before auth to prevent cross-account leaks.
+      // On first setup: wipe all (prevents stale Claude CLI tokens from other accounts).
+      // On re-auth (config already has a googleEmail): only clear the target account
+      // so we don't nuke other valid accounts when adding a second one.
       const credsDir = path.join(process.env.HOME || process.env.USERPROFILE || '', '.google_workspace_mcp', 'credentials');
       try {
         if (fs.existsSync(credsDir)) {
-          for (const file of fs.readdirSync(credsDir)) {
-            try { fs.unlinkSync(path.join(credsDir, file)); } catch {}
+          let cfg = {};
+          try { if (fs.existsSync(CONFIG_PATH)) cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')); } catch {}
+          const isReAuth = !!cfg.googleEmail;
+          if (isReAuth) {
+            // Re-auth: only clear the specific account being authorized
+            const targetEmail = getUserGoogleEmail();
+            if (targetEmail) {
+              const targetFile = path.join(credsDir, `${targetEmail}.json`);
+              if (fs.existsSync(targetFile)) {
+                try { fs.unlinkSync(targetFile); } catch {}
+                console.log(`[google-auth] Cleared credentials for ${targetEmail} to force fresh sign-in`);
+              }
+            }
+          } else {
+            // First setup: clear everything to prevent stale tokens from Claude CLI
+            for (const file of fs.readdirSync(credsDir)) {
+              try { fs.unlinkSync(path.join(credsDir, file)); } catch {}
+            }
+            console.log('[google-auth] First setup — cleared all existing credentials');
           }
-          console.log('[google-auth] Cleared existing credentials to force fresh sign-in');
         }
       } catch {}
       let existingCredFiles = new Set();
@@ -1069,8 +1106,8 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
         // - Handles the OAuth callback at /oauth2callback
         // - Stays alive until we kill it
         const serverArgs = useUvx
-          ? ['workspace-mcp', '--single-user', '--transport', 'streamable-http', '--tools', ...toolsList]
-          : ['-m', 'uv', 'tool', 'run', 'workspace-mcp', '--single-user', '--transport', 'streamable-http', '--tools', ...toolsList];
+          ? ['workspace-mcp', '--transport', 'streamable-http', '--tools', ...toolsList]
+          : ['-m', 'uv', 'tool', 'run', 'workspace-mcp', '--transport', 'streamable-http', '--tools', ...toolsList];
 
         console.log('[google-auth] Starting MCP HTTP server:', uvxCmd, serverArgs.join(' '));
         const mcpProc = spawn(uvxCmd, serverArgs, {
@@ -1246,6 +1283,24 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
                 const automationEmail = getAutomationProfileEmail();
                 const matchingFile = automationEmail ? newFiles.find(f => f.replace('.json', '') === automationEmail) : null;
                 const selectedEmail = matchingFile ? automationEmail : newFiles[0].replace('.json', '');
+
+                // Validate that the new credential has a unique refresh token
+                // (prevents workspace-mcp from writing the same token under a different filename)
+                try {
+                  const newCredPath = path.join(credsDir, `${selectedEmail}.json`);
+                  const newCred = JSON.parse(fs.readFileSync(newCredPath, 'utf-8'));
+                  const otherFiles = fs.readdirSync(credsDir).filter(f => f.endsWith('.json') && f !== `${selectedEmail}.json`);
+                  for (const otherFile of otherFiles) {
+                    try {
+                      const otherCred = JSON.parse(fs.readFileSync(path.join(credsDir, otherFile), 'utf-8'));
+                      if (otherCred.refresh_token && otherCred.refresh_token === newCred.refresh_token) {
+                        console.warn(`[google-auth] WARNING: ${selectedEmail} has the same refresh_token as ${otherFile} — tokens may be crossed. Removing duplicate.`);
+                        fs.unlinkSync(newCredPath);
+                      }
+                    } catch {}
+                  }
+                } catch {}
+
                 try {
                   let cfg = {};
                   if (fs.existsSync(CONFIG_PATH)) cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
@@ -1515,8 +1570,8 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
           const uvxIsReal = uvxCommand && uvxCommand !== 'uvx' && fs.existsSync(uvxCommand);
           const wsCmd = uvxIsReal ? uvxCommand : (process.platform === 'win32' ? 'python' : 'python3');
           const wsArgs = uvxIsReal
-            ? ['workspace-mcp', '--single-user']
-            : ['-m', 'uv', 'tool', 'run', 'workspace-mcp', '--single-user'];
+            ? ['workspace-mcp']
+            : ['-m', 'uv', 'tool', 'run', 'workspace-mcp'];
           if (services && services.length > 0) wsArgs.push('--tools', ...services);
 
           // Get the user's Google email from AutomationProfile
@@ -2053,7 +2108,7 @@ function writeMcpConfig(browserKey, browser) {
       }
     } catch {}
 
-    const wsArgs = ['workspace-mcp', '--single-user'];
+    const wsArgs = ['workspace-mcp'];
     if (googleTools.length > 0) {
       wsArgs.push('--tools', ...googleTools);
     }
@@ -2100,8 +2155,8 @@ function writeMcpConfig(browserKey, browser) {
     const uvxIsReal = uvxCommand && uvxCommand !== 'uvx' && fs.existsSync(uvxCommand);
     const wsCmd = uvxIsReal ? uvxCommand : (process.platform === 'win32' ? 'python' : 'python3');
     const wsArgs = uvxIsReal
-      ? ['workspace-mcp', '--single-user']
-      : ['-m', 'uv', 'tool', 'run', 'workspace-mcp', '--single-user'];
+      ? ['workspace-mcp']
+      : ['-m', 'uv', 'tool', 'run', 'workspace-mcp'];
     let googleTools = [];
     try {
       if (fs.existsSync(CONFIG_PATH)) {
