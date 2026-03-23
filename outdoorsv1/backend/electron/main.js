@@ -197,6 +197,17 @@ function ensureWorkspace() {
       }
     }
 
+    // SAFETY CHECK: Refuse to wipe workspace if bot data is still inside
+    // This prevents data loss if the move-to-safe-dir step above failed
+    const botMemoryStillHere = fs.existsSync(path.join(destBackend, 'bot', 'memory', 'skills'));
+    const botMemoryInSafe = fs.existsSync(path.join(safeDir, 'bot', 'memory'));
+    if (botMemoryStillHere && !botMemoryInSafe) {
+      console.error('[workspace] ABORT: Bot data is still in workspace and NOT in safe dir. Skipping wipe to prevent data loss.');
+      // Just update the version file and return without wiping
+      fs.writeFileSync(versionFile, currentVersion);
+      return false;
+    }
+
     // Wipe workspace (bot data has already been moved out)
     try { fs.rmSync(WORKSPACE, { recursive: true, force: true }); } catch {}
 
@@ -247,8 +258,13 @@ function ensureWorkspace() {
     }
     console.log('[workspace] User data restored successfully');
 
-    // Clean up safe dir (data is back in workspace now)
-    try { fs.rmSync(safeDir, { recursive: true, force: true }); } catch {}
+    // Clean up safe dir ONLY if data was successfully restored
+    const botRestoredOk = fs.existsSync(path.join(destBackend, 'bot', 'memory'));
+    if (botRestoredOk) {
+      try { fs.rmSync(safeDir, { recursive: true, force: true }); } catch {}
+    } else {
+      console.error('[workspace] WARNING: Bot data not found in workspace after restore. Keeping safe dir as backup:', safeDir);
+    }
 
     // Remove setup-done flag so wizard re-runs (npm install needed after wipe)
     try { fs.unlinkSync(SETUP_DONE_FLAG); } catch {}
