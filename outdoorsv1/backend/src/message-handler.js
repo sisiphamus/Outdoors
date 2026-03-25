@@ -14,7 +14,42 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const SHORT_TERM_DIR = join(__dirname, '..', 'bot', 'memory', 'short-term');
 const CHAT_SESSIONS_PATH = join(__dirname, '..', 'bot', 'memory', 'wa-chat-sessions.json');
+const LOGS_DIR = join(__dirname, '..', 'bot', 'logs');
 const SESSION_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * Get a summary of the last N conversation logs for context injection.
+ * Returns a string that tells Claude what was recently done (completed tasks).
+ */
+function getRecentLogContext(count = 2) {
+  try {
+    const files = readdirSync(LOGS_DIR)
+      .filter(f => f.endsWith('.json'))
+      .sort((a, b) => {
+        const numA = parseInt(a, 10) || 0;
+        const numB = parseInt(b, 10) || 0;
+        return numB - numA; // newest first
+      })
+      .slice(0, count);
+
+    if (files.length === 0) return '';
+
+    const summaries = files.map(f => {
+      try {
+        const data = JSON.parse(readFileSync(join(LOGS_DIR, f), 'utf-8'));
+        const prompt = data.prompt || '(no prompt)';
+        const response = data.response || data.result?.response || '(no response)';
+        // Truncate to keep context reasonable
+        const truncResponse = response.length > 500 ? response.slice(0, 500) + '...' : response;
+        return `Request: ${prompt}\nCompleted response: ${truncResponse}`;
+      } catch { return null; }
+    }).filter(Boolean);
+
+    if (summaries.length === 0) return '';
+
+    return `\n\n<recent-completed-tasks>\nThe following tasks were ALREADY COMPLETED in previous messages. DO NOT re-execute them. They are provided only for context so you understand what was recently done.\n\n${summaries.join('\n\n---\n\n')}\n</recent-completed-tasks>\n\n`;
+  } catch { return ''; }
+}
 
 // Track active sessions per JID for conversation continuity
 const chatSessions = new Map();
@@ -426,6 +461,15 @@ export async function handleMessage(message, emitLog) {
     if (imagePath) {
       finalPrompt = `[The user sent an image. Read it with your Read tool at: ${imagePath}]\n\n${finalPrompt}`;
       emitLog?.('image', { sender, path: imagePath });
+    }
+  }
+
+  // Inject last 2 completed conversation logs as context (but not for numbered conversations
+  // which have their own session continuity)
+  if (parsed.number === null) {
+    const recentContext = getRecentLogContext(2);
+    if (recentContext) {
+      finalPrompt = recentContext + finalPrompt;
     }
   }
 
