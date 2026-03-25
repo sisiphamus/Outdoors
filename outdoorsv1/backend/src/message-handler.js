@@ -467,7 +467,7 @@ export async function handleMessage(message, emitLog) {
   // Inject last 2 completed conversation logs as context (but not for numbered conversations
   // which have their own session continuity)
   if (parsed.number === null) {
-    const recentContext = getRecentLogContext(2);
+    const recentContext = getRecentLogContext(3);
     if (recentContext) {
       finalPrompt = recentContext + finalPrompt;
     }
