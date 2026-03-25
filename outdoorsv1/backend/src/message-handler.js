@@ -364,21 +364,13 @@ export async function handleMessage(message, emitLog) {
     return { response: lines.join('\n'), sender, prompt, jid };
   }
 
-  // Numbered conversations (e.g. "1 do something") always resume regardless of time.
-  // Unnumbered messages only resume if the last activity was within SESSION_TIMEOUT_MS (10 min).
+  // Every message starts a fresh Claude process. No session resumption.
+  // The bot has access to logs/memory/skills to understand past context if needed,
+  // but never inherits a live Claude session (which causes double-actions like re-sending emails).
+  // Numbered conversations are the only exception — they explicitly opt into continuation.
   let resumeSessionId = null;
   if (parsed.number !== null) {
     resumeSessionId = resolveSession(parsed.number);
-  } else {
-    const existing = chatSessions.get(jid);
-    if (existing && existing.sessionId && existing.lastActivity &&
-        (Date.now() - existing.lastActivity) < SESSION_TIMEOUT_MS) {
-      resumeSessionId = existing.sessionId;
-    } else if (existing) {
-      // Session expired — clear it
-      chatSessions.delete(jid);
-      saveChatSessions();
-    }
   }
   const processKey = parsed.number !== null ? `wa:conv:${parsed.number}` : `wa:chat:${jid}`;
 
