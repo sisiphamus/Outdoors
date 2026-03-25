@@ -497,7 +497,23 @@ export async function handleMessage(message, emitLog) {
       const response = formatQuestionsForText(execResult.questions);
       return { response, sender, prompt: parsed.body, jid, sessionId: execResult.sessionId, fullEvents: execResult.fullEvents, conversationNumber: parsed.number };
     }
-    const response = execResult.response;
+    let response = execResult.response;
+
+    // If Claude returned an API error as response text, retry up to 2 times
+    let apiRetries = 0;
+    while (response && /^API Error:|"type"\s*:\s*"error"|"api_error"|Internal server error/i.test(response) && apiRetries < 2) {
+      apiRetries++;
+      console.log(`[message-handler] Claude returned API error, retrying (${apiRetries}/2)...`);
+      emitLog?.('api_retry', { sender, attempt: apiRetries, error: response.slice(0, 100) });
+      await new Promise(r => setTimeout(r, 3000 * apiRetries));
+      try {
+        const retryResult = await executeClaudePrompt(finalPrompt, { onProgress, processKey, clarificationKey: processKey, detectDelegation: !isKnownCode, sessionContext: session });
+        execResult = retryResult;
+        response = retryResult.response;
+      } catch (retryErr) {
+        console.error(`[message-handler] API retry ${apiRetries} failed:`, retryErr.message);
+      }
+    }
 
     const mode = (isKnownCode || didDelegate) ? 'code' : 'assistant';
     if (execResult.sessionId) {
