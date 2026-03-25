@@ -1,5 +1,6 @@
 ; Outdoors NSIS installer customization
-; Cleans up ALL prior versions, updater data, and user data before install
+; CRITICAL: NEVER delete user data (bot memory, skills, outputs, logs, credentials).
+; Only clean up program files and temp/cache data.
 
 !macro customInit
   ; Kill any running Outdoors processes
@@ -11,21 +12,21 @@
     ExecWait '"$0" /S --force-run'
     Sleep 2000
 
-  ; Remove old install directory
+  ; Remove old install directory (program files only — NOT user data)
   RMDir /r "$LOCALAPPDATA\Programs\Outdoors"
 
-  ; Remove outdoors-desktop app data (workspace, config, logs, auth state, bot memory)
-  RMDir /r "$APPDATA\outdoors-desktop"
+  ; DO NOT delete $APPDATA\outdoors-desktop — it contains irreplaceable user data:
+  ;   - bot/memory/skills (learned behaviors)
+  ;   - bot/memory (user preferences, knowledge)
+  ;   - bot/logs (conversation history)
+  ;   - bot/outputs (generated files)
+  ;   - config.json, .env, auth_state
+  ; The app's ensureWorkspace() handles upgrades safely.
 
-  ; Remove outdoors-desktop-updater
+  ; Remove outdoors-desktop-updater (cache only, safe to delete)
   RMDir /r "$LOCALAPPDATA\outdoors-desktop-updater"
 
-  ; Remove cached Google Workspace MCP credentials (prevents cross-account data leaks)
-  RMDir /r "$PROFILE\.google_workspace_mcp"
-
-  ; Remove WhatsApp auth state (force fresh QR scan)
-  ; This is inside outdoors-desktop which was already removed above, but just in case:
-  RMDir /r "$APPDATA\outdoors-desktop\workspace\outdoorsv1\backend\auth_state"
+  ; DO NOT delete .google_workspace_mcp — contains OAuth credentials for multiple accounts
 
   ; Remove temp files from previous installs
   Delete "$TEMP\outdoors-out.log"
