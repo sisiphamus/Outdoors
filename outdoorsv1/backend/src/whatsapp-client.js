@@ -127,6 +127,7 @@ let lastQR = null;
 let reconnectAttempt = 0;
 let manualReconnecting = false; // prevents close handler from auto-reconnecting during manual reconnect
 const MAX_RECONNECT_ATTEMPTS = 10;
+let healthCheckTimer = null;
 const seenTimestampKeys = new Set();
 
 // Track message IDs sent by the bot to prevent infinite loops
@@ -173,6 +174,7 @@ function getStatus() {
 
 async function startWhatsApp() {
   // Close any existing socket before creating a new one to prevent duplicates
+  if (healthCheckTimer) { clearInterval(healthCheckTimer); healthCheckTimer = null; }
   if (sock) {
     try { sock.ev.removeAllListeners(); sock.end(undefined); } catch {}
     sock = null;
@@ -237,6 +239,7 @@ async function startWhatsApp() {
 
     if (connection === 'close') {
       connectionStatus = 'disconnected';
+      if (healthCheckTimer) { clearInterval(healthCheckTimer); healthCheckTimer = null; }
       io?.emit('status', connectionStatus);
 
       // Skip auto-reconnect if manual reconnect is in progress (it will call startWhatsApp itself)
@@ -273,6 +276,33 @@ async function startWhatsApp() {
       emitLog('connected', { message: 'WhatsApp connected successfully' });
       console.log('WhatsApp connected!');
       console.log('[wa] Connected as:', JSON.stringify(sock.user));
+
+      // Zombie connection watchdog — detect when the socket is functionally dead
+      // but Baileys hasn't fired 'close'. Sends a lightweight presence update every
+      // 2 minutes. If it fails or times out, force a reconnect.
+      if (healthCheckTimer) clearInterval(healthCheckTimer);
+      healthCheckTimer = setInterval(async () => {
+        if (connectionStatus !== 'connected' || !sock) return;
+        try {
+          const timeout = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('health check timeout')), 10_000)
+          );
+          await Promise.race([
+            sock.sendPresenceUpdate('available'),
+            timeout,
+          ]);
+        } catch (err) {
+          console.log(`[wa:health] Zombie connection detected: ${err.message}. Forcing reconnect.`);
+          emitLog('zombie_disconnect', { message: `Health check failed: ${err.message}` });
+          connectionStatus = 'disconnected';
+          io?.emit('status', connectionStatus);
+          try { sock.end(new Error('Zombie connection')); } catch {}
+          // Trigger reconnect
+          reconnectAttempt++;
+          const delay = Math.min(3000 * Math.pow(1.5, reconnectAttempt - 1), 30000);
+          setTimeout(startWhatsApp, delay);
+        }
+      }, 120_000); // every 2 minutes
 
       // Drain any messages left in queue from a previous crash
       const pending = getPendingMessages();
