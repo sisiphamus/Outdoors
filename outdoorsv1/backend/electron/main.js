@@ -2485,6 +2485,25 @@ function startBackend() {
       return;
     }
 
+    // Kill any stale process holding the backend port (e.g. from a previous
+    // session that wasn't cleaned up, or a reinstall that didn't kill children)
+    let port = 3847;
+    try {
+      if (fs.existsSync(CONFIG_PATH)) {
+        const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+        if (cfg.port) port = cfg.port;
+      }
+    } catch {}
+    try {
+      const stalePids = platform.getPortProcesses(port);
+      if (stalePids.length > 0) {
+        console.log(`[backend] Killing stale process(es) on port ${port}:`, stalePids);
+        for (const pid of stalePids) {
+          platform.killProcessByPid(pid);
+        }
+      }
+    } catch {}
+
     backendProcess = spawn('node', [indexJs], {
       cwd: BACKEND_DIR,
       env: { ...process.env, ELECTRON: '1' },
@@ -2714,9 +2733,21 @@ app.on('before-quit', () => {
         // Kill entire process tree (node backend + python ML workers)
         execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000, windowsHide: true, stdio: 'ignore' });
       } else {
-        process.kill(-pid, 'SIGTERM');
+        // Try process group kill first, then direct PID kill as fallback
+        try { process.kill(-pid, 'SIGTERM'); } catch {}
+        try { process.kill(pid, 'SIGTERM'); } catch {}
       }
     } catch {}
     backendProcess = null;
   }
+
+  // Safety net: kill anything still on the backend port so next launch is clean
+  let port = 3847;
+  try {
+    if (fs.existsSync(CONFIG_PATH)) {
+      const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+      if (cfg.port) port = cfg.port;
+    }
+  } catch {}
+  try { platform.killPort(port); } catch {}
 });
