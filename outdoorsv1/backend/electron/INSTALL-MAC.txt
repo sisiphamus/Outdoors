@@ -2,32 +2,33 @@
 ║                   Outdoors — macOS Install                  ║
 ╚══════════════════════════════════════════════════════════════╝
 
-  macOS blocks unsigned apps by default. To install Outdoors,
-  open Terminal and paste the command below.
+  macOS blocks unsigned apps by default. Follow these steps
+  to install Outdoors.
 
-  ── Step 1: Open Terminal ──────────────────────────────────
+  ── Step 1: Open the DMG ──────────────────────────────────
+
+  Double-click the .dmg file to mount it, then drag
+  Outdoors into the Applications folder.
+
+  ── Step 2: Open Terminal ─────────────────────────────────
 
   Press Cmd+Space, type "Terminal", press Enter.
 
-  ── Step 2: Paste this command ─────────────────────────────
+  ── Step 3: Paste this command ────────────────────────────
 
-  sudo xattr -rd com.apple.quarantine ~/Downloads/Outdoors*.dmg
+  sudo xattr -rd com.apple.quarantine ~/Downloads/Outdoors*.dmg /Applications/Outdoors.app
 
   Enter your Mac password when prompted (it won't show as
-  you type — that's normal).
+  you type — that's normal). This removes the quarantine
+  from both the installer and the app.
 
-  ── Step 3: Install ────────────────────────────────────────
+  ── Step 4: Open Outdoors ─────────────────────────────────
 
-  Open the .dmg file, drag Outdoors to Applications, then
-  open Outdoors from Applications.
+  Open Outdoors from Applications. It should launch cleanly.
 
-  ── Troubleshooting ────────────────────────────────────────
+  ── Troubleshooting ───────────────────────────────────────
 
-  If the .dmg is not in ~/Downloads, replace the path:
+  If the .dmg is not in ~/Downloads, adjust the path:
 
-  sudo xattr -rd com.apple.quarantine /path/to/Outdoors*.dmg
-
-  If Outdoors.app itself shows a warning after install:
-
-  sudo xattr -cr /Applications/Outdoors.app
+  sudo xattr -rd com.apple.quarantine /path/to/Outdoors*.dmg /Applications/Outdoors.app
 
