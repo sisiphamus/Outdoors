@@ -60,19 +60,19 @@ jobs:
 
       # ── Post-build: verify build output ──────────────────────────
 
-      - name: Verify PKG and app bundle
+      - name: Verify DMG and app bundle
         working-directory: outdoorsv1/backend/electron
         run: |
           set -e
 
-          # Verify .pkg was produced
-          PKG_FILE=$(ls dist/*.pkg 2>/dev/null | head -1)
-          if [ -z "$PKG_FILE" ]; then
-            echo "FAIL: No .pkg file found in dist/"
+          # Verify .dmg was produced
+          DMG_FILE=$(ls dist/*.dmg 2>/dev/null | head -1)
+          if [ -z "$DMG_FILE" ]; then
+            echo "FAIL: No .dmg file found in dist/"
             ls -la dist/
             exit 1
           fi
-          echo "PKG: $PKG_FILE ($(du -h "$PKG_FILE" | cut -f1))"
+          echo "DMG: $DMG_FILE ($(du -h "$DMG_FILE" | cut -f1))"
 
           # Verify the unpacked .app in the build directory
           APP_DIR=$(find dist -name "Outdoors.app" -maxdepth 3 | head -1)
