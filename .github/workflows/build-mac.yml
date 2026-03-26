@@ -111,10 +111,14 @@ jobs:
           echo ""
           echo "All build verification checks passed"
 
+      - name: Copy install instructions to dist
+        run: cp outdoorsv1/backend/electron/INSTALL-MAC.txt outdoorsv1/backend/electron/dist/
+
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Outdoors-macOS
           path: |
             outdoorsv1/backend/electron/dist/*.pkg
+            outdoorsv1/backend/electron/dist/INSTALL-MAC.txt
           retention-days: 30

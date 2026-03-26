@@ -1,0 +1,33 @@
+╔══════════════════════════════════════════════════════════════╗
+║                   Outdoors — macOS Install                  ║
+╚══════════════════════════════════════════════════════════════╝
+
+  macOS blocks unsigned apps by default. To install Outdoors,
+  open Terminal and paste the command below.
+
+  ── Step 1: Open Terminal ──────────────────────────────────
+
+  Press Cmd+Space, type "Terminal", press Enter.
+
+  ── Step 2: Paste this command ─────────────────────────────
+
+  sudo xattr -rd com.apple.quarantine ~/Downloads/Outdoors*.pkg && open ~/Downloads/Outdoors*.pkg
+
+  Enter your Mac password when prompted (it won't show as
+  you type — that's normal). The installer will open.
+
+  ── Step 3: Install ────────────────────────────────────────
+
+  Click through the installer, then open Outdoors from
+  Applications.
+
+  ── Troubleshooting ────────────────────────────────────────
+
+  If the .pkg is not in ~/Downloads, replace the path:
+
+  sudo xattr -rd com.apple.quarantine /path/to/Outdoors-1.2.1-arm64.pkg && open /path/to/Outdoors-1.2.1-arm64.pkg
+
+  If Outdoors.app itself shows a warning after install:
+
+  sudo xattr -cr /Applications/Outdoors.app
+
