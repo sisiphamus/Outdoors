@@ -47,7 +47,7 @@ function getRecentLogContext(count = 2) {
 
     if (summaries.length === 0) return '';
 
-    return `\n\n<recent-completed-tasks>\nThe following tasks were ALREADY COMPLETED in previous messages. DO NOT re-execute them. They are provided only for context so you understand what was recently done.\n\n${summaries.join('\n\n---\n\n')}\n</recent-completed-tasks>\n\n`;
+    return `\n\n<conversation-history>\nIMPORTANT CONTEXT: These are the user's most recent completed conversations with you. Use this to understand what they're referring to. These tasks are ALREADY DONE — do NOT re-execute them.\n\n${summaries.join('\n\n---\n\n')}\n</conversation-history>\n\n`;
   } catch { return ''; }
 }
 
@@ -464,12 +464,13 @@ export async function handleMessage(message, emitLog) {
     }
   }
 
-  // Inject last 2 completed conversation logs as context (but not for numbered conversations
-  // which have their own session continuity)
+  // Inject last 3 completed conversation logs as context (but not for numbered conversations
+  // which have their own session continuity). Appended AFTER the user message so Claude
+  // sees the user's request first, then the context.
   if (parsed.number === null) {
     const recentContext = getRecentLogContext(3);
     if (recentContext) {
-      finalPrompt = recentContext + finalPrompt;
+      finalPrompt = finalPrompt + recentContext;
     }
   }
 
