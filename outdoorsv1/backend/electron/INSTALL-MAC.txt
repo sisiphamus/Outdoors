@@ -2,33 +2,34 @@
 ║                   Outdoors — macOS Install                  ║
 ╚══════════════════════════════════════════════════════════════╝
 
-  macOS blocks unsigned apps by default. Follow these steps
-  to install Outdoors.
+  macOS blocks unsigned apps by default. To install Outdoors,
+  open Terminal and paste the command below. It handles
+  everything automatically.
 
-  ── Step 1: Open the DMG ──────────────────────────────────
-
-  Double-click the .dmg file to mount it, then drag
-  Outdoors into the Applications folder.
-
-  ── Step 2: Open Terminal ─────────────────────────────────
+  ── Step 1: Open Terminal ─────────────────────────────────
 
   Press Cmd+Space, type "Terminal", press Enter.
 
-  ── Step 3: Paste this command ────────────────────────────
+  ── Step 2: Paste this command ────────────────────────────
 
-  sudo xattr -rd com.apple.quarantine ~/Downloads/Outdoors*.dmg /Applications/Outdoors.app
+  sudo xattr -rd com.apple.quarantine ~/Downloads/Outdoors*.dmg && \
+  hdiutil attach ~/Downloads/Outdoors*.dmg -nobrowse -quiet && \
+  sudo cp -r /Volumes/Outdoors*/Outdoors.app /Applications/ && \
+  hdiutil detach /Volumes/Outdoors* -quiet && \
+  sudo xattr -cr /Applications/Outdoors.app && \
+  open /Applications/Outdoors.app
 
   Enter your Mac password when prompted (it won't show as
-  you type — that's normal). This removes the quarantine
-  from both the installer and the app.
+  you type — that's normal).
 
-  ── Step 4: Open Outdoors ─────────────────────────────────
-
-  Open Outdoors from Applications. It should launch cleanly.
+  This command will:
+  - Remove quarantine from the downloaded .dmg
+  - Mount the .dmg, copy Outdoors to Applications
+  - Remove quarantine from the installed app
+  - Launch Outdoors
 
   ── Troubleshooting ───────────────────────────────────────
 
-  If the .dmg is not in ~/Downloads, adjust the path:
-
-  sudo xattr -rd com.apple.quarantine /path/to/Outdoors*.dmg /Applications/Outdoors.app
+  If the .dmg is not in ~/Downloads, replace ~/Downloads/
+  with the folder where you saved the file.
 
