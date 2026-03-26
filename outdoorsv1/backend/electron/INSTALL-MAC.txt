@@ -24,12 +24,18 @@
 
   This command will:
   - Remove quarantine from the downloaded .dmg
-  - Mount the .dmg, copy Outdoors to Applications
+  - Mount the .dmg and copy Outdoors to Applications
   - Remove quarantine from the installed app
   - Launch Outdoors
+
+  IMPORTANT: Always run Outdoors from /Applications, not
+  from the .dmg. You can eject the .dmg after installing.
 
   ── Troubleshooting ───────────────────────────────────────
 
   If the .dmg is not in ~/Downloads, replace ~/Downloads/
   with the folder where you saved the file.
+
+  To quit Outdoors, close the window or use Cmd+Q. The app
+  will fully exit (no background process left running).
 

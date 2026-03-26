@@ -418,11 +418,8 @@ function createSetupWindow() {
     }
   });
 
-  mainWindow.on('close', (e) => {
-    if (tray) {
-      e.preventDefault();
-      mainWindow.hide();
-    }
+  mainWindow.on('close', () => {
+    app.quit();
   });
 }
 
@@ -2688,8 +2685,8 @@ function createDashboardWindow() {
       },
     });
     mainWindow.loadFile(path.join(SETUP_DIR, 'dashboard.html'));
-    mainWindow.on('close', (e) => {
-      if (tray) { e.preventDefault(); mainWindow.hide(); }
+    mainWindow.on('close', () => {
+      app.quit();
     });
   }
 
@@ -2720,9 +2717,8 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on('window-all-closed', (e) => {
-  // Don't quit — stay in tray
-  e.preventDefault?.();
+app.on('window-all-closed', () => {
+  app.quit();
 });
 
 app.on('before-quit', () => {
