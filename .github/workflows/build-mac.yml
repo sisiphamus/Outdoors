@@ -74,13 +74,18 @@ jobs:
           APP_PATH="$MOUNT_POINT/Outdoors.app"
           test -d "$APP_PATH" || { echo "FAIL: Outdoors.app not found in DMG"; exit 1; }
 
-          # Verify Electron main process files
           RESOURCES="$APP_PATH/Contents/Resources"
-          test -f "$RESOURCES/app/main.js" || { echo "FAIL: main.js missing"; exit 1; }
-          test -f "$RESOURCES/app/platform.js" || { echo "FAIL: platform.js missing"; exit 1; }
-          test -f "$RESOURCES/app/preload.js" || { echo "FAIL: preload.js missing"; exit 1; }
 
-          # Verify bundled backend project
+          # Verify Electron app code (packed in app.asar or app/ directory)
+          if test -f "$RESOURCES/app.asar"; then
+            echo "PASS: app.asar exists (Electron app code packed)"
+          elif test -f "$RESOURCES/app/main.js"; then
+            echo "PASS: app/main.js exists (unpacked app)"
+          else
+            echo "FAIL: Neither app.asar nor app/main.js found"; exit 1
+          fi
+
+          # Verify bundled backend project (extraResources — always unpacked)
           test -d "$RESOURCES/project" || { echo "FAIL: project resources missing"; exit 1; }
           test -f "$RESOURCES/project/src/index.js" || { echo "FAIL: project/src/index.js missing"; exit 1; }
           test -f "$RESOURCES/project/package.json" || { echo "FAIL: project/package.json missing"; exit 1; }
@@ -91,25 +96,28 @@ jobs:
           test -f "$RESOURCES/project/src/setup/renderer.js" || { echo "FAIL: setup wizard renderer missing"; exit 1; }
           test -f "$RESOURCES/project/src/setup/icon.png" || { echo "FAIL: icon.png missing from setup"; exit 1; }
 
-          # Verify outdoorsv4 pipeline
+          # Verify outdoorsv4 pipeline (extraResources — always unpacked)
           test -d "$RESOURCES/outdoorsv4" || { echo "FAIL: outdoorsv4 resources missing"; exit 1; }
           test -f "$RESOURCES/outdoorsv4/index.js" || { echo "FAIL: outdoorsv4/index.js missing"; exit 1; }
           test -f "$RESOURCES/outdoorsv4/pipeline/orchestrator.js" || { echo "FAIL: orchestrator.js missing"; exit 1; }
 
           # Verify no secrets leaked into the bundle
           if test -f "$RESOURCES/project/config.json"; then
-            echo "FAIL: config.json should not be in bundle"
-            exit 1
+            echo "FAIL: config.json should not be in bundle"; exit 1
           fi
           if test -f "$RESOURCES/project/.env"; then
-            echo "FAIL: .env should not be in bundle"
-            exit 1
+            echo "FAIL: .env should not be in bundle"; exit 1
           fi
           if test -d "$RESOURCES/project/auth_state"; then
-            echo "FAIL: auth_state should not be in bundle"
-            exit 1
+            echo "FAIL: auth_state should not be in bundle"; exit 1
           fi
 
+          # List resources for debugging
+          echo ""
+          echo "Resources directory contents:"
+          ls -la "$RESOURCES/" | head -20
+
+          echo ""
           echo "All DMG structure checks passed"
 
           # Unmount
