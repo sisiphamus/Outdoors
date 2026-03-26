@@ -201,8 +201,8 @@ async function startWhatsApp() {
     logger,
     generateHighQualityLinkPreview: false,
     markOnlineOnConnect: true,
-    keepAliveIntervalMs: 15_000,
-    retryRequestDelayMs: 250,
+    keepAliveIntervalMs: 45_000,
+    retryRequestDelayMs: 500,
     getMessage: async (key) => {
       const stored = messageStore.get(key.id);
       return stored || undefined;
@@ -407,6 +407,8 @@ async function startWhatsApp() {
       // Fire off each message concurrently — each spawns its own Claude instance
       (async () => {
         const jid = msg.key.remoteJid;
+        // Capture socket reference at message start — survives reconnects that replace module-level `sock`
+        const msgSock = sock;
         // (fire-and-forget body — .catch() added at bottom)
 
         // Retry helper: attempts to send a WhatsApp message up to 3 times
@@ -429,7 +431,7 @@ async function startWhatsApp() {
         let reactInFlight = false;
         let reactFails = 0;
         const pulseInterval = setInterval(async () => {
-          if (reactInFlight) return;
+          if (reactInFlight || connectionStatus !== 'connected') return;
           if (reactFails >= 3) {
             reactFails = 0; // reset and retry next tick instead of dying permanently
             return;
@@ -437,11 +439,14 @@ async function startWhatsApp() {
           reactInFlight = true;
           try {
             growIdx = (growIdx + 1) % growEmojis.length;
-            await sock.sendMessage(jid, { react: { key: msg.key, text: growEmojis[growIdx] } });
+            await msgSock.sendMessage(jid, { react: { key: msg.key, text: growEmojis[growIdx] } });
             reactFails = 0; // reset on success
           } catch (err) {
             reactFails++;
             console.log(`[react] shuffle failed (${reactFails}/3):`, err.message);
+            if (reactFails === 1) {
+              io?.emit('log', { type: 'react_degraded', data: { jid, msgId }, timestamp: new Date().toISOString() });
+            }
           } finally {
             reactInFlight = false;
           }
@@ -449,8 +454,10 @@ async function startWhatsApp() {
 
         try {
           try {
-            await sock.sendMessage(jid, { react: { key: msg.key, text: '🌱' } });
-            console.log('[react] 🌱 sent');
+            if (connectionStatus === 'connected') {
+              await msgSock.sendMessage(jid, { react: { key: msg.key, text: '🌱' } });
+              console.log('[react] 🌱 sent');
+            }
           } catch (reactErr) {
             console.log(`[react] Initial 🌱 failed (non-fatal): ${reactErr.message}`);
           }
@@ -523,9 +530,11 @@ async function startWhatsApp() {
         } finally {
           clearInterval(pulseInterval);
           dequeueMessage(msgId);
-          sock.sendMessage(jid, { react: { key: msg.key, text: '' } })
-            .then(() => console.log('[react] removed ⏳'))
-            .catch(e => console.log('[react] remove failed:', e.message));
+          if (connectionStatus === 'connected' && msgSock === sock) {
+            msgSock.sendMessage(jid, { react: { key: msg.key, text: '' } })
+              .then(() => console.log('[react] removed'))
+              .catch(e => console.log('[react] remove failed:', e.message));
+          }
           processingIds.delete(msgId);
         }
 

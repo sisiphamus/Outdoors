@@ -3,8 +3,13 @@
 ; Only clean up program files and temp/cache data.
 
 !macro customInit
-  ; Kill any running Outdoors processes
+  ; Kill any running Outdoors processes (and their entire process tree)
   nsExec::ExecToLog 'taskkill /F /IM "Outdoors.exe" /T'
+
+  ; Kill orphaned backend processes from previous runs that hold file locks.
+  ; The backend listens on port 3847 — find its PID and kill the entire process tree
+  ; (covers node.exe backend + python.exe ML workers spawned as children).
+  nsExec::ExecToLog 'powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 3847 -State Listen -EA 0 | ForEach-Object { taskkill /F /T /PID $$_.OwningProcess }"'
 
   ; Uninstall old version from default location
   StrCpy $0 "$LOCALAPPDATA\Programs\Outdoors\Uninstall Outdoors.exe"

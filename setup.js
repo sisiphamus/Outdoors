@@ -494,6 +494,56 @@ async function autoCreateOAuth() {
       ok('OAuth consent screen already exists');
     }
 
+    // 7b. Publish consent screen to production (removes test-user requirement)
+    // In Testing mode, only manually-added test users can authorize.
+    // Publishing to Production lets any user authorize (with an "unverified app" warning).
+    log('Publishing OAuth consent screen to production...');
+    try {
+      await cdpNavigateAndWait(cdp, `https://console.cloud.google.com/apis/credentials/consent?project=${finalProjectId}`, 6000);
+
+      const published = await cdpEval(cdp, `
+        (async () => {
+          await new Promise(r => setTimeout(r, 3000));
+
+          // Find "PUBLISH APP" button
+          const buttons = [...document.querySelectorAll('button')];
+          const publishBtn = buttons.find(b =>
+            b.textContent.trim().toUpperCase().includes('PUBLISH APP') ||
+            b.textContent.trim().toUpperCase().includes('PUBLISH')
+          );
+          if (publishBtn && !publishBtn.disabled) {
+            publishBtn.click();
+            await new Promise(r => setTimeout(r, 2000));
+
+            // Confirm in the dialog if one appears
+            const confirmBtns = [...document.querySelectorAll('button')];
+            const confirmBtn = confirmBtns.find(b =>
+              b.textContent.trim().toUpperCase() === 'CONFIRM' ||
+              b.textContent.trim().toUpperCase() === 'OK'
+            );
+            if (confirmBtn) confirmBtn.click();
+            return 'published';
+          }
+
+          // Check if already in production
+          const pageText = document.body.innerText;
+          if (pageText.includes('In production')) return 'already_published';
+
+          return 'no-button';
+        })()
+      `, true);
+
+      if (published === 'published') {
+        ok('OAuth consent screen published to production');
+      } else if (published === 'already_published') {
+        ok('OAuth consent screen already in production');
+      } else {
+        warn('Could not auto-publish consent screen — users may need to click through an "unverified app" warning');
+      }
+    } catch (err) {
+      warn('Could not publish consent screen: ' + err.message);
+    }
+
     // 8. Navigate to credential creation page and create Desktop App client via UI
     log('Creating OAuth Desktop client...');
     await cdpNavigateAndWait(cdp, `https://console.cloud.google.com/apis/credentials/oauthclient?project=${finalProjectId}`, 6000);
