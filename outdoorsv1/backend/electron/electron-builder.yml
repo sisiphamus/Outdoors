@@ -1,6 +1,7 @@
 appId: com.outdoors.desktop
 productName: Outdoors
 copyright: Copyright © 2026 Outdoors
+afterPack: ./sign-adhoc.js
 
 directories:
   output: dist
