@@ -1286,7 +1286,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
       let useUvx = !!uvxCmd;
       if (!uvxCmd) {
         // Fallback: use python -m uv tool run instead of uvx
-        uvxCmd = 'python';
+        uvxCmd = process.platform === 'win32' ? 'python' : 'python3';
       }
       resolvedUvxCmd = uvxCmd;
 
