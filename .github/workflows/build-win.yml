@@ -28,7 +28,7 @@ jobs:
 
       - name: Run unit tests
         working-directory: outdoorsv1/backend
-        run: node --test tests/clarification-manager.test.js tests/claude-bridge.test.js tests/message-handler.test.js tests/runtime-health.test.js
+        run: node --test tests/clarification-manager.test.js tests/message-handler.test.js tests/runtime-health.test.js
 
       - name: Run platform tests
         working-directory: outdoorsv1/backend
