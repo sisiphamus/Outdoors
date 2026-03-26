@@ -49,6 +49,9 @@ jobs:
         working-directory: outdoorsv1/backend/electron
         run: npm install
 
+      - name: Make installer helper executable
+        run: chmod +x outdoorsv1/backend/electron/install-mac.command
+
       - name: Build macOS installer
         working-directory: outdoorsv1/backend/electron
         run: npm run build:mac
