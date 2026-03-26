@@ -1,29 +1,29 @@
 # Memory Index
-_Auto-updated. Entries below reflect actual memory structure._
+_Auto-updated after each learning pass. 22 total entries._
 
 
-## Skills (19)
-- **blog-writer**: Write compelling, well-researched blog posts. Engaging, informative, clear concise style.
-- **browser-use**: Universal browser automation. Prefer JS evaluation over snapshots. Site-specific workflows.
-- **chrome-use**: Chrome-specific automation via CDP. For Google Chrome, use mcp__chrome__* tools.
-- **coding**: Write clean, maintainable code. Asks refining questions before writing. Professional-grade output.
-- **creating-skills**: Guidelines for creating new skills (folder structure, what makes a good skill).
-- **email**: Email drafting — always use HTML format, never plain text. Prevents Gmail line-wrap issues.
-- **email-management**: Gmail label management patterns — mark read, keep unread, batch operations.
-- **gmail-scheduling**: Gmail email scheduling via draft + browser automation workflow.
-- **memory-auditor**: Audit quality, accuracy, and usefulness of all memory files. Scoring and gap analysis.
-- **onboarding**: User personalization scanning. Builds profile files from emails, calendar, contacts, drive, docs.
-- **project-research**: Multi-source research methodology (email, cloud, filesystem). Organized findings.
-- **session-log-analyzer**: Analyze session logs for cross-session patterns, failure modes, user behavior.
-- **slack**: Slack browser automation — OAuth sign-in, API token extraction, presence/status.
-- **strategic-reasoning**: OODA loop with mental models (economics, systems, psychology). Decision heuristics.
-- **ui**: UI development — Tailwind v4 + Next.js, layout rules, single-file website templates.
-- **website-deployment**: GitHub Pages first, fallback hosts second. Setup steps and HTML templates.
-- **whatsapp-images**: Send images (screenshots, photos, charts) to user on WhatsApp via [IMAGE: path] markers.
-- **windows-system**: Windows automation — Bluetooth, mouse, media, display, settings URIs, Git Bash quirks.
+## Skills (18)
+- **blog-writer**: Write compelling, well-researched blog posts on a wide range of topics. Engaging, informative, no em dashes. Clear concise style that gets to the point quickly.
+- **browser-use**: Navigate and interact with websites using the correct browser MCP. Check browser-preferences.md for the preferred browser — use mcp__chrome__* for Google Chrome, mcp__playwright__* for Edge/Brave/Other. Prefer JS evaluation over snapshots.
+- **chrome-use**: Chrome-specific browser automation. For Google Chrome, use mcp__chrome__* tools (chrome-devtools-mcp with autoConnect) — NOT Playwright. Playwright is for Edge/Brave/Other browsers only.
+- **coding**: Write clean, maintainable code for any project. Asks structured refining questions before writing a single line. Produces professional-grade output with clear architecture, proper error handling, and no unnecessary complexity.
+- **creating-skills**: Creating Skills
+- **email**: Email Drafting Skills
+- **email-management**: Email Management Commands
+- **gmail-scheduling**: Gmail Email Scheduling Workflow
+- **memory-auditor**: Audit the quality, accuracy, and usefulness of all memory files. Find duplicates, contradictions, outdated info, and gaps. Prune what's dead weight, strengthen what matters.
+- **onboarding**: Onboarding Personalization Scan
+- **project-research**: Project Research Skill
+- **session-log-analyzer**: Analyze session logs to extract cross-session patterns, failure modes, user behavior, and compounding insights. Turns raw session history into actionable self-improvement.
+- **slack**: Slack — Browser Automation Skill
+- **strategic-reasoning**: Apply the 15 operating principles from the Philosophy of Ultimate Capability. Multi-model thinking, systems perception, first principles, OODA execution, antifragile positioning. Use when any task requires deep thinking, strategy, or when the default approach isn't working.
+- **ui**: UI Development Skill
+- **website-deployment**: Website Deployment Skill
+- **whatsapp-images**: Send images (screenshots, photos, charts) to the user on WhatsApp using [IMAGE: path] markers in your response text.
+- **windows-system**: Windows System Actions
 
 ## Preferences (1)
-- **browser-preferences**: Browser preferences (auto-filled during setup)
+- **browser-preferences**: Browser Preferences
 
 ## Sites (3)
 - **io-rice**: iO — Rice University Timesheet

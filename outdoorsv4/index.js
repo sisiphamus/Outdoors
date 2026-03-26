@@ -156,14 +156,20 @@ export async function executeClaudePrompt(prompt, options = {}) {
   if (cKey) {
     const pending = clarifications.get(cKey);
     if (pending) {
-      clarifications.appendAnswer(cKey, prompt);
-      const augmented = clarifications.buildAugmentedPrompt(pending);
-      clarifications.clear(cKey);
-      // Re-run with the augmented prompt
-      return executeClaudePrompt(augmented, {
-        ...options,
-        resumeSessionId: pending.sessionId,
-      });
+      const age = Date.now() - (pending.timestamp || 0);
+      if (age > 5 * 60 * 1000) {
+        // Stale clarification (>5 min) — discard to prevent cross-conversation leakage
+        clarifications.clear(cKey);
+      } else {
+        clarifications.appendAnswer(cKey, prompt);
+        const augmented = clarifications.buildAugmentedPrompt(pending);
+        clarifications.clear(cKey);
+        // Re-run with the augmented prompt
+        return executeClaudePrompt(augmented, {
+          ...options,
+          resumeSessionId: pending.sessionId,
+        });
+      }
     }
   }
 

@@ -1438,6 +1438,23 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
     return startBackend();
   });
 
+  // Reconnect WhatsApp (delete auth_state + restart)
+  ipcMain.handle('reconnect-whatsapp', async () => {
+    try {
+      let port = 3847;
+      try {
+        if (fs.existsSync(CONFIG_PATH)) {
+          const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+          if (cfg.port) port = cfg.port;
+        }
+      } catch {}
+      const res = await fetch(`http://127.0.0.1:${port}/api/whatsapp/reconnect`, { method: 'POST' });
+      return await res.json();
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   // Get backend port for Socket.IO connection
   ipcMain.handle('get-backend-url', () => {
     // Read port from config, default 3847

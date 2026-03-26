@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startBackend: () => ipcRenderer.invoke('start-backend'),
   stopBackend: () => ipcRenderer.invoke('stop-backend'),
   getBackendUrl: () => ipcRenderer.invoke('get-backend-url'),
+  reconnectWhatsApp: () => ipcRenderer.invoke('reconnect-whatsapp'),
 
   // Setup lifecycle
   completeSetup: () => ipcRenderer.invoke('complete-setup'),
