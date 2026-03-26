@@ -454,23 +454,110 @@ function setupIPC() {
     }
   }
 
+  // macOS: check if Homebrew is available
+  function hasBrew() {
+    try {
+      execSync('brew --version', { encoding: 'utf-8', shell: true, timeout: 5000, stdio: 'pipe' });
+      return true;
+    } catch { return false; }
+  }
+
+  // macOS: install a package via Homebrew
+  function brewInstall(formula, name) {
+    return new Promise((resolve) => {
+      console.log(`[deps] Installing ${name} via brew...`);
+      const proc = spawn('brew', ['install', formula], {
+        shell: true,
+        env: process.env,
+      });
+      let output = '';
+      proc.stdout?.on('data', (d) => { output += d.toString(); });
+      proc.stderr?.on('data', (d) => { output += d.toString(); });
+      proc.on('close', (code) => {
+        console.log(`[deps] ${name} brew install exited with code ${code}`);
+        resolve({ ok: code === 0, output });
+      });
+      proc.on('error', (err) => {
+        console.log(`[deps] ${name} brew install error:`, err.message);
+        resolve({ ok: false, output: err.message });
+      });
+    });
+  }
+
+  // macOS: install Node.js via official .pkg installer (fallback when no Homebrew)
+  function macInstallNodePkg() {
+    return new Promise((resolve) => {
+      console.log('[deps] Installing Node.js via official macOS .pkg...');
+      const tmpPkg = path.join(app.getPath('temp'), 'node-lts.pkg');
+      const pkgUrl = 'https://nodejs.org/dist/v22.16.0/node-v22.16.0.pkg';
+
+      // Download the .pkg
+      const curl = spawn('curl', ['-L', '-o', tmpPkg, pkgUrl], { timeout: 300000 });
+      let dlOutput = '';
+      curl.stderr?.on('data', (d) => { dlOutput += d.toString(); });
+      curl.on('close', (dlCode) => {
+        if (dlCode !== 0) {
+          console.log('[deps] Node.js .pkg download failed:', dlOutput);
+          resolve({ ok: false, output: 'Download failed' });
+          return;
+        }
+
+        // Install the .pkg (requires admin — will prompt for password via macOS GUI)
+        const installer = spawn('sudo', ['installer', '-pkg', tmpPkg, '-target', '/'], {
+          stdio: ['inherit', 'pipe', 'pipe'],
+        });
+        let instOutput = '';
+        installer.stdout?.on('data', (d) => { instOutput += d.toString(); });
+        installer.stderr?.on('data', (d) => { instOutput += d.toString(); });
+        installer.on('close', (instCode) => {
+          // Clean up
+          try { fs.unlinkSync(tmpPkg); } catch {}
+          console.log(`[deps] Node.js .pkg install exited with code ${instCode}`);
+          resolve({ ok: instCode === 0, output: instOutput });
+        });
+        installer.on('error', (err) => {
+          try { fs.unlinkSync(tmpPkg); } catch {}
+          resolve({ ok: false, output: err.message });
+        });
+      });
+      curl.on('error', (err) => {
+        resolve({ ok: false, output: err.message });
+      });
+    });
+  }
+
   ipcMain.handle('install-system-deps', async () => {
     const IS_WIN = process.platform === 'win32';
+    const IS_MAC = process.platform === 'darwin';
     const results = { node: 'skip', git: 'skip', python: 'skip' };
 
-    // Check winget availability (Windows 11 has it built in)
+    // Check package manager availability
     let hasWinget = false;
+    let hasBrw = false;
     if (IS_WIN) {
       try {
         execSync('winget --version', { encoding: 'utf-8', shell: true, timeout: 5000, windowsHide: true, stdio: 'pipe' });
         hasWinget = true;
       } catch {}
+    } else if (IS_MAC) {
+      hasBrw = hasBrew();
     }
 
     // Node.js
     if (!isCommandAvailable('node')) {
       if (hasWinget) {
         const r = await wingetInstall('OpenJS.NodeJS.LTS', 'Node.js');
+        results.node = r.ok ? 'installed' : 'failed';
+        if (r.ok) refreshPath();
+      } else if (IS_MAC) {
+        // Try Homebrew first, fall back to official .pkg
+        let r;
+        if (hasBrw) {
+          r = await brewInstall('node', 'Node.js');
+        }
+        if (!r?.ok) {
+          r = await macInstallNodePkg();
+        }
         results.node = r.ok ? 'installed' : 'failed';
         if (r.ok) refreshPath();
       } else {
@@ -486,7 +573,12 @@ function setupIPC() {
         const r = await wingetInstall('Git.Git', 'Git');
         results.git = r.ok ? 'installed' : 'failed';
         if (r.ok) refreshPath();
+      } else if (IS_MAC && hasBrw) {
+        const r = await brewInstall('git', 'Git');
+        results.git = r.ok ? 'installed' : 'failed';
+        if (r.ok) refreshPath();
       } else {
+        // macOS includes git via Xcode CLT; if missing, prompt user
         results.git = 'missing';
       }
     } else {
@@ -497,6 +589,10 @@ function setupIPC() {
     if (!isCommandAvailable('python') && !isCommandAvailable('python3')) {
       if (hasWinget) {
         const r = await wingetInstall('Python.Python.3.13', 'Python');
+        results.python = r.ok ? 'installed' : 'failed';
+        if (r.ok) refreshPath();
+      } else if (IS_MAC && hasBrw) {
+        const r = await brewInstall('python@3.13', 'Python');
         results.python = r.ok ? 'installed' : 'failed';
         if (r.ok) refreshPath();
       } else {
