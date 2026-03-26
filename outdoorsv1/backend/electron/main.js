@@ -14,6 +14,42 @@ const fs = require('fs');
 const { spawn, execSync, execFile } = require('child_process');
 const platform = require('./platform');
 
+// ── Fix macOS PATH ──────────────────────────────────────────────────────────
+// Electron apps launched from Finder get a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin).
+// Homebrew, nvm, and other tools installed via shell profiles are invisible.
+// Fix: read the user's login shell PATH and merge it into process.env.PATH.
+
+function fixMacPath() {
+  if (process.platform !== 'darwin') return;
+  try {
+    // Get the user's default shell and ask it for PATH
+    const userShell = process.env.SHELL || '/bin/zsh';
+    const shellPath = execSync(`${userShell} -ilc 'echo $PATH'`, {
+      encoding: 'utf-8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (shellPath && shellPath !== process.env.PATH) {
+      process.env.PATH = shellPath;
+      console.log('[mac] PATH fixed from login shell');
+    }
+  } catch (err) {
+    // Fallback: manually add common macOS tool directories
+    const extras = [
+      '/opt/homebrew/bin',
+      '/opt/homebrew/sbin',
+      '/usr/local/bin',
+      path.join(process.env.HOME || '', '.nvm/versions/node'),
+      path.join(process.env.HOME || '', '.local/bin'),
+      path.join(process.env.HOME || '', '.cargo/bin'),
+    ].filter(p => { try { return fs.existsSync(p); } catch { return false; } });
+    if (extras.length > 0) {
+      process.env.PATH = extras.join(':') + ':' + (process.env.PATH || '');
+      console.log('[mac] PATH fixed with fallback dirs:', extras.join(', '));
+    }
+  }
+}
+
+fixMacPath();
+
 // ── Dev vs Prod ──────────────────────────────────────────────────────────────
 
 const IS_DEV = !app.isPackaged;
@@ -154,6 +190,28 @@ function ensureWorkspace() {
   // On first run: just copy fresh from bundle
   if (!isFirstRun) {
     console.log(`[workspace] Version update: ${installedVersion} → ${currentVersion}. Clean reinstall.`);
+
+    // Kill any orphaned backend processes from the previous version that may hold
+    // file locks on the workspace. The NSIS installer does this too, but this covers
+    // the case where the app is auto-updating or the user launched the new version manually.
+    if (backendProcess) {
+      const pid = backendProcess.pid;
+      try {
+        if (platform.IS_WIN) {
+          execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000, windowsHide: true, stdio: 'ignore' });
+        } else {
+          process.kill(-pid, 'SIGTERM');
+        }
+      } catch {}
+      backendProcess = null;
+    }
+    // Also kill anything still listening on the backend port
+    try {
+      const cfg = fs.existsSync(path.join(destBackend, 'config.json'))
+        ? JSON.parse(fs.readFileSync(path.join(destBackend, 'config.json'), 'utf-8'))
+        : {};
+      platform.killPort(cfg.port || 3847);
+    } catch {}
 
     // Persistent safe dir (NOT temp — survives reboots and crash recovery)
     const safeDir = path.join(app.getPath('userData'), '.upgrade-safe');
@@ -377,8 +435,12 @@ function setupIPC() {
 
   // Refresh PATH after installing tools so they're findable without restart
   function refreshPath() {
+    if (process.platform === 'darwin') {
+      fixMacPath();
+      return;
+    }
     try {
-      // Read the machine + user PATH from the registry and merge
+      // Windows: Read the machine + user PATH from the registry and merge
       const machinePath = execSync('reg query "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" /v Path', {
         encoding: 'utf-8', shell: true, timeout: 5000, windowsHide: true, stdio: 'pipe',
       }).match(/Path\s+REG_\w+\s+(.*)/)?.[1]?.trim() || '';
@@ -2513,7 +2575,15 @@ app.on('window-all-closed', (e) => {
 
 app.on('before-quit', () => {
   if (backendProcess) {
-    backendProcess.kill();
+    const pid = backendProcess.pid;
+    try {
+      if (platform.IS_WIN) {
+        // Kill entire process tree (node backend + python ML workers)
+        execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000, windowsHide: true, stdio: 'ignore' });
+      } else {
+        process.kill(-pid, 'SIGTERM');
+      }
+    } catch {}
     backendProcess = null;
   }
 });
