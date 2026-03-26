@@ -21,31 +21,60 @@ const platform = require('./platform');
 
 function fixMacPath() {
   if (process.platform !== 'darwin') return;
+
+  // Step 1: Always prepend known macOS tool directories unconditionally.
+  // This guarantees /opt/homebrew/bin and /usr/local/bin are in PATH even if
+  // the shell invocation below fails or returns an incomplete PATH.
+  const knownDirs = [
+    '/opt/homebrew/bin',
+    '/opt/homebrew/sbin',
+    '/usr/local/bin',
+    path.join(process.env.HOME || '', '.local/bin'),
+    path.join(process.env.HOME || '', '.cargo/bin'),
+  ];
+  const currentPath = process.env.PATH || '';
+  const missing = knownDirs.filter(d => !currentPath.includes(d));
+  if (missing.length > 0) {
+    process.env.PATH = missing.join(':') + ':' + currentPath;
+  }
+
+  // Step 2: Also try to read the full PATH from the user's login shell.
+  // This catches nvm, pyenv, and other tools configured in shell profiles.
   try {
-    // Get the user's default shell and ask it for PATH
     const userShell = process.env.SHELL || '/bin/zsh';
     const shellPath = execSync(`${userShell} -ilc 'echo $PATH'`, {
       encoding: 'utf-8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
-    if (shellPath && shellPath !== process.env.PATH) {
-      process.env.PATH = shellPath;
-      console.log('[mac] PATH fixed from login shell');
+    if (shellPath && shellPath.length > currentPath.length) {
+      // Merge: keep our prepended dirs, add any extras from shell
+      const shellDirs = shellPath.split(':');
+      const currentDirs = new Set(process.env.PATH.split(':'));
+      const newDirs = shellDirs.filter(d => d && !currentDirs.has(d));
+      if (newDirs.length > 0) {
+        process.env.PATH = process.env.PATH + ':' + newDirs.join(':');
+      }
+      console.log('[mac] PATH merged from login shell');
     }
-  } catch (err) {
-    // Fallback: manually add common macOS tool directories
-    const extras = [
-      '/opt/homebrew/bin',
-      '/opt/homebrew/sbin',
-      '/usr/local/bin',
-      path.join(process.env.HOME || '', '.nvm/versions/node'),
-      path.join(process.env.HOME || '', '.local/bin'),
-      path.join(process.env.HOME || '', '.cargo/bin'),
-    ].filter(p => { try { return fs.existsSync(p); } catch { return false; } });
-    if (extras.length > 0) {
-      process.env.PATH = extras.join(':') + ':' + (process.env.PATH || '');
-      console.log('[mac] PATH fixed with fallback dirs:', extras.join(', '));
-    }
+  } catch {
+    console.log('[mac] Shell PATH read failed — using prepended known dirs');
   }
+
+  // Step 3: Find nvm-managed Node (not a fixed path — version is in the dir name)
+  try {
+    const nvmDir = path.join(process.env.HOME || '', '.nvm', 'versions', 'node');
+    if (fs.existsSync(nvmDir)) {
+      const versions = fs.readdirSync(nvmDir).sort().reverse();
+      if (versions.length > 0) {
+        const nvmBin = path.join(nvmDir, versions[0], 'bin');
+        if (!process.env.PATH.includes(nvmBin)) {
+          process.env.PATH = nvmBin + ':' + process.env.PATH;
+          console.log('[mac] Added nvm node:', nvmBin);
+        }
+      }
+    }
+  } catch {}
+
+  console.log('[mac] Final PATH:', process.env.PATH);
 }
 
 fixMacPath();
