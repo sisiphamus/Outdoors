@@ -249,7 +249,8 @@ app.delete('/api/sessions/:id', (req, res) => {
 
 // Web chat session tracking
 const SESSION_TIMEOUT_MS = 10 * 60 * 1000;
-let webSession = { sessionId: null, lastActivity: 0 };
+let webSession = { sessionId: null, lastActivity: 0 };  // fallback for non-windowed, unnumbered clients only
+const socketSessions = new Map();  // Map<socketId, { sessionId, lastActivity }> — per-socket isolation for dashboard windows
 const activeWebConversations = new Set();  // numbered conv numbers currently in-flight
 const activeWebWindows = new Set();         // windowIds currently in-flight (unnumbered)
 
@@ -305,7 +306,11 @@ io.on('connection', async (socket) => {
 
     // Handle /new to clear session
     if (trimmed && trimmed.toLowerCase() === '/new') {
-      webSession = { sessionId: null, lastActivity: 0 };
+      if (windowId) {
+        socketSessions.delete(socket.id);
+      } else {
+        webSession = { sessionId: null, lastActivity: 0 };
+      }
       clearClarificationState(`web:win:${windowId || '__no_window__'}`);
       socket.emit('chat_response', 'Session cleared. Next message starts fresh.');
       return;
@@ -362,15 +367,20 @@ io.on('connection', async (socket) => {
     // Unique ID for correlating responses when multiple messages are in-flight
     const messageId = randomBytes(4).toString('hex');
 
-    // Determine session: numbered conversation takes priority, then client-provided sessionId.
-    // Only fall back to global webSession for non-dashboard clients (no windowId) — dashboard
-    // windows that send no sessionId are intentionally starting a new conversation.
+    // Determine session: numbered conversations use their own isolated session from conversation-manager.
+    // Dashboard windows use per-socket session tracking. Only non-windowed, unnumbered clients
+    // fall back to the global webSession.
     let resumeSessionId = null;
     if (parsed.number !== null) {
       resumeSessionId = resolveSession(parsed.number);
     } else if (clientSessionId) {
       resumeSessionId = clientSessionId;
-    } else if (!windowId && webSession.sessionId && (Date.now() - webSession.lastActivity) < SESSION_TIMEOUT_MS) {
+    } else if (windowId) {
+      const sockSession = socketSessions.get(socket.id);
+      if (sockSession && (Date.now() - sockSession.lastActivity) < SESSION_TIMEOUT_MS) {
+        resumeSessionId = sockSession.sessionId;
+      }
+    } else if (webSession.sessionId && (Date.now() - webSession.lastActivity) < SESSION_TIMEOUT_MS) {
       resumeSessionId = webSession.sessionId;
     }
 
@@ -451,9 +461,15 @@ io.on('connection', async (socket) => {
       const mode = (isKnownCode || didDelegate) ? 'code' : 'assistant';
       if (sessionId) {
         if (parsed.number !== null) {
+          // Numbered conversations only update their own entry — never pollute the global
           createOrUpdateConversation(parsed.number, sessionId, parsed.body, 'web', mode);
+        } else if (windowId) {
+          // Dashboard windows track sessions per-socket for isolation
+          socketSessions.set(socket.id, { sessionId, lastActivity: Date.now() });
+        } else {
+          // Non-windowed, unnumbered clients use the global fallback
+          webSession = { sessionId, lastActivity: Date.now() };
         }
-        webSession = { sessionId, lastActivity: Date.now() };
       }
       convoLog.response = response;
       convoLog.sessionId = sessionId;
@@ -516,8 +532,11 @@ io.on('connection', async (socket) => {
           if (sessionId) {
             if (parsed.number !== null) {
               createOrUpdateConversation(parsed.number, sessionId, finalPrompt, 'web', mode);
+            } else if (windowId) {
+              socketSessions.set(socket.id, { sessionId, lastActivity: Date.now() });
+            } else {
+              webSession = { sessionId, lastActivity: Date.now() };
             }
-            webSession = { sessionId, lastActivity: Date.now() };
           }
           convoLog.response = response;
           convoLog.sessionId = sessionId;
@@ -552,6 +571,10 @@ io.on('connection', async (socket) => {
       writeFileSync(join(LOGS_DIR, filename), JSON.stringify(convoLog, null, 2));
       addToLogIndex(filename, convoLog);
     } catch {}
+  });
+
+  socket.on('disconnect', () => {
+    socketSessions.delete(socket.id);
   });
 
   console.log('Dashboard client connected');
