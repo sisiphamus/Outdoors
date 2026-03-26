@@ -1,4 +1,4 @@
-name: Build macOS Installer
+name: Build & Test macOS
 
 on:
   push:
@@ -20,7 +20,32 @@ jobs:
       - name: Write OAuth credentials
         run: echo '${{ secrets.OAUTH_CREDS_JSON }}' > outdoorsv1/backend/oauth-creds.json
 
-      - name: Install dependencies
+      # ── Tests (before build — fast feedback) ─────────────────────
+
+      - name: Install backend dependencies
+        working-directory: outdoorsv1/backend
+        run: npm install
+
+      - name: Run unit tests
+        working-directory: outdoorsv1/backend
+        run: node --test tests/clarification-manager.test.js tests/claude-bridge.test.js tests/message-handler.test.js tests/runtime-health.test.js
+
+      - name: Run platform tests
+        working-directory: outdoorsv1/backend
+        run: node --test tests/platform.test.js
+
+      - name: Run Mac integration tests
+        working-directory: outdoorsv1/backend
+        run: node --test tests/mac-integration.test.js
+
+      - name: Run smoke test
+        working-directory: outdoorsv1/backend
+        run: node tests/e2e-check.js
+        timeout-minutes: 2
+
+      # ── Build ────────────────────────────────────────────────────
+
+      - name: Install Electron dependencies
         working-directory: outdoorsv1/backend/electron
         run: npm install
 
@@ -29,6 +54,66 @@ jobs:
         run: npm run build:mac
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # ── Post-build: DMG verification ─────────────────────────────
+
+      - name: Verify DMG contents
+        working-directory: outdoorsv1/backend/electron
+        run: |
+          set -e
+
+          DMG_FILE=$(ls dist/*.dmg | head -1)
+          echo "DMG: $DMG_FILE"
+
+          # Mount DMG
+          MOUNT_OUTPUT=$(hdiutil attach "$DMG_FILE" -nobrowse -noverify)
+          MOUNT_POINT=$(echo "$MOUNT_OUTPUT" | tail -1 | awk '{for(i=3;i<=NF;i++) printf "%s ", $i; print ""}' | sed 's/ *$//')
+          echo "Mounted at: $MOUNT_POINT"
+
+          # Verify app bundle exists
+          APP_PATH="$MOUNT_POINT/Outdoors.app"
+          test -d "$APP_PATH" || { echo "FAIL: Outdoors.app not found in DMG"; exit 1; }
+
+          # Verify Electron main process files
+          RESOURCES="$APP_PATH/Contents/Resources"
+          test -f "$RESOURCES/app/main.js" || { echo "FAIL: main.js missing"; exit 1; }
+          test -f "$RESOURCES/app/platform.js" || { echo "FAIL: platform.js missing"; exit 1; }
+          test -f "$RESOURCES/app/preload.js" || { echo "FAIL: preload.js missing"; exit 1; }
+
+          # Verify bundled backend project
+          test -d "$RESOURCES/project" || { echo "FAIL: project resources missing"; exit 1; }
+          test -f "$RESOURCES/project/src/index.js" || { echo "FAIL: project/src/index.js missing"; exit 1; }
+          test -f "$RESOURCES/project/package.json" || { echo "FAIL: project/package.json missing"; exit 1; }
+
+          # Verify setup wizard files (critical for onboarding)
+          test -d "$RESOURCES/project/src/setup" || { echo "FAIL: setup directory missing"; exit 1; }
+          test -f "$RESOURCES/project/src/setup/index.html" || { echo "FAIL: setup wizard HTML missing"; exit 1; }
+          test -f "$RESOURCES/project/src/setup/renderer.js" || { echo "FAIL: setup wizard renderer missing"; exit 1; }
+          test -f "$RESOURCES/project/src/setup/icon.png" || { echo "FAIL: icon.png missing from setup"; exit 1; }
+
+          # Verify outdoorsv4 pipeline
+          test -d "$RESOURCES/outdoorsv4" || { echo "FAIL: outdoorsv4 resources missing"; exit 1; }
+          test -f "$RESOURCES/outdoorsv4/index.js" || { echo "FAIL: outdoorsv4/index.js missing"; exit 1; }
+          test -f "$RESOURCES/outdoorsv4/pipeline/orchestrator.js" || { echo "FAIL: orchestrator.js missing"; exit 1; }
+
+          # Verify no secrets leaked into the bundle
+          if test -f "$RESOURCES/project/config.json"; then
+            echo "FAIL: config.json should not be in bundle"
+            exit 1
+          fi
+          if test -f "$RESOURCES/project/.env"; then
+            echo "FAIL: .env should not be in bundle"
+            exit 1
+          fi
+          if test -d "$RESOURCES/project/auth_state"; then
+            echo "FAIL: auth_state should not be in bundle"
+            exit 1
+          fi
+
+          echo "All DMG structure checks passed"
+
+          # Unmount
+          hdiutil detach "$MOUNT_POINT" -quiet || true
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4

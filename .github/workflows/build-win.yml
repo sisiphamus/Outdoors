@@ -1,0 +1,53 @@
+name: Build & Test Windows
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-win:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Write OAuth credentials
+        run: echo '${{ secrets.OAUTH_CREDS_JSON }}' > outdoorsv1/backend/oauth-creds.json
+
+      # ── Tests (before build — fast feedback) ─────────────────────
+
+      - name: Install backend dependencies
+        working-directory: outdoorsv1/backend
+        run: npm install
+
+      - name: Run unit tests
+        working-directory: outdoorsv1/backend
+        run: node --test tests/clarification-manager.test.js tests/claude-bridge.test.js tests/message-handler.test.js tests/runtime-health.test.js
+
+      - name: Run platform tests
+        working-directory: outdoorsv1/backend
+        run: node --test tests/platform.test.js
+
+      # ── Build ────────────────────────────────────────────────────
+
+      - name: Install Electron dependencies
+        working-directory: outdoorsv1/backend/electron
+        run: npm install
+
+      - name: Build Windows installer
+        working-directory: outdoorsv1/backend/electron
+        run: npm run build:win
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Outdoors-Windows
+          path: |
+            outdoorsv1/backend/electron/dist/*.exe
+          retention-days: 30
