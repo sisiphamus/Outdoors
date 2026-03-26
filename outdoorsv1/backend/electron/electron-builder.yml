@@ -49,27 +49,15 @@ extraResources:
 
 mac:
   target:
-    - dmg
-    - zip
+    - pkg
   icon: ../src/setup/icon.png
   category: public.app-category.utilities
-  extraFiles:
-    - from: install-mac.command
-      to: .
 
-dmg:
-  title: Outdoors
-  contents:
-    - x: 130
-      y: 120
-    - x: 410
-      y: 120
-      type: link
-      path: /Applications
-    - x: 270
-      y: 280
-      type: file
-      path: install-mac.command
+pkg:
+  installLocation: /Applications
+  allowCurrentUserHome: false
+  allowRootDirectory: false
+  scripts: pkg-scripts
 
 win:
   target:

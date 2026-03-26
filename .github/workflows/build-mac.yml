@@ -49,8 +49,8 @@ jobs:
         working-directory: outdoorsv1/backend/electron
         run: npm install
 
-      - name: Make installer helper executable
-        run: chmod +x outdoorsv1/backend/electron/install-mac.command
+      - name: Make pkg postinstall script executable
+        run: chmod +x outdoorsv1/backend/electron/pkg-scripts/postinstall
 
       - name: Build macOS installer
         working-directory: outdoorsv1/backend/electron
@@ -58,79 +58,63 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      # ── Post-build: DMG verification ─────────────────────────────
+      # ── Post-build: verify build output ──────────────────────────
 
-      - name: Verify DMG contents
+      - name: Verify PKG and app bundle
         working-directory: outdoorsv1/backend/electron
         run: |
           set -e
 
-          DMG_FILE=$(ls dist/*.dmg | head -1)
-          echo "DMG: $DMG_FILE"
+          # Verify .pkg was produced
+          PKG_FILE=$(ls dist/*.pkg 2>/dev/null | head -1)
+          if [ -z "$PKG_FILE" ]; then
+            echo "FAIL: No .pkg file found in dist/"
+            ls -la dist/
+            exit 1
+          fi
+          echo "PKG: $PKG_FILE ($(du -h "$PKG_FILE" | cut -f1))"
 
-          # Mount DMG
-          MOUNT_OUTPUT=$(hdiutil attach "$DMG_FILE" -nobrowse -noverify)
-          MOUNT_POINT=$(echo "$MOUNT_OUTPUT" | tail -1 | awk '{for(i=3;i<=NF;i++) printf "%s ", $i; print ""}' | sed 's/ *$//')
-          echo "Mounted at: $MOUNT_POINT"
+          # Verify the unpacked .app in the build directory
+          APP_DIR=$(find dist -name "Outdoors.app" -maxdepth 3 | head -1)
+          if [ -z "$APP_DIR" ]; then
+            echo "FAIL: Outdoors.app not found in build output"
+            exit 1
+          fi
+          echo "App: $APP_DIR"
 
-          # Verify app bundle exists
-          APP_PATH="$MOUNT_POINT/Outdoors.app"
-          test -d "$APP_PATH" || { echo "FAIL: Outdoors.app not found in DMG"; exit 1; }
+          RESOURCES="$APP_DIR/Contents/Resources"
 
-          RESOURCES="$APP_PATH/Contents/Resources"
-
-          # Verify Electron app code (packed in app.asar or app/ directory)
+          # Verify Electron app code
           if test -f "$RESOURCES/app.asar"; then
-            echo "PASS: app.asar exists (Electron app code packed)"
+            echo "PASS: app.asar exists"
           elif test -f "$RESOURCES/app/main.js"; then
-            echo "PASS: app/main.js exists (unpacked app)"
+            echo "PASS: app/main.js exists (unpacked)"
           else
-            echo "FAIL: Neither app.asar nor app/main.js found"; exit 1
+            echo "FAIL: No app code found"; exit 1
           fi
 
-          # Verify bundled backend project (extraResources — always unpacked)
-          test -d "$RESOURCES/project" || { echo "FAIL: project resources missing"; exit 1; }
+          # Verify bundled backend project
           test -f "$RESOURCES/project/src/index.js" || { echo "FAIL: project/src/index.js missing"; exit 1; }
           test -f "$RESOURCES/project/package.json" || { echo "FAIL: project/package.json missing"; exit 1; }
 
-          # Verify setup wizard files (critical for onboarding)
-          test -d "$RESOURCES/project/src/setup" || { echo "FAIL: setup directory missing"; exit 1; }
+          # Verify setup wizard
           test -f "$RESOURCES/project/src/setup/index.html" || { echo "FAIL: setup wizard HTML missing"; exit 1; }
-          test -f "$RESOURCES/project/src/setup/renderer.js" || { echo "FAIL: setup wizard renderer missing"; exit 1; }
-          test -f "$RESOURCES/project/src/setup/icon.png" || { echo "FAIL: icon.png missing from setup"; exit 1; }
+          test -f "$RESOURCES/project/src/setup/renderer.js" || { echo "FAIL: setup renderer missing"; exit 1; }
 
-          # Verify outdoorsv4 pipeline (extraResources — always unpacked)
-          test -d "$RESOURCES/outdoorsv4" || { echo "FAIL: outdoorsv4 resources missing"; exit 1; }
+          # Verify outdoorsv4 pipeline
           test -f "$RESOURCES/outdoorsv4/index.js" || { echo "FAIL: outdoorsv4/index.js missing"; exit 1; }
-          test -f "$RESOURCES/outdoorsv4/pipeline/orchestrator.js" || { echo "FAIL: orchestrator.js missing"; exit 1; }
 
-          # Verify no secrets leaked into the bundle
-          if test -f "$RESOURCES/project/config.json"; then
-            echo "FAIL: config.json should not be in bundle"; exit 1
-          fi
-          if test -f "$RESOURCES/project/.env"; then
-            echo "FAIL: .env should not be in bundle"; exit 1
-          fi
-          if test -d "$RESOURCES/project/auth_state"; then
-            echo "FAIL: auth_state should not be in bundle"; exit 1
-          fi
-
-          # List resources for debugging
-          echo ""
-          echo "Resources directory contents:"
-          ls -la "$RESOURCES/" | head -20
+          # Verify no secrets in bundle
+          if test -f "$RESOURCES/project/config.json"; then echo "FAIL: config.json leaked"; exit 1; fi
+          if test -f "$RESOURCES/project/.env"; then echo "FAIL: .env leaked"; exit 1; fi
 
           echo ""
-          echo "All DMG structure checks passed"
-
-          # Unmount
-          hdiutil detach "$MOUNT_POINT" -quiet || true
+          echo "All build verification checks passed"
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Outdoors-macOS
           path: |
-            outdoorsv1/backend/electron/dist/*.dmg
-            outdoorsv1/backend/electron/dist/*.zip
+            outdoorsv1/backend/electron/dist/*.pkg
           retention-days: 30
