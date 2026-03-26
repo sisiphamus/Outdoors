@@ -1,5 +1,0 @@
-#!/bin/bash
-# Post-install: strip quarantine attribute so the app launches without
-# "can't be certain it's free of malware" warnings.
-xattr -cr "/Applications/Outdoors.app" 2>/dev/null
-exit 0

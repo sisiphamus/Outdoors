@@ -49,15 +49,20 @@ extraResources:
 
 mac:
   target:
-    - pkg
+    - dmg
+    - zip
   icon: ../src/setup/icon.png
   category: public.app-category.utilities
 
-pkg:
-  installLocation: /Applications
-  allowCurrentUserHome: false
-  allowRootDirectory: false
-  scripts: pkg-scripts
+dmg:
+  title: Outdoors
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
 
 win:
   target:

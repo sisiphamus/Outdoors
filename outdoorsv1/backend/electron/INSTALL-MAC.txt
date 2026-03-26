@@ -11,21 +11,21 @@
 
   ── Step 2: Paste this command ─────────────────────────────
 
-  sudo xattr -rd com.apple.quarantine ~/Downloads/Outdoors*.pkg && open ~/Downloads/Outdoors*.pkg
+  sudo xattr -rd com.apple.quarantine ~/Downloads/Outdoors*.dmg
 
   Enter your Mac password when prompted (it won't show as
-  you type — that's normal). The installer will open.
+  you type — that's normal).
 
   ── Step 3: Install ────────────────────────────────────────
 
-  Click through the installer, then open Outdoors from
-  Applications.
+  Open the .dmg file, drag Outdoors to Applications, then
+  open Outdoors from Applications.
 
   ── Troubleshooting ────────────────────────────────────────
 
-  If the .pkg is not in ~/Downloads, replace the path:
+  If the .dmg is not in ~/Downloads, replace the path:
 
-  sudo xattr -rd com.apple.quarantine /path/to/Outdoors-1.2.1-arm64.pkg && open /path/to/Outdoors-1.2.1-arm64.pkg
+  sudo xattr -rd com.apple.quarantine /path/to/Outdoors*.dmg
 
   If Outdoors.app itself shows a warning after install:
 
