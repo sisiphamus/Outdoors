@@ -1464,26 +1464,34 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
               const authUrl = urlMatch[1];
               console.log('[google-auth] Got auth URL, length:', authUrl.length);
 
-              // ── Phase 2: Open auth URL in AutomationProfile Chrome ──
-              const automationDir = platform.getAutomationProfileDir();
-              const chromeExe = platform.findChrome();
-
-              if (chromeExe) {
-                const chromeArgs = [
-                  `--remote-debugging-port=9222`,
-                  `--user-data-dir=${automationDir}`,
-                  `--profile-directory=Default`,
-                  `--no-first-run`,
-                  `--no-default-browser-check`,
-                  authUrl,
-                ];
-                platform.launchChrome(chromeExe, chromeArgs).catch(err => {
-                  console.error('[google-auth] Chrome launch error, falling back to default browser:', err.message);
-                  shell.openExternal(authUrl);
-                });
-              } else {
-                console.log('[google-auth] Chrome not found, opening in default browser');
+              // ── Phase 2: Open auth URL ──
+              // On macOS, launchChrome with --args is unreliable when Chrome is already
+              // running (args are silently discarded). The OAuth flow just needs any
+              // browser to complete login and redirect to localhost:8000.
+              if (process.platform === 'darwin') {
+                console.log('[google-auth] macOS: opening auth URL in default browser');
                 shell.openExternal(authUrl);
+              } else {
+                const automationDir = platform.getAutomationProfileDir();
+                const chromeExe = platform.findChrome();
+
+                if (chromeExe) {
+                  const chromeArgs = [
+                    `--remote-debugging-port=9222`,
+                    `--user-data-dir=${automationDir}`,
+                    `--profile-directory=Default`,
+                    `--no-first-run`,
+                    `--no-default-browser-check`,
+                    authUrl,
+                  ];
+                  platform.launchChrome(chromeExe, chromeArgs).catch(err => {
+                    console.error('[google-auth] Chrome launch error, falling back to default browser:', err.message);
+                    shell.openExternal(authUrl);
+                  });
+                } else {
+                  console.log('[google-auth] Chrome not found, opening in default browser');
+                  shell.openExternal(authUrl);
+                }
               }
 
               resolve({ ok: true, authUrl, pendingAuth: true });
