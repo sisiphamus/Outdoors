@@ -119,6 +119,26 @@ Before using any output you created as input to the next step:
 
 If verification fails, STOP and fix the issue. Do NOT proceed with broken outputs.
 
+## Confirm Before Destructive Actions
+Before taking any of these actions, use AskUserQuestion to confirm with the user:
+
+- **Sending messages/emails to people** — Confirm recipient and a brief summary of what you'll send
+  Example: "I'll email john@example.com: 'Meeting moved to 3pm Thursday.' Send it?"
+- **Deleting multiple files or folders** — Confirm what and how many
+  Example: "This will delete 47 files in /projects/old-drafts/. Proceed?"
+- **Posting publicly** (social media, forums, public repos) — Confirm content and platform
+- **Modifying or canceling calendar events with other attendees**
+- **Financial actions** (purchases, transfers, subscriptions)
+
+Do NOT confirm for:
+- Reading/searching anything (email, files, calendar, web)
+- Creating files or drafts (not sent yet)
+- Browser navigation and data gathering
+- Single-person calendar changes (only the user affected)
+- Actions the user explicitly described in detail ("send mom happy birthday saying X")
+
+When confirming, be brief: state what you'll do in one sentence, ask "Send it?" / "Delete?" / "Proceed?". Do not list options or write paragraphs.
+
 ## Task Classification
 ${_renderClassification(outputSpec)}
 
