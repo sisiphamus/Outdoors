@@ -735,6 +735,52 @@ document.getElementById('btn-open-output')?.addEventListener('click', async () =
   }
 });
 
+// Add existing files to a project
+document.getElementById('btn-add-project-file')?.addEventListener('click', async () => {
+  // Determine which project subfolder we're in (from current file or prompt)
+  let subfolder = '';
+  if (currentOutputFile) {
+    const parts = currentOutputFile.split('/');
+    if (parts.length > 1) subfolder = parts.slice(0, -1).join('/');
+  }
+  if (!subfolder) {
+    subfolder = prompt('Project folder name (e.g. "job-application"):', '');
+    if (!subfolder) return;
+  }
+  try {
+    const result = await window.electronAPI.uploadToProject(subfolder);
+    if (result.ok) {
+      await loadOutputsTree();
+      if (result.files?.length) openOutputFile(result.files[0]);
+    }
+  } catch (err) {
+    alert('Failed to add files: ' + (err.message || 'Unknown error'));
+  }
+});
+
+// Create a new text file in a project
+document.getElementById('btn-new-project-file')?.addEventListener('click', async () => {
+  let subfolder = '';
+  if (currentOutputFile) {
+    const parts = currentOutputFile.split('/');
+    if (parts.length > 1) subfolder = parts.slice(0, -1).join('/');
+  }
+  const fileName = prompt('File name (e.g. "notes.md", "context.txt"):', 'notes.md');
+  if (!fileName) return;
+  if (!subfolder) {
+    subfolder = prompt('Project folder name:', '');
+    if (!subfolder) return;
+  }
+  const relativePath = subfolder + '/' + fileName;
+  try {
+    await window.electronAPI.createProjectFile(relativePath);
+    await loadOutputsTree();
+    openOutputFile(relativePath);
+  } catch (err) {
+    alert('Failed to create file: ' + (err.message || 'Unknown error'));
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Triggers
 // ---------------------------------------------------------------------------

@@ -1796,6 +1796,39 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
     return { ok: true };
   });
 
+  // Upload files to a project subfolder (opens native file picker)
+  ipcMain.handle('upload-to-project', async (_event, projectSubfolder) => {
+    const { dialog } = require('electron');
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Add files to project',
+      properties: ['openFile', 'multiSelections'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true };
+
+    const destDir = path.join(BACKEND_DIR, 'bot', 'outputs', projectSubfolder || '');
+    fs.mkdirSync(destDir, { recursive: true });
+
+    const copied = [];
+    for (const srcPath of result.filePaths) {
+      const fileName = path.basename(srcPath);
+      const destPath = path.join(destDir, fileName);
+      fs.copyFileSync(srcPath, destPath);
+      copied.push(projectSubfolder ? projectSubfolder + '/' + fileName : fileName);
+    }
+    return { ok: true, files: copied };
+  });
+
+  // Create a new empty file in a project subfolder
+  ipcMain.handle('create-project-file', async (_event, relativePath) => {
+    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
+    const filePath = path.join(BACKEND_DIR, 'bot', 'outputs', relativePath);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, '', 'utf-8');
+    }
+    return { ok: true };
+  });
+
   // ── Onboarding Scan (post-consent personalization) ───────────────────────
 
   ipcMain.handle('run-onboarding-scan', async (_event, services) => {

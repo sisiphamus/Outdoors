@@ -63,11 +63,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteTrigger: (triggerId) => ipcRenderer.invoke('delete-trigger', triggerId),
   toggleTrigger: (triggerId, enabled) => ipcRenderer.invoke('toggle-trigger', triggerId, enabled),
 
-  // Outputs
+  // Projects (outputs)
   listOutputFiles: () => ipcRenderer.invoke('list-output-files'),
   readOutputFile: (relativePath) => ipcRenderer.invoke('read-output-file', relativePath),
   getOutputFilePath: (relativePath) => ipcRenderer.invoke('get-output-file-path', relativePath),
   saveOutputFile: (relativePath, content) => ipcRenderer.invoke('save-output-file', relativePath, content),
   deleteOutputFile: (relativePath) => ipcRenderer.invoke('delete-output-file', relativePath),
   openOutputFile: (relativePath) => ipcRenderer.invoke('open-output-file', relativePath),
+  uploadToProject: (subfolder) => ipcRenderer.invoke('upload-to-project', subfolder),
+  createProjectFile: (relativePath) => ipcRenderer.invoke('create-project-file', relativePath),
 });

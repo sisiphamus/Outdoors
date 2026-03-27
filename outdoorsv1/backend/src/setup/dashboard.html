@@ -191,11 +191,14 @@
         <!-- Projects tab -->
         <div class="settings-content hidden" id="tab-outputs">
           <div class="memory-editor">
-            <div class="memory-sidebar" id="outputs-tree"></div>
+            <div class="memory-sidebar" id="outputs-tree">
+            </div>
             <div class="memory-edit-area">
               <div class="memory-edit-header">
                 <span class="memory-filename" id="outputs-filename">Select a file</span>
                 <div class="output-actions">
+                  <button class="btn-secondary" id="btn-add-project-file" title="Add files to this project">+ Add File</button>
+                  <button class="btn-secondary" id="btn-new-project-file" title="Create a new text file">+ New File</button>
                   <button class="btn-save hidden" id="btn-save-output">Save</button>
                   <button class="btn-delete hidden" id="btn-delete-output">Delete</button>
                   <button class="btn-open hidden" id="btn-open-output">Open in App</button>
