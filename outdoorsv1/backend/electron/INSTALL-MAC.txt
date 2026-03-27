@@ -3,39 +3,33 @@
 ╚══════════════════════════════════════════════════════════════╝
 
   macOS blocks unsigned apps by default. To install Outdoors,
-  open Terminal and paste the command below. It handles
-  everything automatically.
+  open Terminal and paste the commands below.
 
   ── Step 1: Open Terminal ─────────────────────────────────
 
   Press Cmd+Space, type "Terminal", press Enter.
 
-  ── Step 2: Paste this command ────────────────────────────
-
-  sudo xattr -cr ~/Downloads/Outdoors*.dmg && hdiutil attach ~/Downloads/Outdoors*.dmg -nobrowse -quiet && sudo cp -r /Volumes/Outdoors*/Outdoors.app /Applications/ && hdiutil detach /Volumes/Outdoors* -quiet && sudo xattr -cr /Applications/Outdoors.app && sudo spctl --add /Applications/Outdoors.app 2>/dev/null; open /Applications/Outdoors.app
-
-  Enter your Mac password when prompted (it won't show as
-  you type — that's normal).
-
-  This command will:
-  - Clear all security attributes from the .dmg
-  - Mount the .dmg and copy Outdoors to Applications
-  - Clear all security attributes from the installed app
-  - Whitelist the app with Gatekeeper
-  - Launch Outdoors
-
-  IMPORTANT: Always run Outdoors from /Applications.
-  You can eject the .dmg after installing.
-
-  ── Troubleshooting ───────────────────────────────────────
-
-  If the .dmg is not in ~/Downloads, replace ~/Downloads/
-  with the folder where you saved the file.
-
-  If it still won't open, run:
+  ── Step 2: Allow Outdoors to run ─────────────────────────
 
   sudo spctl --master-disable
 
-  This disables Gatekeeper entirely. You can re-enable it
-  after installing with: sudo spctl --master-enable
+  Enter your Mac password (it won't show as you type).
+  This temporarily allows apps from any source.
+
+  ── Step 3: Install and launch ────────────────────────────
+
+  sudo xattr -cr ~/Downloads/Outdoors*.dmg && hdiutil attach ~/Downloads/Outdoors*.dmg -nobrowse -quiet && sudo cp -r /Volumes/Outdoors*/Outdoors.app /Applications/ && hdiutil detach /Volumes/Outdoors* -quiet && sudo xattr -cr /Applications/Outdoors.app && open /Applications/Outdoors.app
+
+  ── Step 4: Re-enable Gatekeeper ──────────────────────────
+
+  After Outdoors opens successfully, re-enable Gatekeeper:
+
+  sudo spctl --master-enable
+
+  Outdoors will continue to work after re-enabling.
+
+  ── If the .dmg is not in Downloads ───────────────────────
+
+  Replace ~/Downloads/ in step 3 with the folder where
+  you saved the file.
 
