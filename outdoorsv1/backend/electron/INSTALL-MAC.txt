@@ -12,30 +12,30 @@
 
   ── Step 2: Paste this command ────────────────────────────
 
-  sudo xattr -rd com.apple.quarantine ~/Downloads/Outdoors*.dmg && \
-  hdiutil attach ~/Downloads/Outdoors*.dmg -nobrowse -quiet && \
-  sudo cp -r /Volumes/Outdoors*/Outdoors.app /Applications/ && \
-  hdiutil detach /Volumes/Outdoors* -quiet && \
-  sudo xattr -cr /Applications/Outdoors.app && \
-  open /Applications/Outdoors.app
+  sudo xattr -cr ~/Downloads/Outdoors*.dmg && hdiutil attach ~/Downloads/Outdoors*.dmg -nobrowse -quiet && sudo cp -r /Volumes/Outdoors*/Outdoors.app /Applications/ && hdiutil detach /Volumes/Outdoors* -quiet && sudo xattr -cr /Applications/Outdoors.app && sudo spctl --add /Applications/Outdoors.app 2>/dev/null; open /Applications/Outdoors.app
 
   Enter your Mac password when prompted (it won't show as
   you type — that's normal).
 
   This command will:
-  - Remove quarantine from the downloaded .dmg
+  - Clear all security attributes from the .dmg
   - Mount the .dmg and copy Outdoors to Applications
-  - Remove quarantine from the installed app
+  - Clear all security attributes from the installed app
+  - Whitelist the app with Gatekeeper
   - Launch Outdoors
 
-  IMPORTANT: Always run Outdoors from /Applications, not
-  from the .dmg. You can eject the .dmg after installing.
+  IMPORTANT: Always run Outdoors from /Applications.
+  You can eject the .dmg after installing.
 
   ── Troubleshooting ───────────────────────────────────────
 
   If the .dmg is not in ~/Downloads, replace ~/Downloads/
   with the folder where you saved the file.
 
-  To quit Outdoors, close the window or use Cmd+Q. The app
-  will fully exit (no background process left running).
+  If it still won't open, run:
+
+  sudo spctl --master-disable
+
+  This disables Gatekeeper entirely. You can re-enable it
+  after installing with: sudo spctl --master-enable
 
