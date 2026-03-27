@@ -44,6 +44,22 @@ jobs:
         working-directory: outdoorsv1/backend/electron
         run: npm run build:win
 
+      - name: Verify no secrets in build output
+        working-directory: outdoorsv1/backend/electron
+        shell: bash
+        run: |
+          set -e
+          APP_DIR=$(find dist -name "win-unpacked" -maxdepth 2 | head -1)
+          if [ -n "$APP_DIR" ]; then
+            if [ -f "$APP_DIR/resources/project/config.json" ]; then echo "FAIL: config.json leaked"; exit 1; fi
+            if [ -f "$APP_DIR/resources/project/.env" ]; then echo "FAIL: .env leaked"; exit 1; fi
+            if [ -f "$APP_DIR/resources/project/oauth-creds.json" ]; then echo "FAIL: oauth-creds.json leaked"; exit 1; fi
+            if [ -d "$APP_DIR/resources/project/auth_state" ]; then echo "FAIL: auth_state leaked"; exit 1; fi
+            echo "All Windows bundle security checks passed"
+          else
+            echo "win-unpacked not found (NSIS only) — skipping"
+          fi
+
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:

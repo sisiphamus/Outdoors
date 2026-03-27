@@ -599,7 +599,7 @@ if (runtimeHealth.stale) {
 }
 
 // Start
-server.listen(config.port, async () => {
+server.listen(config.port, '127.0.0.1', async () => {
   console.log(`\n  Outdoors Bot`);
   console.log(`  API: http://localhost:${config.port}\n`);
 

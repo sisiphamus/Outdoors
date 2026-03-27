@@ -11,6 +11,7 @@ auth_state/
 .env
 *.env
 oauth-creds.json
+examplelog.md
 
 # Logs and temporary files
 logs/
