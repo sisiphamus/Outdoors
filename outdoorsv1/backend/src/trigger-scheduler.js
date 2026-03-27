@@ -60,18 +60,21 @@ function shouldFire(trigger, now) {
 
     case 'daily': {
       const [hours, minutes] = (schedule.timeOfDay || '09:00').split(':').map(Number);
-      if (now.getHours() !== hours || now.getMinutes() !== minutes) return false;
+      // Fire if we're at or past the scheduled time today and haven't fired today yet
       if (lastFired && isSameDay(lastFired, now)) return false;
-      return true;
+      const todayTarget = new Date(now);
+      todayTarget.setHours(hours, minutes, 0, 0);
+      return now >= todayTarget;
     }
 
     case 'weekly': {
       const targetDay = schedule.dayOfWeek ?? 1; // 0=Sun..6=Sat
       const [hours, minutes] = (schedule.timeOfDay || '09:00').split(':').map(Number);
       if (now.getDay() !== targetDay) return false;
-      if (now.getHours() !== hours || now.getMinutes() !== minutes) return false;
       if (lastFired && isSameDay(lastFired, now)) return false;
-      return true;
+      const todayTarget = new Date(now);
+      todayTarget.setHours(hours, minutes, 0, 0);
+      return now >= todayTarget;
     }
 
     case 'once': {
@@ -104,6 +107,7 @@ async function fireTrigger(trigger, now) {
   const session = createSession(processKey, 'web');
   io.emit('session_created', { id: session.id, processKey, transport: 'trigger' });
 
+  let succeeded = false;
   try {
     const onProgress = (type, data) => {
       emitLog(type, { sender: 'trigger', processKey, ...data });
@@ -124,22 +128,25 @@ async function fireTrigger(trigger, now) {
       const sent = await sendToOutdoorsGroup(responseText);
       if (sent) {
         console.log(`[Triggers] Sent "${trigger.name}" response to WhatsApp (${responseLen} chars)`);
+        succeeded = true;
       } else {
         console.error(`[Triggers] Failed to send "${trigger.name}" response to WhatsApp`);
       }
     }
 
-    emitLog('sent', { to: `Trigger: ${trigger.name}`, responseLength: responseLen });
+    emitLog('sent', { to: `Trigger: ${trigger.name}`, response: responseText || '', responseLength: responseLen });
   } finally {
     closeSession(session.id);
   }
 
-  // Update lastFiredAt and auto-disable one-time triggers
-  trigger.lastFiredAt = now.toISOString();
-  if (trigger.schedule.type === 'once') {
-    trigger.enabled = false;
+  // Only update lastFiredAt on success — failed triggers should retry next cycle
+  if (succeeded) {
+    trigger.lastFiredAt = now.toISOString();
+    if (trigger.schedule.type === 'once') {
+      trigger.enabled = false;
+    }
+    persistTriggerUpdate(trigger);
   }
-  persistTriggerUpdate(trigger);
 }
 
 function persistTriggerUpdate(updatedTrigger) {
