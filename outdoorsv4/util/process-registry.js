@@ -34,7 +34,10 @@ export function kill(key) {
             detached: true,
           });
         } else {
-          process.kill(-entry.proc.pid, 'SIGTERM');
+          // Try process group kill first, then direct PID as fallback
+          // (group kill fails if process wasn't spawned with detached: true)
+          try { process.kill(-entry.proc.pid, 'SIGTERM'); } catch {}
+          try { process.kill(entry.proc.pid, 'SIGTERM'); } catch {}
         }
       } catch {}
       killed = true;

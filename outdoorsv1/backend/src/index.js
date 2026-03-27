@@ -316,19 +316,10 @@ io.on('connection', async (socket) => {
       return;
     }
 
-    // Parse for numbered conversation prefix — only for non-dashboard clients.
-    // Dashboard windows (identified by windowId) don't use the number system;
-    // each window IS a conversation. Numbers are only needed on phone platforms.
-    let parsed;
-    if (windowId) {
-      if (/^stop$/i.test(trimmed)) {
-        parsed = { number: null, command: 'stop', body: '' };
-      } else {
-        parsed = { number: null, command: 'message', body: trimmed || 'What is this image?' };
-      }
-    } else {
-      parsed = parseMessage(trimmed || 'What is this image?');
-    }
+    // Parse message for numbered conversation prefix, stop/new commands, etc.
+    // Always use parseMessage() regardless of source (dashboard, WhatsApp, etc.)
+    // so numbered conversations and stop commands work consistently.
+    const parsed = parseMessage(trimmed || 'What is this image?');
 
     // Handle new command (close a numbered conversation)
     if (parsed.command === 'new') {
