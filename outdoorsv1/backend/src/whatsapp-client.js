@@ -270,6 +270,10 @@ async function startWhatsApp() {
     if (connection === 'open') {
       connectionStatus = 'connected';
       reconnectAttempt = 0;
+      // Only clear seenTimestampKeys (Baileys may re-emit with new wrapper IDs).
+      // Do NOT clear processedMsgIds — it's the final dedup gate that prevents
+      // old messages from being reprocessed after reconnect.
+      // processingIds is cleared so interrupted handlers don't permanently block a message ID.
       seenTimestampKeys.clear();
       processingIds.clear();
       io?.emit('status', connectionStatus);
@@ -304,13 +308,24 @@ async function startWhatsApp() {
         }
       }, 120_000); // every 2 minutes
 
-      // Drain any messages left in queue from a previous crash
+      // Drain any recent messages left in queue from a previous crash
+      // Discard messages older than 5 minutes — they're stale
       const pending = getPendingMessages();
       if (pending.length > 0) {
-        console.log(`[queue] Draining ${pending.length} pending message(s)`);
-        for (const { msg } of pending) {
-          sock.ev.emit('messages.upsert', { messages: [msg], type: 'notify' });
+        const MAX_QUEUE_AGE_MS = 5 * 60 * 1000;
+        const now = Date.now();
+        let drained = 0;
+        for (const entry of pending) {
+          const age = now - (entry.enqueuedAt || 0);
+          if (age > MAX_QUEUE_AGE_MS) {
+            console.log(`[queue] Discarding stale message (${Math.round(age / 1000)}s old)`);
+            dequeueMessage(entry.msg.key.id);
+            continue;
+          }
+          drained++;
+          sock.ev.emit('messages.upsert', { messages: [entry.msg], type: 'notify' });
         }
+        if (drained > 0) console.log(`[queue] Drained ${drained} pending message(s)`);
       }
 
       if (!config.outdoorsGroupJid) {
@@ -403,11 +418,11 @@ async function startWhatsApp() {
       // Deduplicate — skip if we've already processed this message ID
       if (processedMsgIds.has(msgId)) continue;
       processedMsgIds.add(msgId);
-      // Keep the set from growing forever — prune old entries
-      if (processedMsgIds.size > 500) {
+      // Keep the set from growing forever — prune old entries (keep last 1000)
+      if (processedMsgIds.size > 2000) {
         const arr = [...processedMsgIds];
         processedMsgIds.clear();
-        arr.slice(-200).forEach(id => processedMsgIds.add(id));
+        arr.slice(-1000).forEach(id => processedMsgIds.add(id));
       }
 
       // Store incoming messages so getMessage can fulfill group retry requests
