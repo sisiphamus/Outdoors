@@ -204,7 +204,13 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
         timeout,
       });
 
-      const teacherResult = parseTeacherResult(phaseC.response);
+      let teacherResult;
+      try {
+        teacherResult = parseTeacherResult(phaseC.response);
+      } catch (err) {
+        onProgress?.('warning', { message: `Phase C returned invalid result: ${err.message}` });
+        teacherResult = { memories: [] };
+      }
       for (const mem of teacherResult.memories) {
         try {
           await writeMemory(mem.name, mem.category, mem.content);
@@ -290,7 +296,13 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
           processKey: processKey ? `${processKey}:C2` : null,
           timeout,
         });
-        const teacherResult2 = parseTeacherResult(phaseC2.response);
+        let teacherResult2;
+        try {
+          teacherResult2 = parseTeacherResult(phaseC2.response);
+        } catch (err) {
+          onProgress?.('warning', { message: `Phase C2 returned invalid result: ${err.message}` });
+          teacherResult2 = { memories: [] };
+        }
         for (const mem of teacherResult2.memories) {
           try {
             await writeMemory(mem.name, mem.category, mem.content);
@@ -301,8 +313,10 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
             onProgress?.('warning', { message: `Failed to write memory ${mem.name}: ${err.message}` });
           }
         }
-        // Re-run D with the new memory
-        const updatedContents = [...getContents(audit.selectedMemories || []), ...newlyCreatedMemories.map(m => ({ name: m.name, category: m.category, content: m.content })), ...detectSiteContext(prompt)];
+        // Re-run D with the new memory (deduplicate site context against selected memories)
+        const d2SelectedNames = new Set((audit.selectedMemories || []).map(m => m.name));
+        const d2SiteContext = detectSiteContext(prompt).filter(s => !d2SelectedNames.has(s.name));
+        const updatedContents = [...getContents(audit.selectedMemories || []), ...newlyCreatedMemories.map(m => ({ name: m.name, category: m.category, content: m.content })), ...d2SiteContext];
         await ensureBrowserReady();
         const phaseD2 = await runModel({
           userPrompt: prompt,
