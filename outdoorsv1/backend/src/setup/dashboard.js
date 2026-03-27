@@ -119,7 +119,7 @@ function handleLogEntry(entry, isHistory) {
       break;
     case 'sent': {
       const to = d.to || '';
-      addFeedSent(ts, to, d.responseLength || 0);
+      addFeedSent(ts, to, d.responseLength || 0, d.response || '');
       break;
     }
     case 'response': {
@@ -259,11 +259,19 @@ function addFeedThinking(ts, text) {
   feed.scrollTop = feed.scrollHeight;
 }
 
-function addFeedSent(ts, to, len) {
+function addFeedSent(ts, to, len, response) {
   const feed = document.getElementById('feed');
   const entry = document.createElement('div');
   entry.className = 'feed-entry';
-  entry.innerHTML = '<span class="feed-time">' + ts + '</span><span class="feed-info">Sent to ' + esc(to.split('@')[0] || to) + ' (' + len + ' chars)</span>';
+  let html = '<span class="feed-time">' + ts + '</span><span class="feed-info">Sent to ' + esc(to.split('@')[0] || to) + ' (' + len + ' chars)</span>';
+  if (response) {
+    let rendered = esc(response);
+    rendered = rendered.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+    rendered = rendered.replace(/`([^`]+)`/g, '<code>$1</code>');
+    rendered = rendered.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    html += '<div class="msg-bubble">' + rendered + '</div>';
+  }
+  entry.innerHTML = html;
   feed.appendChild(entry);
   feed.scrollTop = feed.scrollHeight;
 }

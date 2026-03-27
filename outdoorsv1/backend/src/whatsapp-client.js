@@ -626,7 +626,7 @@ async function startWhatsApp() {
             }
             sendSucceeded = true;
             console.log(`Sent to ${result.sender} (${result.response.length} chars)`);
-            emitLog('sent', { to: result.sender, responseLength: result.response.length, imageCount: images.length });
+            emitLog('sent', { to: result.sender, response: result.response, responseLength: result.response.length, imageCount: images.length });
           } catch (err) {
             emitLog('send_error', { to: result.sender, error: err.message });
             // Last-resort: retry raw text without quoting or formatting
