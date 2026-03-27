@@ -376,6 +376,7 @@ io.on('connection', async (socket) => {
     }
 
     const processKey = parsed.number !== null ? `web:conv:${parsed.number}` : `web:win:${windowKey}`;
+    console.log(`[dispatch] "${(parsed.body || '').slice(0, 40)}" → processKey=${processKey} resume=${resumeSessionId || 'fresh'}`);
 
     // Create an isolated session for this execution (must be before image saving)
     const session = createSession(processKey, 'web');

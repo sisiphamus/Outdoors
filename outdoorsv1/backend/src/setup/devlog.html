@@ -279,11 +279,15 @@ document.getElementById('clear-btn').addEventListener('click', () => {
 // ── Conversation tabs ──
 function getConvLabel(processKey) {
   if (!processKey) return null;
-  const numbered = processKey.match(/^wa:conv:(\d+)$/);
-  if (numbered) return '#' + numbered[1];
-  if (processKey.startsWith('web:conv:')) return 'Web ' + processKey.split(':')[2];
-  if (processKey.includes(':chat:')) return 'Chat';
-  return processKey;
+  // Strip sub-stage suffixes for grouping, but detect learner
+  const isLearner = processKey.endsWith(':learner');
+  const base = processKey.replace(/:(?:[A-Z]\d?|Bgap|learner)$/, '');
+  const waMatch = base.match(/^wa:conv:(\d+)$/);
+  if (waMatch) return isLearner ? '#' + waMatch[1] + ' (learn)' : '#' + waMatch[1];
+  const webMatch = base.match(/^web:conv:(\d+)$/);
+  if (webMatch) return isLearner ? 'Web ' + webMatch[1] + ' (learn)' : 'Web ' + webMatch[1];
+  if (base.includes(':chat:')) return 'Chat';
+  return base;
 }
 
 function ensureConvTab(processKey) {
@@ -509,7 +513,8 @@ function formatLogSummary(type, data) {
 }
 
 function formatProgressSummary(type, data, processKey) {
-  const prefix = processKey ? `[${processKey}] ` : '';
+  const label = getConvLabel(processKey);
+  const prefix = label ? `[${label}] ` : '';
   return prefix + formatLogSummary(type, data);
 }
 

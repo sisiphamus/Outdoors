@@ -91,7 +91,8 @@ function handleLogEntry(entry, isHistory) {
     case 'incoming': {
       const sender = d.sender || 'unknown';
       const prompt = d.prompt || '';
-      addFeedIncoming(ts, sender, prompt);
+      const convLabel = d.conversation != null ? `#${d.conversation}` : '';
+      addFeedIncoming(ts, sender, prompt, convLabel);
       break;
     }
     case 'pipeline_phase':
@@ -214,12 +215,13 @@ function addFeedEntry(type, text) {
   feed.scrollTop = feed.scrollHeight;
 }
 
-function addFeedIncoming(ts, sender, prompt) {
+function addFeedIncoming(ts, sender, prompt, convLabel) {
   const feed = document.getElementById('feed');
   const entry = document.createElement('div');
   entry.className = 'feed-entry feed-incoming';
+  const label = convLabel ? sender + ' [' + convLabel + ']' : sender;
   entry.innerHTML = '<span class="feed-time">' + ts + '</span>' +
-    '<span class="feed-incoming-label">' + esc(sender) + '</span> ' +
+    '<span class="feed-incoming-label">' + esc(label) + '</span> ' +
     '<span class="feed-incoming-text">' + esc(truncate(prompt, 200)) + '</span>';
   feed.appendChild(entry);
   feed.scrollTop = feed.scrollHeight;

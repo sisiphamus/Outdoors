@@ -81,7 +81,12 @@ export function parseMessage(text) {
 
 export function resolveSession(number) {
   const conv = conversations[String(number)];
-  return conv ? conv.sessionId : null;
+  if (!conv) return null;
+  // Don't resume sessions older than 30 minutes — context is likely stale/irrelevant
+  // This prevents context leakage when a conversation number is reused for a different task
+  const age = Date.now() - new Date(conv.lastActivity).getTime();
+  if (age > 30 * 60 * 1000) return null;
+  return conv.sessionId;
 }
 
 export function getConversation(number) {
