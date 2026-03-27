@@ -608,7 +608,7 @@ async function loadOutputsTree() {
     const files = await window.electronAPI.listOutputFiles();
     tree.innerHTML = '';
     if (files.length === 0) {
-      tree.innerHTML = '<div style="padding:14px;color:#9A8B78;font-size:13px">No output files yet.</div>';
+      tree.innerHTML = '<div style="padding:14px;color:#9A8B78;font-size:13px">No project files yet.</div>';
       return;
     }
     buildTree(tree, files, openOutputFile);

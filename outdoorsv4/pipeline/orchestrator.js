@@ -26,6 +26,7 @@ const FAILURE_PATTERNS = [
   /(?:beyond|outside) (?:my|the) (?:capabilities|scope|ability)/i,
   /not (?:currently )?(?:able|possible|supported)/i,
   /i'?m (?:afraid|sorry) (?:i |that )?(?:can'?t|cannot)/i,
+  /(?:404|page not found|server error|cannot be displayed|error loading)/i,
 ];
 
 const SUCCESS_PATTERNS = [
