@@ -100,9 +100,9 @@ describe('findCommand', () => {
   });
 });
 
-describe('getClaudeCmdPath', () => {
+describe('getCodexCmdPath', () => {
   it('returns non-empty string', () => {
-    const cmd = platform.getClaudeCmdPath();
+    const cmd = platform.getCodexCmdPath();
     assert.strictEqual(typeof cmd, 'string');
     assert.ok(cmd.length > 0);
   });
