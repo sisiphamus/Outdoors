@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupTitlebar();
   setupSettings();
   initOnboardingBar();
-  initClaudeAuthCheck();
+  initCodexAuthCheck();
 });
 
 // ---------------------------------------------------------------------------
@@ -1062,16 +1062,16 @@ function initOnboardingBar() {
 }
 
 // ---------------------------------------------------------------------------
-// Claude auth check
+// Codex auth check
 // ---------------------------------------------------------------------------
 
-function initClaudeAuthCheck() {
-  if (!window.electronAPI?.onClaudeAuthStatus) return;
+function initCodexAuthCheck() {
+  if (!window.electronAPI?.onCodexAuthStatus) return;
 
   const overlay = document.getElementById('auth-overlay');
   if (!overlay) return;
 
-  window.electronAPI.onClaudeAuthStatus((data) => {
+  window.electronAPI.onCodexAuthStatus((data) => {
     if (data.authenticated) {
       overlay.classList.add('hidden');
     } else {

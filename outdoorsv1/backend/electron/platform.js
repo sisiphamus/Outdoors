@@ -221,26 +221,26 @@ function getUvxCandidatePaths() {
   ];
 }
 
-function getClaudeCmdPath() {
-  // Try finding claude in PATH
-  const found = findCommand('claude');
+function getCodexCmdPath() {
+  // Try finding codex in PATH
+  const found = findCommand('codex');
   if (found) return found;
 
   // Check common install locations
   if (IS_WIN) {
-    const npmGlobal = path.join(process.env.APPDATA || '', 'npm', 'claude.cmd');
+    const npmGlobal = path.join(process.env.APPDATA || '', 'npm', 'codex.cmd');
     if (fs.existsSync(npmGlobal)) return npmGlobal;
   } else {
     const candidates = [
-      '/usr/local/bin/claude',
-      '/opt/homebrew/bin/claude',
-      path.join(process.env.HOME || '', '.npm-global', 'bin', 'claude'),
+      '/usr/local/bin/codex',
+      '/opt/homebrew/bin/codex',
+      path.join(process.env.HOME || '', '.npm-global', 'bin', 'codex'),
     ];
     for (const c of candidates) {
       if (fs.existsSync(c)) return c;
     }
   }
-  return 'claude';
+  return 'codex';
 }
 
 // ── Terminal / Shell ─────────────────────────────────────────────────────────
@@ -337,7 +337,7 @@ module.exports = {
   killPort,
   findCommand,
   getUvxCandidatePaths,
-  getClaudeCmdPath,
+  getCodexCmdPath,
   openTerminalWithCommand,
   registerStartup,
   unregisterStartup,

@@ -17,7 +17,7 @@ import { config, saveConfig, loadConfig } from './config.js';
 import { startWhatsApp, setSocketIO, getStatus, getLastQR, reconnectWhatsApp } from './whatsapp-client.js';
 
 import { execFile, execFileSync } from 'child_process';
-import { executeClaudePrompt, killProcess, codeAgentOptions, getActiveProcessSummary, setProcessChangeListener, setProcessActivityListener, clearClarificationState } from './claude-bridge.js';
+import { executeCodexPrompt, killProcess, codeAgentOptions, getActiveProcessSummary, setProcessChangeListener, setProcessActivityListener, clearClarificationState } from './codex-bridge.js';
 import { parseMessage, resolveSession, createOrUpdateConversation, closeConversation, listConversations, getConversationMode } from './conversation-manager.js';
 import { assertRuntimeBridgeReady, createRuntimeAwareProgress, getRuntimeHealthStatus, getRuntimeStatusPayload } from './runtime-health.js';
 import { extractImages } from './transport-utils.js';
@@ -48,9 +48,9 @@ function emitLog(type, data) {
 
 app.use(express.json());
 // API routes
-app.get('/api/health/claude', (_req, res) => {
+app.get('/api/health/codex', (_req, res) => {
   try {
-    const out = execFileSync('claude', ['--version'], { shell: true, timeout: 10000, encoding: 'utf-8' });
+    const out = execFileSync('codex', ['--version'], { shell: true, timeout: 10000, encoding: 'utf-8' });
     res.json({ ok: true, version: out.trim() });
   } catch (err) {
     if (err.code === 'ENOENT' || (err.message && err.message.includes('not recognized'))) {
@@ -423,14 +423,14 @@ io.on('connection', async (socket) => {
       let execResult;
       let didDelegate = false;
       if (isKnownCode) {
-        execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, resumeSessionId, processKey, clarificationKey: processKey, sessionContext: session }));
+        execResult = await executeCodexPrompt(finalPrompt, codeAgentOptions({ onProgress, resumeSessionId, processKey, clarificationKey: processKey, sessionContext: session }));
       } else {
-        execResult = await executeClaudePrompt(finalPrompt, { onProgress, resumeSessionId, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
+        execResult = await executeCodexPrompt(finalPrompt, { onProgress, resumeSessionId, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
         if (execResult.delegation) {
           didDelegate = true;
           emitLog('delegation', { sender: 'web', processKey, employee: 'coder', model: execResult.delegation.model });
           socket.emit('chat_progress', { type: 'delegation', data: { employee: 'coder', model: execResult.delegation.model }, sessionId: currentSessionId, messageId });
-          execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model));
+          execResult = await executeCodexPrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model));
         }
       }
       if (execResult.status === 'needs_user_input') {
@@ -494,13 +494,13 @@ io.on('connection', async (socket) => {
           let execResult;
           let didDelegate = false;
           if (isKnownCode) {
-            execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }));
+            execResult = await executeCodexPrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }));
           } else {
-            execResult = await executeClaudePrompt(finalPrompt, { onProgress, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
+            execResult = await executeCodexPrompt(finalPrompt, { onProgress, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
             if (execResult.delegation) {
               didDelegate = true;
               socket.emit('chat_progress', { type: 'delegation', data: { employee: 'coder', model: execResult.delegation.model }, sessionId: currentSessionId, messageId });
-              execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model));
+              execResult = await executeCodexPrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model));
             }
           }
           if (execResult.status === 'needs_user_input') {
@@ -616,7 +616,7 @@ server.listen(config.port, '127.0.0.1', async () => {
     startWhatsApp();
 
     // Start trigger scheduler
-    startTriggerScheduler({ io, emitLog, executeClaudePrompt, config, saveConfig, loadConfig });
+    startTriggerScheduler({ io, emitLog, executeCodexPrompt, config, saveConfig, loadConfig });
   } catch (err) {
     console.error('[startup] Failed:', err);
   }

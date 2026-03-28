@@ -1,14 +1,14 @@
-# OutdoorsV5
+# OutdoorsOAV (OpenAI Version)
 
 What if the expensive parts of the pipeline didn't need to be expensive?
 
-Outdoors-3 used Claude for everything -- including task classification and memory retrieval, which are fundamentally *pattern matching* problems. V5 replaces those two phases with local ML models that run in milliseconds instead of seconds, for free instead of dollars.
+This version uses **OpenAI Codex CLI** as the AI backend. Users sign in with their ChatGPT account — no API keys needed.
 
 **Phase A -- Classification:** TF-IDF + Logistic Regression. Trained on accumulated task data. Tells the system what kind of request it's looking at. ~80ms.
 
 **Phase B -- Memory retrieval:** TF-IDF keyword matching against stored knowledge. Finds relevant context without an API call. ~20ms.
 
-**Phase C onward:** Claude handles execution -- the part that actually requires reasoning.
+**Phase C onward:** Codex handles execution -- the part that actually requires reasoning. Uses gpt-5.4 by default.
 
 The ML models run in a persistent Python subprocess that stays warm between requests. Communication is newline-delimited JSON over stdin/stdout. No HTTP overhead, no cold starts, no serialization libraries. Just pipes.
 
@@ -21,7 +21,7 @@ The routine work (classification, retrieval) doesn't need frontier models. Save 
 
 ## Setup
 
-Prerequisites: Node.js 18+, Python 3.9+, [Claude CLI](https://docs.anthropic.com/en/docs/claude-code/overview)
+Prerequisites: Node.js 18+, Python 3.9+, [Codex CLI](https://github.com/openai/codex) (`npm i -g @openai/codex`)
 
 ```bash
 node setup.js
@@ -33,4 +33,5 @@ The setup script walks you through everything interactively:
 1. **Browser choice** -- Chrome or Edge. Creates a separate automation profile with your existing cookies/sessions copied over (required for Chrome 136+ CDP support).
 2. **Google login** -- Opens the automation browser so you can sign in (or verify you're already signed in from copied cookies).
 3. **Google Cloud OAuth** -- Guides you through creating OAuth credentials in Google Cloud Console so Outdoors can access Gmail, Calendar, Drive, etc.
-4. **Dependencies** -- Installs npm packages and Python ML dependencies automatically.
+4. **Codex login** -- Sign in with your ChatGPT account via `codex login`.
+5. **Dependencies** -- Installs npm packages and Python ML dependencies automatically.

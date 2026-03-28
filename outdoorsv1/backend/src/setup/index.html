@@ -38,9 +38,9 @@
             <div class="install-icon waiting-icon"></div>
             <div class="install-label">Node.js dependencies</div>
           </div>
-          <div class="install-item" id="install-claude-cli">
+          <div class="install-item" id="install-codex-cli">
             <div class="install-icon waiting-icon"></div>
-            <div class="install-label">Claude CLI</div>
+            <div class="install-label">Codex CLI</div>
           </div>
           <div class="install-item" id="install-python">
             <div class="install-icon waiting-icon"></div>
@@ -51,13 +51,13 @@
       </div>
     </div>
 
-    <!-- Page 3: Claude Authentication -->
+    <!-- Page 3: Codex Authentication -->
     <div class="page" data-page="2">
       <div class="page-content">
-        <h2>Sign in to Claude</h2>
+        <h2>Sign in to Codex</h2>
         <p class="subtitle">
-          Outdoors uses Claude to understand your messages and take action.
-          Sign in with your Anthropic account.
+          Outdoors uses Codex to understand your messages and take action.
+          Sign in with your ChatGPT account.
         </p>
         <div class="auth-container">
           <div id="auth-checking" class="auth-state">
@@ -65,13 +65,13 @@
             <p class="auth-status-text">Checking authentication...</p>
           </div>
           <div id="auth-needed" class="auth-state hidden">
-            <button class="btn-primary" id="btn-auth">Sign in to Claude</button>
-            <p class="auth-hint">A terminal window will open. It takes about 10 seconds to load.<br>Once it loads, press <strong>1</strong> to sign in.</p>
+            <button class="btn-primary" id="btn-auth">Sign in to Codex</button>
+            <p class="auth-hint">A terminal window will open. It will open your browser to sign in with your ChatGPT account.</p>
           </div>
           <div id="auth-waiting" class="auth-state hidden">
             <div class="spinner"></div>
-            <p class="auth-status-text" id="auth-waiting-text">Opening Claude login...</p>
-            <p class="auth-hint">Press <strong>1</strong> in the terminal window, then complete sign-in in your browser.<br>This page will advance automatically.</p>
+            <p class="auth-status-text" id="auth-waiting-text">Opening Codex login...</p>
+            <p class="auth-hint">Complete sign-in in your browser.<br>This page will advance automatically.</p>
           </div>
           <div id="auth-success" class="auth-state hidden">
             <div class="complete-mark small-mark"></div>

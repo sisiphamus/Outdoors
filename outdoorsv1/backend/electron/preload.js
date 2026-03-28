@@ -10,16 +10,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Dependency installation
   installSystemDeps: () => ipcRenderer.invoke('install-system-deps'),
   installNodeDeps: () => ipcRenderer.invoke('install-node-deps'),
-  installClaudeCLI: () => ipcRenderer.invoke('install-claude-cli'),
-  checkClaudeInstalled: () => ipcRenderer.invoke('check-claude-installed'),
+  installCodexCLI: () => ipcRenderer.invoke('install-codex-cli'),
+  checkCodexInstalled: () => ipcRenderer.invoke('check-codex-installed'),
   checkUvxInstalled: () => ipcRenderer.invoke('check-uvx-installed'),
   installUvx: () => ipcRenderer.invoke('install-uvx'),
   precacheWorkspaceMcp: () => ipcRenderer.invoke('precache-workspace-mcp'),
   installWhisper: () => ipcRenderer.invoke('install-whisper'),
 
-  // Claude authentication
-  checkClaudeAuth: () => ipcRenderer.invoke('check-claude-auth'),
-  startClaudeAuth: () => ipcRenderer.invoke('start-claude-auth'),
+  // Codex authentication
+  checkCodexAuth: () => ipcRenderer.invoke('check-codex-auth'),
+  startCodexAuth: () => ipcRenderer.invoke('start-codex-auth'),
   cancelAuthPoll: () => ipcRenderer.invoke('cancel-auth-poll'),
 
   // Browser + Google setup (merged)
@@ -48,7 +48,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   closeWindow: () => ipcRenderer.invoke('close-window'),
 
   // Dashboard
-  onClaudeAuthStatus: (callback) => ipcRenderer.on('claude-auth-status', (_event, data) => callback(data)),
+  onCodexAuthStatus: (callback) => ipcRenderer.on('codex-auth-status', (_event, data) => callback(data)),
   openDashboard: () => ipcRenderer.invoke('open-dashboard'),
   minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
   listMemoryFiles: () => ipcRenderer.invoke('list-memory-files'),

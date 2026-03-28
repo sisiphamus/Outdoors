@@ -117,19 +117,19 @@ async function runInstallPage() {
     return;
   }
 
-  setInstallItemState('install-claude-cli', 'active');
-  setInstallStatus('Checking Claude CLI...');
+  setInstallItemState('install-codex-cli', 'active');
+  setInstallStatus('Checking Codex CLI...');
 
-  const claudeCheck = await window.electronAPI.checkClaudeInstalled();
-  if (claudeCheck.installed) {
-    setInstallItemState('install-claude-cli', 'done');
-    setInstallStatus('Claude CLI already installed.');
+  const codexCheck = await window.electronAPI.checkCodexInstalled();
+  if (codexCheck.installed) {
+    setInstallItemState('install-codex-cli', 'done');
+    setInstallStatus('Codex CLI already installed.');
   } else {
-    setInstallStatus('Installing Claude CLI (this may take a minute)...');
-    const claudeInstall = await window.electronAPI.installClaudeCLI();
-    setInstallItemState('install-claude-cli', claudeInstall.ok ? 'done' : 'error');
-    if (!claudeInstall.ok) {
-      setInstallStatus('Claude CLI install failed. You can install it manually later.');
+    setInstallStatus('Installing Codex CLI (this may take a minute)...');
+    const codexInstall = await window.electronAPI.installCodexCLI();
+    setInstallItemState('install-codex-cli', codexInstall.ok ? 'done' : 'error');
+    if (!codexInstall.ok) {
+      setInstallStatus('Codex CLI install failed. You can install it manually later.');
     }
   }
 
@@ -155,7 +155,7 @@ async function runInstallPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Page 3: Claude Authentication (Electron only)
+// Page 3: Codex Authentication (Electron only)
 // ---------------------------------------------------------------------------
 
 async function runAuthPage() {
@@ -163,7 +163,7 @@ async function runAuthPage() {
 
   showAuthState('auth-checking');
 
-  const status = await window.electronAPI.checkClaudeAuth();
+  const status = await window.electronAPI.checkCodexAuth();
   if (status.authenticated) {
     showAuthState('auth-success');
     await delay(1200);
@@ -186,12 +186,12 @@ document.getElementById('btn-auth')?.addEventListener('click', async () => {
 
   const waitText = document.getElementById('auth-waiting-text');
   if (waitText) {
-    waitText.textContent = 'Opening Claude login...';
+    waitText.textContent = 'Opening Codex login...';
     setTimeout(() => { if (waitText.textContent.startsWith('Opening')) waitText.textContent = 'Still loading — almost there...'; }, 6000);
     setTimeout(() => { waitText.textContent = 'Waiting for sign-in...'; }, 15000);
   }
 
-  const result = await window.electronAPI.startClaudeAuth();
+  const result = await window.electronAPI.startCodexAuth();
   if (result.ok) {
     showAuthState('auth-success');
     await delay(1000);

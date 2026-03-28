@@ -45,7 +45,7 @@ function getPendingMessages() {
   } catch { return []; }
 }
 
-const logger = pino({ level: 'silent' });
+const logger = pino({ level: 'warn' });
 
 async function sendOnboardingWelcome(sock, groupJid) {
   try {
@@ -128,6 +128,7 @@ let reconnectAttempt = 0;
 let manualReconnecting = false; // prevents close handler from auto-reconnecting during manual reconnect
 const MAX_RECONNECT_ATTEMPTS = 10;
 let healthCheckTimer = null;
+let stabilityTimer = null; // full backoff reset after connection proves stable
 const seenTimestampKeys = new Set();
 
 // Track message IDs sent by the bot to prevent infinite loops
@@ -175,6 +176,7 @@ function getStatus() {
 async function startWhatsApp() {
   // Close any existing socket before creating a new one to prevent duplicates
   if (healthCheckTimer) { clearInterval(healthCheckTimer); healthCheckTimer = null; }
+  if (stabilityTimer) { clearTimeout(stabilityTimer); stabilityTimer = null; }
   if (sock) {
     try { sock.ev.removeAllListeners(); sock.end(undefined); } catch {}
     sock = null;
@@ -240,6 +242,7 @@ async function startWhatsApp() {
     if (connection === 'close') {
       connectionStatus = 'disconnected';
       if (healthCheckTimer) { clearInterval(healthCheckTimer); healthCheckTimer = null; }
+      if (stabilityTimer) { clearTimeout(stabilityTimer); stabilityTimer = null; }
       io?.emit('status', connectionStatus);
 
       // Skip auto-reconnect if manual reconnect is in progress (it will call startWhatsApp itself)
@@ -259,8 +262,13 @@ async function startWhatsApp() {
         console.log(`Reconnecting in ${Math.round(delay / 1000)}s (attempt ${reconnectAttempt}/${MAX_RECONNECT_ATTEMPTS})...`);
         setTimeout(startWhatsApp, delay);
       } else if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
-        console.log('Max reconnection attempts reached. Restart the server to try again.');
-        emitLog('max_retries', { message: 'Max reconnection attempts reached' });
+        console.log('Max reconnection attempts reached. Will retry in 5 minutes.');
+        emitLog('max_retries', { message: 'Max reconnection attempts reached — retrying in 5m' });
+        // Cool-off retry: reset and try again after 5 minutes instead of dying
+        setTimeout(() => {
+          reconnectAttempt = 0;
+          startWhatsApp();
+        }, 5 * 60 * 1000);
       } else {
         console.log('Logged out. Delete auth_state folder and restart to re-authenticate.');
         emitLog('logged_out', { message: 'Scan QR code again to reconnect' });
@@ -269,7 +277,11 @@ async function startWhatsApp() {
 
     if (connection === 'open') {
       connectionStatus = 'connected';
-      reconnectAttempt = 0;
+      // Partially reduce backoff immediately; fully reset only after 60s of stable connection.
+      // Prevents thrashing when the connection is flaky (connects then drops within seconds).
+      reconnectAttempt = Math.max(0, reconnectAttempt - 2);
+      if (stabilityTimer) clearTimeout(stabilityTimer);
+      stabilityTimer = setTimeout(() => { reconnectAttempt = 0; }, 60_000);
       // Only clear seenTimestampKeys (Baileys may re-emit with new wrapper IDs).
       // Do NOT clear processedMsgIds — it's the final dedup gate that prevents
       // old messages from being reprocessed after reconnect.
@@ -283,43 +295,46 @@ async function startWhatsApp() {
 
       // Zombie connection watchdog — detect when the socket is functionally dead
       // but Baileys hasn't fired 'close'. Sends a lightweight presence update every
-      // 2 minutes. If it fails or times out, force a reconnect.
+      // 45 seconds. If it fails or times out, force-close the socket and let the
+      // close handler drive reconnection (single reconnection path avoids races).
       if (healthCheckTimer) clearInterval(healthCheckTimer);
       healthCheckTimer = setInterval(async () => {
         if (connectionStatus !== 'connected' || !sock) return;
         try {
           const timeout = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('health check timeout')), 10_000)
+            setTimeout(() => reject(new Error('health check timeout')), 5_000)
           );
           await Promise.race([
             sock.sendPresenceUpdate('available'),
             timeout,
           ]);
         } catch (err) {
-          console.log(`[wa:health] Zombie connection detected: ${err.message}. Forcing reconnect.`);
+          console.log(`[wa:health] Zombie connection detected: ${err.message}. Forcing close.`);
           emitLog('zombie_disconnect', { message: `Health check failed: ${err.message}` });
-          connectionStatus = 'disconnected';
-          io?.emit('status', connectionStatus);
+          // Only close the socket — the close handler will handle reconnection
           try { sock.end(new Error('Zombie connection')); } catch {}
-          // Trigger reconnect
-          reconnectAttempt++;
-          const delay = Math.min(3000 * Math.pow(1.5, reconnectAttempt - 1), 30000);
-          setTimeout(startWhatsApp, delay);
         }
-      }, 120_000); // every 2 minutes
+      }, 45_000); // every 45 seconds
 
       // Drain any recent messages left in queue from a previous crash
       // Discard messages older than 5 minutes — they're stale
+      // Skip messages already processed — they're leftover files from before dequeue ran
       const pending = getPendingMessages();
       if (pending.length > 0) {
         const MAX_QUEUE_AGE_MS = 5 * 60 * 1000;
         const now = Date.now();
         let drained = 0;
         for (const entry of pending) {
+          const msgId = entry.msg.key.id;
           const age = now - (entry.enqueuedAt || 0);
           if (age > MAX_QUEUE_AGE_MS) {
             console.log(`[queue] Discarding stale message (${Math.round(age / 1000)}s old)`);
-            dequeueMessage(entry.msg.key.id);
+            dequeueMessage(msgId);
+            continue;
+          }
+          if (processedMsgIds.has(msgId)) {
+            console.log(`[queue] Removing already-processed message ${msgId} from queue`);
+            dequeueMessage(msgId);
             continue;
           }
           drained++;
@@ -416,7 +431,10 @@ async function startWhatsApp() {
       }
 
       // Deduplicate — skip if we've already processed this message ID
-      if (processedMsgIds.has(msgId)) continue;
+      if (processedMsgIds.has(msgId)) {
+        dequeueMessage(msgId); // clean up stale queue file if it exists
+        continue;
+      }
       processedMsgIds.add(msgId);
       // Keep the set from growing forever — prune old entries (keep last 1000)
       if (processedMsgIds.size > 2000) {

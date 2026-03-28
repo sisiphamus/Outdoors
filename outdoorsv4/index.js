@@ -5,8 +5,8 @@ process.on('unhandledRejection', (reason) => {
   console.error('[FATAL] Unhandled rejection:', reason);
 });
 
-// outdoorsv4 bridge adapter — exports the claude-bridge API.
-// Routes between fast-path (direct single Claude call) and full pipeline.
+// outdoorsv4 bridge adapter — exports the codex-bridge API.
+// Routes between fast-path (direct single Codex call) and full pipeline.
 
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
@@ -25,7 +25,7 @@ const MEMORY_ROOT = join(__dirname, '..', 'outdoorsv1', 'backend', 'bot', 'memor
 const EMPLOYEES = {
   coder: {
     mode: 'code',
-    getArgs: () => config.codeClaudeArgs || config.claudeArgs,
+    getArgs: () => config.codeCodexArgs || config.codexArgs,
     cwd: config.outputDirectory,
     skipSiteContext: true,
   },
@@ -43,7 +43,7 @@ const EMPLOYEES = {
   },
 };
 
-// ── Direct execution (single Claude call, no pipeline) ──
+// ── Direct execution (single Codex call, no pipeline) ──
 
 async function runDirectExecution(prompt, options) {
   const {
@@ -79,7 +79,7 @@ async function runDirectExecution(prompt, options) {
     userPrompt: prompt,
     systemPrompt: systemPrompt || undefined,
     model: options._modelOverride || null,
-    claudeArgs: options._claudeArgs || config.claudeArgs,
+    codexArgs: options._codexArgs || config.codexArgs,
     onProgress,
     processKey,
     timeout: config.messageTimeout,
@@ -94,7 +94,7 @@ async function runDirectExecution(prompt, options) {
       userPrompt: prompt,
       systemPrompt: systemPrompt || undefined,
       model: options._modelOverride || null,
-      claudeArgs: options._claudeArgs || config.claudeArgs,
+      codexArgs: options._codexArgs || config.codexArgs,
       onProgress,
       processKey,
       timeout: config.messageTimeout,
@@ -148,7 +148,7 @@ async function runDirectExecution(prompt, options) {
 
 // ── Main API ──
 
-export async function executeClaudePrompt(prompt, options = {}) {
+export async function executeCodexPrompt(prompt, options = {}) {
   const { processKey, clarificationKey, onProgress, sessionContext } = options;
   const cKey = clarificationKey || processKey;
 
@@ -165,7 +165,7 @@ export async function executeClaudePrompt(prompt, options = {}) {
         const augmented = clarifications.buildAugmentedPrompt(pending);
         clarifications.clear(cKey);
         // Re-run with the augmented prompt
-        return executeClaudePrompt(augmented, {
+        return executeCodexPrompt(augmented, {
           ...options,
           resumeSessionId: pending.sessionId,
         });
@@ -209,7 +209,7 @@ export function codeAgentOptions(baseOptions, modelOverride) {
     ...baseOptions,
     _directExecution: true,
     _employee: 'coder',
-    _claudeArgs: emp.getArgs(),
+    _codexArgs: emp.getArgs(),
     _cwd: emp.cwd,
     _skipSiteContext: emp.skipSiteContext,
     _modelOverride: modelOverride || null,

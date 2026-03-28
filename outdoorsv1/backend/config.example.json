@@ -4,14 +4,14 @@
     "1XXXXXXXXXX"
   ],
   "allowAllNumbers": false,
-  "claudeCommand": "claude",
-  "claudeArgs": [
-    "--print"
+  "codexCommand": "codex",
+  "codexArgs": [
+    "exec"
   ],
   "maxResponseLength": 4000,
   "messageTimeout": 120000,
   "rateLimitPerMinute": 10,
   "workingDirectory": "C:/path/to/your/workspace",
   "codeWorkingDirectory": "C:/path/to/your/workspace",
-  "prefix": "!claude "
+  "prefix": "!outdoors "
 }

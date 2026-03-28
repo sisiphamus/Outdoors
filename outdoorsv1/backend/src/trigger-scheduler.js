@@ -97,7 +97,7 @@ function isSameDay(a, b) {
 async function fireTrigger(trigger, now) {
   console.log(`[Triggers] Firing "${trigger.name}": ${trigger.prompt.slice(0, 80)}`);
 
-  const { io, emitLog, executeClaudePrompt } = deps;
+  const { io, emitLog, executeCodexPrompt } = deps;
   const processKey = `trigger:${trigger.id}`;
 
   // Log to dashboard feed
@@ -113,7 +113,7 @@ async function fireTrigger(trigger, now) {
       emitLog(type, { sender: 'trigger', processKey, ...data });
     };
 
-    const result = await executeClaudePrompt(trigger.prompt, {
+    const result = await executeCodexPrompt(trigger.prompt, {
       onProgress,
       processKey,
       clarificationKey: processKey,

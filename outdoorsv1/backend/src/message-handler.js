@@ -1,4 +1,4 @@
-import { executeClaudePrompt, killProcess, codeAgentOptions, clearClarificationState, getActiveProcessSummary } from './claude-bridge.js';
+import { executeCodexPrompt, killProcess, codeAgentOptions, clearClarificationState, getActiveProcessSummary } from './codex-bridge.js';
 import { config } from './config.js';
 import { parseMessage, resolveSession, createOrUpdateConversation, closeConversation, getConversationMode } from './conversation-manager.js';
 import { downloadContentFromMessage } from '@whiskeysockets/baileys';
@@ -485,13 +485,13 @@ export async function handleMessage(message, emitLog) {
     let execResult;
     let didDelegate = false;
     if (isKnownCode) {
-      execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, resumeSessionId, processKey, clarificationKey: processKey, sessionContext: session }));
+      execResult = await executeCodexPrompt(finalPrompt, codeAgentOptions({ onProgress, resumeSessionId, processKey, clarificationKey: processKey, sessionContext: session }));
     } else {
-      execResult = await executeClaudePrompt(finalPrompt, { onProgress, resumeSessionId, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
+      execResult = await executeCodexPrompt(finalPrompt, { onProgress, resumeSessionId, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
       if (execResult.delegation) {
         didDelegate = true;
         emitLog?.('delegation', { sender, employee: 'coder', model: execResult.delegation.model });
-        execResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model));
+        execResult = await executeCodexPrompt(finalPrompt, codeAgentOptions({ onProgress, processKey, clarificationKey: processKey, sessionContext: session }, execResult.delegation.model));
       }
     }
     if (execResult.status === 'needs_user_input') {
@@ -508,7 +508,7 @@ export async function handleMessage(message, emitLog) {
       emitLog?.('api_retry', { sender, attempt: apiRetries, error: response.slice(0, 100) });
       await new Promise(r => setTimeout(r, 3000 * apiRetries));
       try {
-        const retryResult = await executeClaudePrompt(finalPrompt, { onProgress, processKey, clarificationKey: processKey, detectDelegation: !isKnownCode, sessionContext: session });
+        const retryResult = await executeCodexPrompt(finalPrompt, { onProgress, processKey, clarificationKey: processKey, detectDelegation: !isKnownCode, sessionContext: session });
         execResult = retryResult;
         response = retryResult.response;
       } catch (retryErr) {
@@ -553,12 +553,12 @@ export async function handleMessage(message, emitLog) {
         let retryResult;
         let didRetryDelegate = false;
         if (isKnownCode) {
-          retryResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress: retryOnProgress, processKey, clarificationKey: processKey, sessionContext: session }));
+          retryResult = await executeCodexPrompt(finalPrompt, codeAgentOptions({ onProgress: retryOnProgress, processKey, clarificationKey: processKey, sessionContext: session }));
         } else {
-          retryResult = await executeClaudePrompt(finalPrompt, { onProgress: retryOnProgress, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
+          retryResult = await executeCodexPrompt(finalPrompt, { onProgress: retryOnProgress, processKey, clarificationKey: processKey, detectDelegation: true, sessionContext: session });
           if (retryResult.delegation) {
             didRetryDelegate = true;
-            retryResult = await executeClaudePrompt(finalPrompt, codeAgentOptions({ onProgress: retryOnProgress, processKey, clarificationKey: processKey, sessionContext: session }, retryResult.delegation.model));
+            retryResult = await executeCodexPrompt(finalPrompt, codeAgentOptions({ onProgress: retryOnProgress, processKey, clarificationKey: processKey, sessionContext: session }, retryResult.delegation.model));
           }
         }
         if (retryResult.status === 'needs_user_input') {

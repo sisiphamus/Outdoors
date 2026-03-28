@@ -132,7 +132,7 @@ function getUserGoogleEmail() {
 let backendRestarts = 0;
 const MAX_BACKEND_RESTARTS = 5;
 let backendStoppedByUser = false; // true when user clicks power button
-let resolvedClaudeCmd = 'claude'; // updated after install or PATH lookup
+let resolvedCodexCmd = 'codex'; // updated after install or PATH lookup
 let resolvedUvxCmd = null; // cached full path to uvx.exe
 
 // Find uvx full path — checks PATH then common install locations
@@ -147,21 +147,21 @@ function findUvxPath() {
   return null;
 }
 
-// Resolve the claude command — caches after first successful lookup
-function getClaudeCmd() {
-  if (resolvedClaudeCmd !== 'claude') return resolvedClaudeCmd;
+// Resolve the codex command — caches after first successful lookup
+function getCodexCmd() {
+  if (resolvedCodexCmd !== 'codex') return resolvedCodexCmd;
   try {
     if (fs.existsSync(CONFIG_PATH)) {
       const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-      if (cfg.claudeCommand && cfg.claudeCommand !== 'claude') {
-        resolvedClaudeCmd = cfg.claudeCommand;
-        return resolvedClaudeCmd;
+      if (cfg.codexCommand && cfg.codexCommand !== 'codex') {
+        resolvedCodexCmd = cfg.codexCommand;
+        return resolvedCodexCmd;
       }
     }
   } catch {}
-  const found = platform.getClaudeCmdPath();
-  if (found) resolvedClaudeCmd = found;
-  return resolvedClaudeCmd;
+  const found = platform.getCodexCmdPath();
+  if (found) resolvedCodexCmd = found;
+  return resolvedCodexCmd;
 }
 
 // ── First-Run: Copy Project to Writable Location ────────────────────────────
@@ -248,7 +248,7 @@ function ensureWorkspace() {
     fs.mkdirSync(safeDir, { recursive: true });
 
     // Files to preserve
-    const keepFiles = ['config.json', '.env', '.claude.json', 'oauth-creds.json'];
+    const keepFiles = ['config.json', '.env', '.codex.json', 'oauth-creds.json'];
     for (const file of keepFiles) {
       const src = path.join(destBackend, file);
       if (fs.existsSync(src)) {
@@ -666,10 +666,10 @@ function setupIPC() {
     });
   });
 
-  // Install Claude CLI
-  ipcMain.handle('install-claude-cli', async () => {
+  // Install Codex CLI
+  ipcMain.handle('install-codex-cli', async () => {
     return new Promise((resolve) => {
-      const proc = spawn('npm', ['install', '-g', '@anthropic-ai/claude-code'], {
+      const proc = spawn('npm', ['install', '-g', '@openai/codex'], {
         shell: true,
         env: process.env,
       });
@@ -677,12 +677,12 @@ function setupIPC() {
       proc.stdout.on('data', (d) => { output += d.toString(); });
       proc.stderr.on('data', (d) => { output += d.toString(); });
       proc.on('close', (code) => {
-        // After install, find the claude command path
-        let claudePath = 'claude';
+        // After install, find the codex command path
+        let codexPath = 'codex';
         try {
-          const whichCmd = process.platform === 'win32' ? 'where claude' : 'which claude';
+          const whichCmd = process.platform === 'win32' ? 'where codex' : 'which codex';
           const which = execSync(whichCmd, { encoding: 'utf-8', shell: true }).trim();
-          if (which) claudePath = which.split('\n')[0].trim();
+          if (which) codexPath = which.split('\n')[0].trim();
         } catch {}
 
         // Write to config
@@ -691,22 +691,22 @@ function setupIPC() {
           if (fs.existsSync(CONFIG_PATH)) {
             cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
           }
-          cfg.claudeCommand = claudePath;
+          cfg.codexCommand = codexPath;
           fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
         } catch {}
 
-        resolvedClaudeCmd = claudePath;
-        resolve({ ok: code === 0, output, claudePath });
+        resolvedCodexCmd = codexPath;
+        resolve({ ok: code === 0, output, codexPath });
       });
     });
   });
 
-  // Check if Claude CLI is installed
-  ipcMain.handle('check-claude-installed', async () => {
+  // Check if Codex CLI is installed
+  ipcMain.handle('check-codex-installed', async () => {
     try {
-      const cmd = getClaudeCmd();
+      const cmd = getCodexCmd();
       const version = execSync(`"${cmd}" --version`, { encoding: 'utf-8', shell: true, timeout: 10000, windowsHide: true }).trim();
-      resolvedClaudeCmd = cmd;
+      resolvedCodexCmd = cmd;
       return { installed: true, version };
     } catch {
       return { installed: false };
@@ -856,37 +856,44 @@ function setupIPC() {
     });
   });
 
-  // Check Claude auth status
-  ipcMain.handle('check-claude-auth', async () => {
-    const cmd = getClaudeCmd();
+  // Check Codex auth status
+  ipcMain.handle('check-codex-auth', async () => {
+    const cmd = getCodexCmd();
     return new Promise((resolve) => {
-      execFile(cmd, ['auth', 'status'], { shell: true, timeout: 15000, windowsHide: true }, (err, stdout, stderr) => {
-        const output = (stdout || '') + (stderr || '');
-        const authed = !err && (output.includes('"loggedIn": true') || output.includes('"loggedIn":true'));
-        resolve({ authenticated: authed, output });
-      });
+      // Codex stores auth at ~/.codex/auth.json — check if it exists and is valid
+      // A quick way: run 'codex exec --ephemeral --json "test"' and see if it succeeds
+      // But faster: check if ~/.codex/auth.json exists
+      const authPath = path.join(process.env.HOME || process.env.USERPROFILE || '', '.codex', 'auth.json');
+      try {
+        if (fs.existsSync(authPath)) {
+          const auth = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
+          // auth.json exists with token data — consider authenticated
+          resolve({ authenticated: !!auth, output: 'Auth file found.' });
+        } else {
+          resolve({ authenticated: false, output: 'No auth file found.' });
+        }
+      } catch {
+        resolve({ authenticated: false, output: 'Auth check failed.' });
+      }
     });
   });
 
-  // Start Claude auth — spawns claude /login which opens browser for OAuth
-  ipcMain.handle('start-claude-auth', async () => {
-    const cmd = getClaudeCmd();
+  // Start Codex auth — spawns 'codex login' which opens browser for ChatGPT OAuth
+  ipcMain.handle('start-codex-auth', async () => {
     return new Promise((resolve) => {
-      // Open claude /login in a visible terminal — user needs to press 1
-      const termProc = platform.openTerminalWithCommand('claude', ['/login']);
+      // Open codex login in a visible terminal — opens browser for sign-in
+      const termProc = platform.openTerminalWithCommand('codex', ['login']);
       if (termProc) termProc.unref();
 
-      // Poll auth status every 3s until authenticated or timeout
+      // Poll auth status every 3s until auth.json appears or timeout
+      const authPath = path.join(process.env.HOME || process.env.USERPROFILE || '', '.codex', 'auth.json');
       authPollTimer = setInterval(() => {
         try {
-          execFile(cmd, ['auth', 'status'], { shell: true, timeout: 10000, windowsHide: true }, (err, stdout, stderr) => {
-            const out = (stdout || '') + (stderr || '');
-            if (!err && (out.includes('"loggedIn": true') || out.includes('"loggedIn":true'))) {
-              clearInterval(authPollTimer);
-              authPollTimer = null;
-              resolve({ ok: true, output: 'Authenticated.' });
-            }
-          });
+          if (fs.existsSync(authPath)) {
+            clearInterval(authPollTimer);
+            authPollTimer = null;
+            resolve({ ok: true, output: 'Authenticated.' });
+          }
         } catch {}
       }, 3000);
 
@@ -1073,7 +1080,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
 - **Do NOT use \`chromium.launch()\`** — always connect via CDP to preserve sessions
 - **NEVER kill and relaunch Chrome** unless you relaunch with the correct \`--user-data-dir\`
 
-## MCP Server Configuration (.claude.json)
+## MCP Server Configuration (.codex.json)
 
 \`\`\`json
 {
@@ -1095,7 +1102,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
       fs.mkdirSync(prefsDir, { recursive: true });
       fs.writeFileSync(path.join(prefsDir, 'browser-preferences.md'), prefsContent, 'utf-8');
 
-      // Write .claude.json with MCP config
+      // Write .codex.json with MCP config
       writeMcpConfig('chrome', { mcpName: 'chrome', mcpArgs: ['chrome-devtools-mcp@latest', '--browserUrl', 'http://127.0.0.1:9222'] });
 
       return { ok: true, copied, failed, automationDir };
@@ -1833,12 +1840,12 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
 
   ipcMain.handle('run-onboarding-scan', async (_event, services) => {
     try {
-      const cmd = getClaudeCmd();
+      const cmd = getCodexCmd();
       const knowledgeDir = path.join(BACKEND_DIR, 'bot', 'memory', 'knowledge');
       fs.mkdirSync(knowledgeDir, { recursive: true });
 
-      // Ensure .claude.json exists with google-workspace MCP config
-      const claudeConfigPath = path.join(BACKEND_DIR, '.claude.json');
+      // Ensure .codex.json exists with google-workspace MCP config
+      const claudeConfigPath = path.join(BACKEND_DIR, '.codex.json');
       if (!fs.existsSync(claudeConfigPath)) {
         // Build a minimal MCP config with google-workspace
         let uvxCommand = 'uvx';
@@ -1976,9 +1983,9 @@ RULES:
 
 Start by reading the skill file, then scan each service systematically.`;
 
-      // Clean env — remove CLAUDECODE to avoid nested session error
+      // Clean env — remove Codex session vars to avoid nested session error
       const cleanEnv = { ...process.env };
-      delete cleanEnv.CLAUDECODE;
+      delete cleanEnv.CODEX_SESSION;
 
       // Ensure mcp-bot.json exists in outdoorsv4 with google_workspace
       const v4Dir = IS_DEV
@@ -1986,21 +1993,17 @@ Start by reading the skill file, then scan each service systematically.`;
         : path.join(WORKSPACE, 'outdoorsv4');
       const botMcpPath = path.join(v4Dir, 'mcp-bot.json');
 
-      // Use the full .claude.json as MCP config — same config that worked before
-      const mcpConfigPath = path.join(BACKEND_DIR, '.claude.json');
+      // Use the full .codex.json as MCP config — same config that worked before
+      const mcpConfigPath = path.join(BACKEND_DIR, '.codex.json');
 
       const spawnArgs = [
-        '--print',
-        '--model', 'sonnet',
-        '--dangerously-skip-permissions',
+        'exec',
+        '--json',
+        '-m', 'gpt-5.4-mini',
+        '--dangerously-bypass-approvals-and-sandbox',
+        '--skip-git-repo-check',
+        '--ephemeral',
       ];
-
-      // Pass MCP config explicitly — --print mode doesn't auto-load .claude.json
-      if (fs.existsSync(mcpConfigPath)) {
-        spawnArgs.push('--mcp-config', mcpConfigPath);
-      } else if (fs.existsSync(botMcpPath)) {
-        spawnArgs.push('--mcp-config', botMcpPath);
-      }
 
       // Write prompt to temp file — Windows cmd.exe has ~8191 char limit,
       // and the full prompt exceeds that when passed via -p
@@ -2012,8 +2015,8 @@ Start by reading the skill file, then scan each service systematically.`;
       fs.writeFileSync(scanLog, `[${new Date().toISOString()}] Launching scan\ncmd: ${cmd}\nargs: ${JSON.stringify(spawnArgs)}\ncwd: ${BACKEND_DIR}\nmcpConfig: ${mcpConfigPath}\npromptFile: ${promptFile}\npromptLength: ${fullPrompt.length}\n`);
 
       return new Promise((resolve) => {
-        // Use spawn with stdin piping — passing prompt via -p hits Windows 8191 char limit
-        // Claude CLI reads from stdin when --print is used without -p
+        // Use spawn with stdin piping — passing prompt via arg hits Windows 8191 char limit
+        // Codex CLI reads from stdin when exec is used without a prompt arg
 
         const proc = spawn(cmd, spawnArgs, {
           cwd: BACKEND_DIR,
@@ -2416,17 +2419,17 @@ function writeMcpConfig(browserKey, browser) {
     };
   }
 
-  // Write .claude.json to the backend directory (Claude CLI's project root, where CLAUDE.md lives)
+  // Write .codex.json to the backend directory (Claude CLI's project root, where CLAUDE.md lives)
   const claudeConfigDir = IS_DEV
     ? path.join(__dirname, '..')
     : path.join(WORKSPACE, 'outdoorsv1', 'backend');
-  const claudeConfigPath = path.join(claudeConfigDir, '.claude.json');
+  const claudeConfigPath = path.join(claudeConfigDir, '.codex.json');
 
   fs.mkdirSync(claudeConfigDir, { recursive: true });
   fs.writeFileSync(claudeConfigPath, JSON.stringify(config, null, 2) + '\n');
 
   // Also write mcp-bot.json in outdoorsv4/ — this is what the bot's runtime pipeline uses
-  // (model-runner.js reads this, NOT .claude.json)
+  // (model-runner.js reads this, NOT .codex.json)
   const botMcpConfig = {
     mcpServers: {
       [browser.mcpName]: {
@@ -2681,15 +2684,18 @@ function setupAutoLaunch() {
 
 // ── Dashboard Window ─────────────────────────────────────────────────────
 
-function checkClaudeAuthAndNotify() {
-  const cmd = getClaudeCmd();
-  execFile(cmd, ['auth', 'status'], { shell: true, timeout: 15000, windowsHide: true }, (err, stdout, stderr) => {
-    const output = (stdout || '') + (stderr || '');
-    const authed = !err && (output.includes('"loggedIn": true') || output.includes('"loggedIn":true'));
+function checkCodexAuthAndNotify() {
+  const authPath = path.join(process.env.HOME || process.env.USERPROFILE || '', '.codex', 'auth.json');
+  try {
+    const authed = fs.existsSync(authPath);
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('claude-auth-status', { authenticated: authed });
+      mainWindow.webContents.send('codex-auth-status', { authenticated: authed });
     }
-  });
+  } catch {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('codex-auth-status', { authenticated: false });
+    }
+  }
 }
 
 function createDashboardWindow() {
@@ -2723,10 +2729,10 @@ function createDashboardWindow() {
     });
   }
 
-  // Check Claude auth on load and every 60 seconds
+  // Check Codex auth on load and every 60 seconds
   mainWindow.webContents.once('did-finish-load', () => {
-    checkClaudeAuthAndNotify();
-    setInterval(checkClaudeAuthAndNotify, 60000);
+    checkCodexAuthAndNotify();
+    setInterval(checkCodexAuthAndNotify, 60000);
   });
 }
 

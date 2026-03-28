@@ -81,11 +81,11 @@ export async function handleOnboardingMessage(text, chatKey) {
 
   const result = await runModel({
     userPrompt: fullPrompt,
-    model: 'haiku',
+    model: 'mini',
     resumeSessionId,
     processKey: `onboarding:${chatKey}`,
     cwd: PROJECT_ROOT,
-    claudeArgs: ['--print'],
+    codexArgs: ['exec'],
     skipMcp: true,
     onProgress: (type, data) => {
       console.log(`[onboarding:${type}]`, JSON.stringify(data).slice(0, 200));

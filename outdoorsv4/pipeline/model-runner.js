@@ -1,4 +1,4 @@
-// Spawns a single Claude CLI subprocess with stream-json output parsing.
+// Spawns a single Codex CLI subprocess with JSONL output parsing.
 // Built from scratch using Node's child_process.spawn.
 
 import { spawn } from 'child_process';
@@ -14,9 +14,9 @@ const __dirname = dirname(__filename);
 const MCP_CONFIG_PATH = join(__dirname, '..', 'mcp-bot.json');
 
 const MODEL_MAP = {
-  opus: 'claude-opus-4-20250514',
-  sonnet: 'claude-sonnet-4-20250514',
-  haiku: 'claude-haiku-4-5-20251001',
+  opus: 'gpt-5.4',
+  sonnet: 'gpt-5.4-mini',
+  haiku: 'gpt-5.4-mini',
 };
 
 function resolveModel(shorthand) {
@@ -37,6 +37,7 @@ function extractText(message) {
 
 function cleanEnv() {
   const env = { ...process.env };
+  // Strip Claude-specific env vars that could confuse Codex
   for (const key of Object.keys(env)) {
     if (key.startsWith('CLAUDE')) delete env[key];
   }
@@ -47,6 +48,8 @@ export function runModel({
   userPrompt,
   systemPrompt,
   model,
+  codexArgs,
+  // Keep claudeArgs as fallback alias for callers that haven't been updated yet
   claudeArgs,
   onProgress,
   processKey,
@@ -55,44 +58,56 @@ export function runModel({
   resumeSessionId,
 }) {
   return new Promise((resolve, reject) => {
-    const cmd = config.claudeCommand || 'claude';
-    const args = [...(claudeArgs || config.claudeArgs || ['--print']), '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
+    const cmd = config.codexCommand || 'codex';
+    const effectiveArgs = codexArgs || claudeArgs || config.codexArgs || ['exec'];
 
-    // Block Claude Code UI-only tools that don't work in a subprocess context.
-    args.push('--disallowedTools',
-      'ToolSearch,TodoWrite,TodoRead,TaskCreate,TaskStop,TaskGet,TaskList,TaskOutput,TaskUpdate,' +
-      'CronCreate,CronDelete,CronList,EnterPlanMode,ExitPlanMode,' +
-      'EnterWorktree,ExitWorktree,NotebookEdit,Skill,Agent,' +
-      'ListMcpResourcesTool,ReadMcpResourceTool'
-    );
+    // Build the argument list for codex exec
+    const args = [...effectiveArgs];
 
-    // Always inject MCP config — all tools (browser + google_workspace) available
-    if (existsSync(MCP_CONFIG_PATH)) {
-      args.push('--mcp-config', MCP_CONFIG_PATH);
+    // Ensure 'exec' is the first arg (subcommand) if not already present
+    if (args[0] !== 'exec' && args[0] !== 'e') {
+      args.unshift('exec');
     }
 
-    // For large system prompts, prepend instructions into the user prompt via stdin
-    // instead of passing as a CLI arg to avoid Windows ENAMETOOLONG errors.
-    let stdinPrefix = '';
-    if (systemPrompt) {
-      const currentArgsLen = args.reduce((sum, a) => sum + a.length + 1, cmd.length);
-      if (currentArgsLen + systemPrompt.length > 7000) {
-        stdinPrefix = `[SYSTEM INSTRUCTIONS — follow these carefully]\n${systemPrompt}\n[END SYSTEM INSTRUCTIONS]\n\n`;
-      } else {
-        args.push('--append-system-prompt', systemPrompt);
-      }
-    }
+    // JSONL output for structured parsing
+    args.push('--json');
+
+    // Bypass approval prompts and sandbox for non-interactive execution
+    args.push('--dangerously-bypass-approvals-and-sandbox');
+
+    // Skip git repo check since we may run outside a repo
+    args.push('--skip-git-repo-check');
+
+    // Don't persist session files for bot executions
+    args.push('--ephemeral');
 
     const resolvedModel = resolveModel(model);
     if (resolvedModel) {
-      args.push('--model', resolvedModel);
+      args.push('-m', resolvedModel);
     }
 
     if (resumeSessionId) {
-      args.push('--resume', resumeSessionId);
+      // Codex uses 'exec resume --last' for session continuity
+      // Insert 'resume --last' after 'exec'
+      const execIdx = args.indexOf('exec');
+      if (execIdx !== -1) {
+        args.splice(execIdx + 1, 0, 'resume', '--last');
+      }
     }
 
-    // On Windows, shell: true is needed so spawn resolves .cmd wrappers (e.g. claude.cmd).
+    // Build the prompt: prepend system instructions if provided
+    let fullPrompt = '';
+    if (systemPrompt) {
+      fullPrompt += `[SYSTEM INSTRUCTIONS — follow these carefully]\n${systemPrompt}\n[END SYSTEM INSTRUCTIONS]\n\n`;
+    }
+    if (userPrompt) {
+      fullPrompt += userPrompt;
+    }
+
+    // Codex exec reads prompt from stdin when '-' is passed or no prompt arg
+    // We'll write the prompt via stdin for reliability (avoids arg length limits)
+
+    // On Windows, shell: true is needed so spawn resolves .cmd wrappers (e.g. codex.cmd).
     const proc = spawn(cmd, args, {
       cwd: cwd || config.workingDirectory || process.cwd(),
       env: cleanEnv(),
@@ -105,7 +120,7 @@ export function runModel({
     proc.stderr.on('error', () => { /* pipe closed — ignore */ });
 
     if (processKey) {
-      register(processKey, proc, model || 'claude');
+      register(processKey, proc, model || 'codex');
     }
 
     let response = '';
@@ -130,11 +145,8 @@ export function runModel({
     }
 
     // Write prompt to stdin and close
-    if (stdinPrefix) {
-      proc.stdin.write(stdinPrefix);
-    }
-    if (userPrompt) {
-      proc.stdin.write(userPrompt);
+    if (fullPrompt) {
+      proc.stdin.write(fullPrompt);
     }
     proc.stdin.end();
 
@@ -151,100 +163,50 @@ export function runModel({
         try { event = JSON.parse(trimmed); } catch { continue; }
         fullEvents.push(event);
 
+        // Codex JSONL event types:
+        //   thread.started  — { thread_id }
+        //   turn.started    — turn begins
+        //   item.completed  — { item: { id, type, text, tool_name, input, output } }
+        //   turn.completed  — { usage: { input_tokens, output_tokens, cached_input_tokens } }
         switch (event.type) {
-          case 'system':
-            if (event.session_id) sessionId = event.session_id;
+          case 'thread.started':
+            if (event.thread_id) sessionId = event.thread_id;
             break;
 
-          case 'assistant':
-            if (event.subtype === 'tool_use') {
+          case 'item.completed': {
+            const item = event.item;
+            if (!item) break;
+
+            if (item.type === 'agent_message' && item.text) {
+              response = item.text;
+              response_streamed = true;
+              onProgress?.('assistant_text', { text: item.text });
+            } else if (item.type === 'tool_use' || item.type === 'function_call') {
               onProgress?.('tool_use', {
-                tool: event.tool_name,
-                input: event.input,
+                tool: item.tool_name || item.name,
+                input: item.input || item.arguments,
               });
-              emitActivity(processKey, 'tool_use', event.tool_name);
-
-              if (event.tool_name === 'AskUserQuestion') {
-                fullEvents._questionRequest = event.input;
-                killedForQuestion = true;
-                proc.kill();
-              }
-            } else if (event.message) {
-              const content = Array.isArray(event.message.content) ? event.message.content : [];
-
-              for (const block of content) {
-                if (block.type === 'tool_use') {
-                  const toolInput = typeof block.input === 'string'
-                    ? (() => { try { return JSON.parse(block.input); } catch { return block.input; } })()
-                    : block.input;
-                  onProgress?.('tool_use', {
-                    tool: block.name,
-                    input: toolInput,
-                  });
-                  emitActivity(processKey, 'tool_use', block.name);
-
-                  if (block.name === 'AskUserQuestion') {
-                    fullEvents._questionRequest = toolInput;
-                    killedForQuestion = true;
-                    proc.kill();
-                  }
-                  // ExitPlanMode/EnterPlanMode hang in subprocess context — kill gracefully
-                  if (block.name === 'ExitPlanMode' || block.name === 'EnterPlanMode') {
-                    killedAfterResult = true;
-                    proc.kill();
-                  }
-                }
-              }
-
-              // Extract text from message
-              const text = extractText(event.message);
-              if (text && !killedAfterResult) {
-                response = text;
-                response_streamed = true;
-                onProgress?.('assistant_text', { text });
-              }
-            }
-            break;
-
-          case 'user':
-            if (event.subtype === 'tool_result') {
+              emitActivity(processKey, 'tool_use', item.tool_name || item.name);
+            } else if (item.type === 'tool_result' || item.type === 'function_call_output') {
               onProgress?.('tool_result', {
-                tool: event.tool_name,
-                output: event.output,
+                tool: item.tool_name || item.call_id,
+                output: item.output || item.text || '',
               });
-            } else if (event.message) {
-              const content = Array.isArray(event.message.content) ? event.message.content : [];
-              for (const block of content) {
-                if (block.type === 'tool_result') {
-                  onProgress?.('tool_result', {
-                    tool: block.tool_use_id,
-                    output: block.content || block.output || '',
-                  });
-                }
-              }
             }
             break;
+          }
 
-          case 'result': {
-            const resultText = event.result ? (typeof event.result === 'string' ? event.result : extractText(event.result)) : null;
-            if (resultText && !killedAfterResult) {
-              response = resultText;
-              // Only emit if not already streamed (prevents duplicate assistant_text events)
-              if (!response_streamed) {
-                onProgress?.('assistant_text', { text: resultText });
-              }
-            }
-            if (!killedAfterResult && event.session_id) sessionId = event.session_id;
-            if (event.duration_ms !== undefined || event.total_cost_usd !== undefined) {
+          case 'turn.completed': {
+            if (event.usage) {
               onProgress?.('cost', {
-                cost: event.total_cost_usd,
+                cost: event.usage.total_cost_usd,
                 duration: event.duration_ms,
-                input_tokens: event.usage?.input_tokens,
-                output_tokens: event.usage?.output_tokens,
-                cache_read: event.usage?.cache_read_input_tokens,
+                input_tokens: event.usage.input_tokens,
+                output_tokens: event.usage.output_tokens,
+                cache_read: event.usage.cached_input_tokens,
               });
             }
-            // After the first result, kill the process tree to prevent background
+            // After the turn completes, kill the process tree to prevent background
             // tasks from triggering additional model turns that waste API credits.
             if (!killedAfterResult && !killedForQuestion) {
               killedAfterResult = true;
@@ -265,6 +227,10 @@ export function runModel({
             }
             break;
           }
+
+          // Handle any legacy/unknown event types gracefully
+          default:
+            break;
         }
       }
     });
@@ -283,8 +249,8 @@ export function runModel({
         try {
           const event = JSON.parse(buffer.trim());
           fullEvents.push(event);
-          if (event.type === 'result' && event.result) response = event.result;
-          if (event.session_id) sessionId = event.session_id;
+          if (event.type === 'item.completed' && event.item?.text) response = event.item.text;
+          if (event.type === 'thread.started' && event.thread_id) sessionId = event.thread_id;
         } catch {}
       }
 
