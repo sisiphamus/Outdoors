@@ -43,6 +43,9 @@ jobs:
         working-directory: outdoorsv1/backend/electron
         run: npm install
 
+      - name: Remove secrets before packaging
+        run: rm -f outdoorsv1/backend/oauth-creds.json
+
       - name: Build and publish Windows installer
         working-directory: outdoorsv1/backend/electron
         run: npm run build:win -- --publish always
