@@ -171,8 +171,8 @@ async function runAuthPage() {
     return;
   }
 
-  // Show signup + sign-in buttons
-  showAuthState('auth-signup');
+  // Show student / non-student choice
+  showAuthState('auth-choice');
 }
 
 function showAuthState(id) {
@@ -182,12 +182,22 @@ function showAuthState(id) {
   if (el) el.classList.remove('hidden');
 }
 
-// Open Codex student signup page
+// Student path — show student signup page
+document.getElementById('btn-student')?.addEventListener('click', () => {
+  showAuthState('auth-student-signup');
+});
+
+// Non-student path — go straight to sign in
+document.getElementById('btn-non-student')?.addEventListener('click', () => {
+  showAuthState('auth-signup');
+});
+
+// Open Codex student signup page in browser
 document.getElementById('btn-codex-signup')?.addEventListener('click', () => {
   window.electronAPI.openExternal('https://openai.com/index/codex-for-students/');
 });
 
-// Sign in to Codex (from signup page or retry page)
+// Sign in to Codex (from any path)
 async function doCodexLogin() {
   showAuthState('auth-waiting');
 
@@ -211,6 +221,7 @@ async function doCodexLogin() {
 }
 
 document.getElementById('btn-auth')?.addEventListener('click', doCodexLogin);
+document.getElementById('btn-auth-direct')?.addEventListener('click', doCodexLogin);
 document.getElementById('btn-auth-retry')?.addEventListener('click', doCodexLogin);
 
 document.getElementById('btn-skip-auth')?.addEventListener('click', () => {
