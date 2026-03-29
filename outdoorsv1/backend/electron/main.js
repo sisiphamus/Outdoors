@@ -1766,25 +1766,32 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
   ipcMain.handle('list-output-files', async () => {
     const outputDir = path.join(BACKEND_DIR, 'bot', 'outputs');
     const results = [];
-    function walk(dir, rel) {
+    const SKIP_DIRS = new Set(['node_modules', '.wrangler', '.git', '__pycache__', '.next', '.cache', 'dist', '.venv', 'venv']);
+    const MAX_FILES = 2000;
+    function walk(dir, rel, depth) {
+      if (results.length >= MAX_FILES || depth > 5) return;
       if (!fs.existsSync(dir)) return;
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-        const relPath = rel ? rel + '/' + entry.name : entry.name;
-        if (entry.isDirectory()) {
-          walk(fullPath, relPath);
-        } else {
-          try {
-            const stat = fs.statSync(fullPath);
-            results.push({ name: entry.name, relativePath: relPath, size: stat.size, modified: stat.mtimeMs });
-          } catch {
-            results.push({ name: entry.name, relativePath: relPath, size: 0, modified: 0 });
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (results.length >= MAX_FILES) return;
+          if (SKIP_DIRS.has(entry.name)) continue;
+          const fullPath = path.join(dir, entry.name);
+          const relPath = rel ? rel + '/' + entry.name : entry.name;
+          if (entry.isDirectory()) {
+            walk(fullPath, relPath, depth + 1);
+          } else {
+            try {
+              const stat = fs.statSync(fullPath);
+              results.push({ name: entry.name, relativePath: relPath, size: stat.size, modified: stat.mtimeMs });
+            } catch {
+              results.push({ name: entry.name, relativePath: relPath, size: 0, modified: 0 });
+            }
           }
         }
-      }
+      } catch {}
     }
-    walk(outputDir, '');
+    walk(outputDir, '', 0);
     return results;
   });
 
