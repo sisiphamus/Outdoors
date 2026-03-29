@@ -1,9 +1,9 @@
 ╔══════════════════════════════════════════════════════════════╗
-║                   Outdoors — macOS Install                  ║
+║       OUTDOORS — READ THIS BEFORE OPENING THE APP           ║
 ╚══════════════════════════════════════════════════════════════╝
 
-  macOS blocks unsigned apps by default. To install Outdoors,
-  open Terminal and paste the commands below.
+  macOS will BLOCK this app unless you run the commands below.
+  It takes 10 seconds.
 
   ── Step 1: Open Terminal ─────────────────────────────────
 
