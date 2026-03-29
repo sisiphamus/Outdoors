@@ -3,6 +3,11 @@ productName: Outdoors
 copyright: Copyright © 2026 Outdoors
 afterPack: ./sign-adhoc.js
 
+publish:
+  provider: github
+  owner: sisiphamus
+  repo: Outdoors
+
 directories:
   output: dist
 

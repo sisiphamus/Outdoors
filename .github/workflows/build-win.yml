@@ -40,9 +40,11 @@ jobs:
         working-directory: outdoorsv1/backend/electron
         run: npm install
 
-      - name: Build Windows installer
+      - name: Build and publish Windows installer
         working-directory: outdoorsv1/backend/electron
-        run: npm run build:win
+        run: npm run build:win -- --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify no secrets in build output
         working-directory: outdoorsv1/backend/electron

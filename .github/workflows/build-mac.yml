@@ -52,11 +52,12 @@ jobs:
       - name: Copy install instructions to dist
         run: mkdir -p outdoorsv1/backend/electron/dist && cp outdoorsv1/backend/electron/INSTALL-MAC.txt outdoorsv1/backend/electron/dist/
 
-      - name: Build macOS installer
+      - name: Build and publish macOS installer
         working-directory: outdoorsv1/backend/electron
-        run: npm run build:mac
+        run: npm run build:mac -- --publish always
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ── Post-build: verify build output ──────────────────────────
 

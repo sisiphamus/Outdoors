@@ -9,6 +9,7 @@
  */
 
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell, powerSaveBlocker } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const { spawn, execSync, execFile } = require('child_process');
@@ -882,7 +883,7 @@ function setupIPC() {
   ipcMain.handle('start-codex-auth', async () => {
     return new Promise((resolve) => {
       // Open codex login in a visible terminal — opens browser for sign-in
-      const termProc = platform.openTerminalWithCommand('codex', ['login']);
+      const termProc = platform.openTerminalWithCommand(getCodexCmd(), ['login']);
       if (termProc) termProc.unref();
 
       // Poll auth status every 3s until auth.json appears or timeout
@@ -2489,6 +2490,11 @@ function writeMcpConfig(browserKey, browser) {
   for (const [name, server] of Object.entries(botMcpConfig.mcpServers)) {
     try {
       const cmdArgs = [server.command, ...(server.args || [])];
+      // Resolve bare commands to full paths for macOS compatibility
+      if (process.platform === 'darwin' && cmdArgs[0] && !cmdArgs[0].startsWith('/')) {
+        const resolved = platform.findCommand(cmdArgs[0]);
+        if (resolved) cmdArgs[0] = resolved;
+      }
       // Build env flag string if needed
       const envParts = [];
       if (server.env) {
@@ -2587,6 +2593,7 @@ function startBackend() {
       cwd: BACKEND_DIR,
       env: { ...process.env, ELECTRON: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',
     });
 
     let started = false;
@@ -2692,11 +2699,6 @@ function createTray() {
     {
       label: 'Quit',
       click: () => {
-        if (backendProcess) {
-          backendProcess.kill();
-          backendProcess = null;
-        }
-        tray = null;
         app.quit();
       },
     },
@@ -2788,6 +2790,30 @@ app.whenReady().then(async () => {
   // Prevent system sleep so the bot stays connected with lid closed
   powerSaveBlocker.start('prevent-app-suspension');
 
+  // ── Auto-update ──────────────────────────────────────────────────────────
+  autoUpdater.logger = { info: (...a) => console.log('[update]', ...a), warn: (...a) => console.log('[update:warn]', ...a), error: (...a) => console.error('[update:error]', ...a) };
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-available', (info) => {
+    console.log(`[update] New version available: ${info.version}`);
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log(`[update] Update downloaded: ${info.version}. Will install on quit.`);
+    // Notify the user via the dashboard
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-ready', { version: info.version });
+    }
+  });
+  autoUpdater.on('error', (err) => {
+    console.log('[update] Auto-update error:', err.message);
+  });
+
+  // Check for updates (non-blocking — doesn't delay startup)
+  if (app.isPackaged) {
+    setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 5000);
+  }
+
   const isFirstRun = ensureWorkspace();
   const setupDone = fs.existsSync(SETUP_DONE_FLAG);
 
@@ -2814,8 +2840,10 @@ app.on('before-quit', () => {
         // Kill entire process tree (node backend + python ML workers)
         execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000, windowsHide: true, stdio: 'ignore' });
       } else {
-        // Try process group kill first, then direct PID kill as fallback
-        try { process.kill(-pid, 'SIGTERM'); } catch {}
+        // Try process group kill first, then pkill children, then direct PID
+        try { process.kill(-pid, 'SIGTERM'); } catch {
+          try { execSync(`pkill -TERM -P ${pid}`, { timeout: 3000, stdio: 'ignore' }); } catch {}
+        }
         try { process.kill(pid, 'SIGTERM'); } catch {}
       }
     } catch {}
