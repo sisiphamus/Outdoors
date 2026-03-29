@@ -219,7 +219,7 @@ h2 {
    ============================================================ */
 
 .spinner {
-  width: 120px;
+  width: 140px;
   height: 14px;
   border: 2px solid var(--accent);
   border-radius: 2px;
@@ -232,22 +232,17 @@ h2 {
   content: '';
   position: absolute;
   top: 0;
-  left: -40%;
-  width: 40%;
+  left: 0;
+  width: 0%;
   height: 100%;
-  background: repeating-linear-gradient(
-    90deg,
-    var(--accent) 0px,
-    var(--accent) 6px,
-    transparent 6px,
-    transparent 10px
-  );
-  animation: retro-slide 1.2s linear infinite;
+  background: var(--accent);
+  animation: retro-fill 2.5s ease-in-out infinite;
 }
 
-@keyframes retro-slide {
-  0% { left: -40%; }
-  100% { left: 100%; }
+@keyframes retro-fill {
+  0% { width: 0%; }
+  80% { width: 100%; }
+  100% { width: 100%; }
 }
 
 /* ============================================================
@@ -395,7 +390,7 @@ h2 {
 }
 
 .spinner-small {
-  width: 60px;
+  width: 70px;
   height: 8px;
   border: 1.5px solid var(--accent);
   border-radius: 2px;
@@ -409,17 +404,11 @@ h2 {
   content: '';
   position: absolute;
   top: 0;
-  left: -40%;
-  width: 40%;
+  left: 0;
+  width: 0%;
   height: 100%;
-  background: repeating-linear-gradient(
-    90deg,
-    var(--accent) 0px,
-    var(--accent) 4px,
-    transparent 4px,
-    transparent 7px
-  );
-  animation: retro-slide 1.2s linear infinite;
+  background: var(--accent);
+  animation: retro-fill 2.5s ease-in-out infinite;
 }
 
 .waiting-icon::after {
