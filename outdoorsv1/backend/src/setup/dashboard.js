@@ -327,11 +327,10 @@ function addFeedEntry(type, text) {
 function addFeedIncoming(ts, sender, prompt, convLabel) {
   const feed = document.getElementById('feed');
   const entry = document.createElement('div');
-  entry.className = 'feed-entry feed-incoming';
-  const label = convLabel ? sender + ' [' + convLabel + ']' : sender;
-  entry.innerHTML = '<span class="feed-time">' + ts + '</span>' +
-    '<span class="feed-incoming-label">' + esc(label) + '</span> ' +
-    '<span class="feed-incoming-text">' + esc(truncate(prompt, 200)) + '</span>';
+  entry.className = 'feed-entry feed-msg feed-msg-user';
+  const label = convLabel ? '[' + convLabel + '] ' : '';
+  entry.innerHTML = '<div class="msg-meta">' + esc(label + sender) + ' &middot; ' + ts + '</div>' +
+    '<div class="msg-bubble">' + esc(prompt) + '</div>';
   feed.appendChild(entry);
   feed.scrollTop = feed.scrollHeight;
 }
@@ -372,20 +371,23 @@ function addFeedThinking(ts, text) {
 
 function addFeedSent(ts, to, len, response, convLabel) {
   const feed = document.getElementById('feed');
-  const entry = document.createElement('div');
-  entry.className = 'feed-entry';
-  const prefix = convLabel ? '[' + convLabel + '] ' : '';
-  let html = '<span class="feed-time">' + ts + '</span><span class="feed-info">' + esc(prefix) + 'Sent to ' + esc(to.split('@')[0] || to) + ' (' + len + ' chars)</span>';
   if (response) {
+    const entry = document.createElement('div');
+    entry.className = 'feed-entry feed-msg feed-msg-assistant';
     let rendered = esc(response);
+    rendered = rendered.replace(/\[IMAGE:[^\]]+\]/g, '');
     rendered = rendered.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
     rendered = rendered.replace(/`([^`]+)`/g, '<code>$1</code>');
     rendered = rendered.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    html += '<div class="msg-bubble">' + rendered + '</div>';
+    const prefix = convLabel ? '[' + convLabel + '] ' : '';
+    const meta = devMode ? '<div class="msg-meta">' + esc(prefix) + 'Sent to ' + esc(to.split('@')[0] || to) + ' &middot; ' + ts + '</div>' : '';
+    entry.innerHTML = meta + '<div class="msg-bubble">' + rendered + '</div>';
+    feed.appendChild(entry);
+    feed.scrollTop = feed.scrollHeight;
+  } else if (devMode) {
+    const prefix = convLabel ? '[' + convLabel + '] ' : '';
+    addFeedEntry('info', prefix + 'Sent to ' + (to.split('@')[0] || to) + ' (' + len + ' chars)');
   }
-  entry.innerHTML = html;
-  feed.appendChild(entry);
-  feed.scrollTop = feed.scrollHeight;
 }
 
 function addAssistantMessage(text) {
@@ -679,15 +681,19 @@ async function reconnectWhatsApp() {
           qrImg.src = dataUrl;
           btn.textContent = 'Scan the QR code below';
         };
+        // Remove old listeners to prevent stacking on repeated reconnects
+        socket.off('qr');
         socket.on('qr', onQR);
-        socket.on('log', (entry) => {
+        const onLog = (entry) => {
           if (entry?.type === 'qr' && entry.data?.dataUrl) onQR(entry.data.dataUrl);
           if (entry?.type === 'connected') {
             qrContainer.classList.add('hidden');
             btn.textContent = 'Reconnect WhatsApp';
             btn.disabled = false;
+            socket.off('log', onLog);
           }
-        });
+        };
+        socket.on('log', onLog);
       }
     } else {
       btn.textContent = 'Failed — try again';
