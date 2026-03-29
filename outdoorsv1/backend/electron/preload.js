@@ -72,4 +72,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openOutputFile: (relativePath) => ipcRenderer.invoke('open-output-file', relativePath),
   uploadToProject: (subfolder) => ipcRenderer.invoke('upload-to-project', subfolder),
   createProjectFile: (relativePath) => ipcRenderer.invoke('create-project-file', relativePath),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
 });

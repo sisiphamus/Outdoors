@@ -171,7 +171,8 @@ async function runAuthPage() {
     return;
   }
 
-  showAuthState('auth-needed');
+  // Show signup + sign-in buttons
+  showAuthState('auth-signup');
 }
 
 function showAuthState(id) {
@@ -181,7 +182,13 @@ function showAuthState(id) {
   if (el) el.classList.remove('hidden');
 }
 
-document.getElementById('btn-auth')?.addEventListener('click', async () => {
+// Open Codex student signup page
+document.getElementById('btn-codex-signup')?.addEventListener('click', () => {
+  window.electronAPI.openExternal('https://openai.com/index/codex-for-students/');
+});
+
+// Sign in to Codex (from signup page or retry page)
+async function doCodexLogin() {
   showAuthState('auth-waiting');
 
   const waitText = document.getElementById('auth-waiting-text');
@@ -201,7 +208,10 @@ document.getElementById('btn-auth')?.addEventListener('click', async () => {
     const hint = document.querySelector('#auth-needed .auth-hint');
     if (hint) hint.textContent = 'Auth timed out — try again.';
   }
-});
+}
+
+document.getElementById('btn-auth')?.addEventListener('click', doCodexLogin);
+document.getElementById('btn-auth-retry')?.addEventListener('click', doCodexLogin);
 
 document.getElementById('btn-skip-auth')?.addEventListener('click', () => {
   if (isElectron) window.electronAPI.cancelAuthPoll?.();

@@ -56,17 +56,22 @@
       <div class="page-content">
         <h2>Sign in to Codex</h2>
         <p class="subtitle">
-          Outdoors uses Codex to understand your messages and take action.
-          Sign in with your ChatGPT account.
+          Outdoors uses OpenAI Codex. You get $100 in free credits with a student account.
         </p>
         <div class="auth-container">
           <div id="auth-checking" class="auth-state">
             <div class="spinner"></div>
             <p class="auth-status-text">Checking authentication...</p>
           </div>
+          <div id="auth-signup" class="auth-state hidden">
+            <p class="auth-hint" style="margin-bottom:12px">First, sign up for free Codex credits (opens in browser):</p>
+            <button class="btn-primary" id="btn-codex-signup">Get Free Credits</button>
+            <p class="auth-hint" style="margin-top:16px">Already have an account? Sign in:</p>
+            <button class="btn-primary" id="btn-auth" style="margin-top:4px">Sign in to Codex</button>
+          </div>
           <div id="auth-needed" class="auth-state hidden">
-            <button class="btn-primary" id="btn-auth">Sign in to Codex</button>
-            <p class="auth-hint">A terminal window will open. It will open your browser to sign in with your ChatGPT account.</p>
+            <button class="btn-primary" id="btn-auth-retry">Sign in to Codex</button>
+            <p class="auth-hint">Opens your browser to sign in with your ChatGPT account.</p>
           </div>
           <div id="auth-waiting" class="auth-state hidden">
             <div class="spinner"></div>

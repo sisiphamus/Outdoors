@@ -102,7 +102,9 @@ const ICON_PATH = IS_DEV
 let mainWindow = null;
 let tray = null;
 let backendProcess = null;
+let backendStarting = false;
 let devLogWindow = null;
+let codexAuthInterval = null;
 
 // Onboarding scan state (shared between setup wizard and dashboard)
 let onboardingScan = { running: false, progress: 0, status: '' };
@@ -135,6 +137,17 @@ const MAX_BACKEND_RESTARTS = 5;
 let backendStoppedByUser = false; // true when user clicks power button
 let resolvedCodexCmd = 'codex'; // updated after install or PATH lookup
 let resolvedUvxCmd = null; // cached full path to uvx.exe
+
+// Secure path resolution — prevents traversal via encoded sequences, symlinks, etc.
+function safePath(base, relativePath) {
+  if (!relativePath || typeof relativePath !== 'string') throw new Error('Invalid path');
+  const resolved = path.resolve(path.join(base, relativePath));
+  const root = path.resolve(base);
+  if (!resolved.startsWith(root + path.sep) && resolved !== root) {
+    throw new Error('Path traversal blocked');
+  }
+  return resolved;
+}
 
 // Find uvx full path — checks PATH then common install locations
 function findUvxPath() {
@@ -881,10 +894,18 @@ function setupIPC() {
 
   // Start Codex auth — spawns 'codex login' which opens browser for ChatGPT OAuth
   ipcMain.handle('start-codex-auth', async () => {
+    if (authPollTimer) { clearInterval(authPollTimer); authPollTimer = null; }
     return new Promise((resolve) => {
-      // Open codex login in a visible terminal — opens browser for sign-in
-      const termProc = platform.openTerminalWithCommand(getCodexCmd(), ['login']);
-      if (termProc) termProc.unref();
+      // Spawn codex login directly (no terminal needed — it opens browser itself)
+      const cmd = getCodexCmd();
+      const loginProc = spawn(cmd, ['login'], {
+        shell: true,
+        stdio: 'ignore',
+        detached: true,
+        env: process.env,
+      });
+      loginProc.unref();
+      loginProc.on('error', (err) => console.log('[codex-auth] Login spawn error:', err.message));
 
       // Poll auth status every 3s until auth.json appears or timeout
       const authPath = path.join(process.env.HOME || process.env.USERPROFILE || '', '.codex', 'auth.json');
@@ -959,6 +980,9 @@ function setupIPC() {
 
   // Step 2: Create automation profile from selected Chrome profile
   ipcMain.handle('create-automation-profile', async (_event, { selectedProfile, exePath }) => {
+    if (selectedProfile && (/\.\./.test(selectedProfile) || path.isAbsolute(selectedProfile))) {
+      return { ok: false, error: 'Invalid profile name' };
+    }
     try {
       const userDataDir = platform.getChromeUserDataDir();
       const automationDir = platform.getAutomationProfileDir();
@@ -1628,6 +1652,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
   ipcMain.handle('start-backend', async () => {
     backendStoppedByUser = false;
     if (backendProcess) return { ok: true, alreadyRunning: true };
+    if (backendStarting) return { ok: false, error: 'Backend is already starting' };
 
     // Pre-check: node_modules must exist (npm install must have succeeded)
     const nodeModules = path.join(BACKEND_DIR, 'node_modules');
@@ -1687,6 +1712,12 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
     if (mainWindow) mainWindow.hide();
   });
 
+  ipcMain.handle('open-external', async (_event, url) => {
+    if (url && typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
+      await shell.openExternal(url);
+    }
+  });
+
   // ── Dashboard IPC ─────────────────────────────────────────────────────────
 
   ipcMain.handle('open-dashboard', async () => {
@@ -1719,13 +1750,12 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
   });
 
   ipcMain.handle('read-memory-file', async (_event, relativePath) => {
-    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
-    return fs.readFileSync(path.join(BACKEND_DIR, 'bot', 'memory', relativePath), 'utf-8');
+    const filePath = safePath(path.join(BACKEND_DIR, 'bot', 'memory'), relativePath);
+    return fs.readFileSync(filePath, 'utf-8');
   });
 
   ipcMain.handle('save-memory-file', async (_event, relativePath, content) => {
-    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
-    const filePath = path.join(BACKEND_DIR, 'bot', 'memory', relativePath);
+    const filePath = safePath(path.join(BACKEND_DIR, 'bot', 'memory'), relativePath);
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, content, 'utf-8');
     return { ok: true };
@@ -1759,26 +1789,24 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
   });
 
   ipcMain.handle('read-output-file', async (_event, relativePath) => {
-    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
-    return fs.readFileSync(path.join(BACKEND_DIR, 'bot', 'outputs', relativePath), 'utf-8');
+    const filePath = safePath(path.join(BACKEND_DIR, 'bot', 'outputs'), relativePath);
+    return fs.readFileSync(filePath, 'utf-8');
   });
 
   ipcMain.handle('get-output-file-path', async (_event, relativePath) => {
-    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
-    return path.join(BACKEND_DIR, 'bot', 'outputs', relativePath);
+    const filePath = safePath(path.join(BACKEND_DIR, 'bot', 'outputs'), relativePath);
+    return filePath;
   });
 
   ipcMain.handle('save-output-file', async (_event, relativePath, content) => {
-    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
-    const filePath = path.join(BACKEND_DIR, 'bot', 'outputs', relativePath);
+    const filePath = safePath(path.join(BACKEND_DIR, 'bot', 'outputs'), relativePath);
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, content, 'utf-8');
     return { ok: true };
   });
 
   ipcMain.handle('delete-output-file', async (_event, relativePath) => {
-    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
-    const filePath = path.join(BACKEND_DIR, 'bot', 'outputs', relativePath);
+    const filePath = safePath(path.join(BACKEND_DIR, 'bot', 'outputs'), relativePath);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
       // Clean up empty parent directories
@@ -1796,8 +1824,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
   });
 
   ipcMain.handle('open-output-file', async (_event, relativePath) => {
-    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
-    const filePath = path.join(BACKEND_DIR, 'bot', 'outputs', relativePath);
+    const filePath = safePath(path.join(BACKEND_DIR, 'bot', 'outputs'), relativePath);
     if (fs.existsSync(filePath)) {
       await shell.openPath(filePath);
     }
@@ -1806,6 +1833,9 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
 
   // Upload files to a project subfolder (opens native file picker)
   ipcMain.handle('upload-to-project', async (_event, projectSubfolder) => {
+    if (projectSubfolder && (projectSubfolder.includes('..') || path.isAbsolute(projectSubfolder))) {
+      return { ok: false, error: 'Invalid subfolder path' };
+    }
     const { dialog } = require('electron');
     const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Add files to project',
@@ -1828,8 +1858,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
 
   // Create a new empty file in a project subfolder
   ipcMain.handle('create-project-file', async (_event, relativePath) => {
-    if (relativePath.includes('..') || path.isAbsolute(relativePath)) throw new Error('Invalid path');
-    const filePath = path.join(BACKEND_DIR, 'bot', 'outputs', relativePath);
+    const filePath = safePath(path.join(BACKEND_DIR, 'bot', 'outputs'), relativePath);
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     if (!fs.existsSync(filePath)) {
       fs.writeFileSync(filePath, '', 'utf-8');
@@ -2272,7 +2301,10 @@ Updated: ${today}
   ipcMain.handle('save-full-config', async (_event, data) => {
     let cfg = {};
     try { if (fs.existsSync(CONFIG_PATH)) cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')); } catch {}
-    Object.assign(cfg, data);
+    const ALLOWED_CONFIG_KEYS = ['rateLimitPerMinute', 'maxResponseLength', 'messageTimeout', 'prefix', 'allowedNumbers', 'outdoorsGroupJid', 'preferredBrowser'];
+    for (const key of ALLOWED_CONFIG_KEYS) {
+      if (data[key] !== undefined) cfg[key] = data[key];
+    }
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
     return { ok: true };
   });
@@ -2563,9 +2595,11 @@ function createDevLogWindow() {
 // ── Backend Process ─────────────────────────────────────────────────────────
 
 function startBackend() {
+  backendStarting = true;
   return new Promise((resolve) => {
     const indexJs = path.join(BACKEND_DIR, 'src', 'index.js');
     if (!fs.existsSync(indexJs)) {
+      backendStarting = false;
       resolve({ ok: false, error: 'Backend index.js not found at ' + indexJs });
       return;
     }
@@ -2608,6 +2642,7 @@ function startBackend() {
       // Detect server started
       if (!started && (text.includes('API: http://') || text.includes('Outdoors Bot'))) {
         started = true;
+        backendStarting = false;
         resolve({ ok: true });
       }
       // Show system notification when bot sends a response
@@ -2637,6 +2672,7 @@ function startBackend() {
     backendProcess.on('close', (code) => {
       console.log('[backend] exited with code', code);
       backendProcess = null;
+      backendStarting = false;
       if (!started) {
         resolve({ ok: false, error: `Backend exited with code ${code}`, stderr: stderrOutput });
         return;
@@ -2668,6 +2704,7 @@ function startBackend() {
     setTimeout(() => {
       if (!started) {
         started = true;
+        backendStarting = false;
         resolve({ ok: false, error: 'Backend did not start within 30 seconds', timeout: true, stderr: stderrOutput });
       }
     }, 30000);
@@ -2780,7 +2817,8 @@ function createDashboardWindow() {
   // Check Codex auth on load and every 60 seconds
   mainWindow.webContents.once('did-finish-load', () => {
     checkCodexAuthAndNotify();
-    setInterval(checkCodexAuthAndNotify, 60000);
+    if (codexAuthInterval) clearInterval(codexAuthInterval);
+    codexAuthInterval = setInterval(checkCodexAuthAndNotify, 60000);
   });
 }
 
