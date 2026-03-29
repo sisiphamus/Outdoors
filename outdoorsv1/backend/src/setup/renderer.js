@@ -194,7 +194,7 @@ document.getElementById('btn-non-student')?.addEventListener('click', () => {
 
 // Open Codex student signup page in browser
 document.getElementById('btn-codex-signup')?.addEventListener('click', () => {
-  window.electronAPI.openExternal('https://openai.com/index/codex-for-students/');
+  window.electronAPI.openExternal('https://chatgpt.com/codex/offers/students');
 });
 
 // Sign in to Codex (from any path)
