@@ -76,6 +76,40 @@ function connectSocket(backendUrl) {
 }
 
 // ---------------------------------------------------------------------------
+// Chat Input — send messages directly from the dashboard
+// ---------------------------------------------------------------------------
+
+const DASHBOARD_WINDOW_ID = 'dashboard-' + Math.random().toString(36).slice(2, 8);
+
+function sendChatMessage() {
+  const input = document.getElementById('chat-input');
+  const text = (input.value || '').trim();
+  if (!text || !socket) return;
+
+  input.value = '';
+  clearWelcome();
+
+  // Show the user's message in the feed
+  const feed = document.getElementById('feed');
+  const entry = document.createElement('div');
+  entry.className = 'feed-entry feed-msg feed-msg-user';
+  entry.innerHTML = '<div class="msg-bubble">' + esc(text) + '</div>';
+  feed.appendChild(entry);
+  feed.scrollTop = feed.scrollHeight;
+
+  // Send to backend via the existing web_message channel
+  socket.emit('web_message', { text, windowId: DASHBOARD_WINDOW_ID });
+}
+
+document.getElementById('chat-send-btn')?.addEventListener('click', sendChatMessage);
+document.getElementById('chat-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChatMessage();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Log Entry Handler
 // ---------------------------------------------------------------------------
 
