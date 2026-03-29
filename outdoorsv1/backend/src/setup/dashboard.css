@@ -712,27 +712,27 @@ html, body {
   align-items: center;
 }
 
-.btn-delete {
-  background: var(--error);
-  color: var(--white);
-  border: none;
-  padding: 4px 14px;
+/* Uniform project action buttons */
+.project-btn {
+  padding: 5px 14px;
   border-radius: 4px;
   font-size: 12px;
+  font-family: 'Source Serif 4', serif;
   cursor: pointer;
-}
-.btn-delete:hover { background: #B5553F; }
-
-.btn-open {
+  border: 1px solid var(--border);
   background: var(--bg-secondary);
   color: var(--text-secondary);
-  border: 1px solid var(--border);
-  padding: 4px 14px;
-  border-radius: 4px;
-  font-size: 12px;
-  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
 }
-.btn-open:hover { background: var(--border); color: var(--text); }
+.project-btn:hover { background: var(--border); color: var(--text); }
+.project-btn-upload { background: var(--accent); color: var(--white); border-color: var(--accent); }
+.project-btn-upload:hover { background: var(--accent-hover); color: var(--white); }
+.project-btn-create { }
+.project-btn-save { background: var(--accent); color: var(--white); border-color: var(--accent); }
+.project-btn-save:hover { background: var(--accent-hover); color: var(--white); }
+.project-btn-delete { background: var(--error); color: var(--white); border-color: var(--error); }
+.project-btn-delete:hover { background: #B5553F; color: var(--white); }
 
 /* ── Triggers ────────────────────────────────────────────── */
 
