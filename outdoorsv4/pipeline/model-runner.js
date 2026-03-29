@@ -88,17 +88,21 @@ export function runModel({
       args.push('-m', resolvedModel);
     }
 
+    let isResume = false;
     if (resumeSessionId) {
-      // Pass the specific thread_id to resume the correct conversation
+      // Pass the specific thread_id and use '-' to read follow-up prompt from stdin
       const execIdx = args.indexOf('exec');
       if (execIdx !== -1) {
-        args.splice(execIdx + 1, 0, 'resume', resumeSessionId);
+        args.splice(execIdx + 1, 0, 'resume', resumeSessionId, '-');
+        isResume = true;
       }
     }
 
     // Build the prompt: prepend system instructions if provided
+    // For resumed sessions, only send the follow-up prompt (no system instructions —
+    // the session already has context from the previous turn)
     let fullPrompt = '';
-    if (systemPrompt) {
+    if (systemPrompt && !isResume) {
       fullPrompt += `[SYSTEM INSTRUCTIONS — follow these carefully]\n${systemPrompt}\n[END SYSTEM INSTRUCTIONS]\n\n`;
     }
     if (userPrompt) {
