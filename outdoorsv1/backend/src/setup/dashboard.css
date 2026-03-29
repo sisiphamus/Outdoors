@@ -927,3 +927,46 @@ html, body {
   gap: 10px;
   margin-top: 18px;
 }
+
+/* ── Analytics ─────────────────────────────────────────── */
+
+.analytics-container { padding: 16px; overflow-y: auto; max-height: 100%; }
+.analytics-period { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+.analytics-period select {
+  padding: 5px 10px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-secondary); color: var(--text); font-family: inherit; font-size: 12px;
+}
+.analytics-cards {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px;
+}
+.analytics-card {
+  background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px; text-align: center;
+}
+.card-value { font-size: 22px; font-weight: 600; color: var(--text); font-family: 'JetBrains Mono', monospace; }
+.card-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.analytics-section { margin-bottom: 20px; }
+.analytics-section h3 { font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; font-weight: 500; }
+.analytics-row { display: flex; gap: 16px; }
+.analytics-half { flex: 1; }
+.analytics-chart { display: flex; align-items: flex-end; gap: 2px; height: 100px; }
+.chart-bar {
+  flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; min-width: 4px;
+  position: relative; cursor: default; transition: opacity 0.15s;
+}
+.chart-bar:hover { opacity: 0.8; }
+.chart-bar-label {
+  position: absolute; bottom: -16px; left: 50%; transform: translateX(-50%);
+  font-size: 8px; color: var(--text-muted); white-space: nowrap;
+}
+.analytics-hours { display: flex; gap: 2px; align-items: flex-end; height: 50px; }
+.hour-bar {
+  flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; min-width: 6px;
+  opacity: 0.3; transition: opacity 0.15s;
+}
+.tool-row, .sender-row {
+  display: flex; justify-content: space-between; padding: 4px 0;
+  font-size: 12px; border-bottom: 1px solid var(--border);
+}
+.tool-name, .sender-name { color: var(--text); }
+.tool-count, .sender-count { color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }

@@ -476,6 +476,7 @@ function setupSettings() {
       document.getElementById('tab-' + tab.dataset.tab).classList.remove('hidden');
       if (tab.dataset.tab === 'outputs') loadOutputsTree();
       if (tab.dataset.tab === 'triggers') loadTriggers();
+      if (tab.dataset.tab === 'analytics') loadAnalytics();
     });
   });
   document.getElementById('btn-save-config').addEventListener('click', saveConfig);
@@ -1195,3 +1196,96 @@ function initCodexAuthCheck() {
     }
   });
 }
+
+// ---------------------------------------------------------------------------
+// Analytics
+// ---------------------------------------------------------------------------
+
+async function loadAnalytics() {
+  const days = document.getElementById('analytics-days')?.value || 30;
+  try {
+    const url = await window.electronAPI.getBackendUrl();
+    const res = await fetch(`${url}/api/analytics?days=${days}`);
+    const data = await res.json();
+    renderAnalytics(data);
+  } catch (err) {
+    console.log('Analytics load failed:', err);
+  }
+}
+
+function renderAnalytics(data) {
+  const t = data.totals || {};
+
+  document.getElementById('stat-messages').textContent = t.messages || 0;
+  document.getElementById('stat-cost').textContent = '$' + (t.cost || 0).toFixed(2);
+  document.getElementById('stat-avg-time').textContent = t.avgDurationMs > 0 ? Math.round(t.avgDurationMs / 1000) + 's' : '—';
+  document.getElementById('stat-tokens').textContent = formatTokens((t.inputTokens || 0) + (t.outputTokens || 0));
+  document.getElementById('stat-errors').textContent = t.errors || 0;
+  const wa = data.byPlatform?.whatsapp || 0;
+  const web = data.byPlatform?.web || 0;
+  document.getElementById('stat-platform').textContent = wa + ' / ' + web;
+
+  // Daily chart
+  const chart = document.getElementById('analytics-daily-chart');
+  chart.innerHTML = '';
+  const daily = data.daily || [];
+  const maxMsg = Math.max(1, ...daily.map(d => d.messages));
+  for (const day of daily) {
+    const pct = (day.messages / maxMsg) * 100;
+    const bar = document.createElement('div');
+    bar.className = 'chart-bar';
+    bar.style.height = pct + '%';
+    bar.title = day.date + ': ' + day.messages + ' msgs, $' + (day.cost || 0).toFixed(2);
+    const label = document.createElement('div');
+    label.className = 'chart-bar-label';
+    label.textContent = day.date.slice(5);
+    bar.appendChild(label);
+    chart.appendChild(bar);
+  }
+
+  // Top tools
+  const toolsEl = document.getElementById('analytics-top-tools');
+  toolsEl.innerHTML = '';
+  for (const tool of (data.topTools || []).slice(0, 10)) {
+    const row = document.createElement('div');
+    row.className = 'tool-row';
+    row.innerHTML = '<span class="tool-name">' + esc(tool.name) + '</span><span class="tool-count">' + tool.count + '</span>';
+    toolsEl.appendChild(row);
+  }
+  if (!data.topTools?.length) toolsEl.innerHTML = '<div style="color:var(--text-muted);font-size:12px">No tool data yet</div>';
+
+  // Peak hours
+  const hoursEl = document.getElementById('analytics-peak-hours');
+  hoursEl.innerHTML = '';
+  const hours = data.peakHours || new Array(24).fill(0);
+  const maxHour = Math.max(1, ...hours);
+  for (let i = 0; i < 24; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'hour-bar';
+    const pct = (hours[i] / maxHour) * 100;
+    bar.style.height = pct + '%';
+    bar.style.opacity = 0.2 + (hours[i] / maxHour) * 0.8;
+    bar.title = i + ':00 — ' + hours[i] + ' messages';
+    hoursEl.appendChild(bar);
+  }
+
+  // Top senders
+  const sendersEl = document.getElementById('analytics-top-senders');
+  sendersEl.innerHTML = '';
+  for (const sender of (data.topSenders || []).slice(0, 8)) {
+    const row = document.createElement('div');
+    row.className = 'sender-row';
+    row.innerHTML = '<span class="sender-name">' + esc(sender.name) + '</span><span class="sender-count">' + sender.count + '</span>';
+    sendersEl.appendChild(row);
+  }
+  if (!data.topSenders?.length) sendersEl.innerHTML = '<div style="color:var(--text-muted);font-size:12px">No sender data yet</div>';
+}
+
+function formatTokens(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
+
+document.getElementById('btn-refresh-analytics')?.addEventListener('click', loadAnalytics);
+document.getElementById('analytics-days')?.addEventListener('change', loadAnalytics);

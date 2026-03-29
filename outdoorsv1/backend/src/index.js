@@ -33,7 +33,19 @@ const LOGS_DIR = join(__dirname, '..', 'bot', 'logs');
 
 const app = express();
 const server = createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+// Generate a local auth token for CSRF protection on mutating endpoints
+const LOCAL_AUTH_TOKEN = randomBytes(16).toString('hex');
+
+const io = new Server(server, { cors: { origin: ['http://127.0.0.1:3847', 'http://localhost:3847', 'null'] } });
+
+// Middleware: require auth token on mutating API endpoints
+function requireLocalAuth(req, res, next) {
+  const token = req.headers['x-local-token'];
+  if (token !== LOCAL_AUTH_TOKEN) {
+    return res.status(403).json({ error: 'Forbidden: invalid or missing x-local-token' });
+  }
+  next();
+}
 
 // In-memory ring buffer — captures all log events so the devlog viewer
 // can replay history even if it wasn't open when events occurred.
@@ -50,7 +62,7 @@ app.use(express.json());
 // API routes
 app.get('/api/health/codex', (_req, res) => {
   try {
-    const out = execFileSync('codex', ['--version'], { shell: true, timeout: 10000, encoding: 'utf-8' });
+    const out = execFileSync('codex', ['--version'], { timeout: 10000, encoding: 'utf-8', shell: process.platform === 'win32' });
     res.json({ ok: true, version: out.trim() });
   } catch (err) {
     if (err.code === 'ENOENT' || (err.message && err.message.includes('not recognized'))) {
@@ -81,7 +93,7 @@ app.get('/api/config', (_req, res) => {
   });
 });
 
-app.post('/api/config', (req, res) => {
+app.post('/api/config', requireLocalAuth, (req, res) => {
   const cfg = loadConfig();
   const allowed = ['allowedNumbers', 'allowAllNumbers', 'prefix', 'rateLimitPerMinute', 'maxResponseLength', 'messageTimeout'];
   for (const key of allowed) {
@@ -130,6 +142,40 @@ export function nextLogNumber() {
   return logCounter++;
 }
 
+function extractAnalyticsFields(data) {
+  const events = data.fullEvents || data.events || [];
+  const costEvents = events.filter(e => e.type === 'cost');
+  const toolEvents = events.filter(e => e.type === 'tool_use');
+  const toolSummary = {};
+  for (const tc of toolEvents) {
+    const name = tc.tool || tc.data?.tool || 'unknown';
+    toolSummary[name] = (toolSummary[name] || 0) + 1;
+  }
+  return {
+    cost: costEvents.reduce((s, e) => s + (e.cost || e.data?.cost || 0), 0),
+    inputTokens: costEvents.reduce((s, e) => s + (e.input_tokens || e.data?.input_tokens || 0), 0),
+    outputTokens: costEvents.reduce((s, e) => s + (e.output_tokens || e.data?.output_tokens || 0), 0),
+    cacheTokens: costEvents.reduce((s, e) => s + (e.cache_read || e.data?.cache_read || 0), 0),
+    durationMs: data.durationMs || 0,
+    platform: data.platform || (data.jid ? 'whatsapp' : 'web'),
+    toolSummary,
+    hasError: !!data.error,
+  };
+}
+
+function buildLogEntry(filename, data) {
+  const analytics = extractAnalyticsFields(data);
+  return {
+    filename,
+    sessionId: data.sessionId || null,
+    conversationNumber: data.conversationNumber ?? null,
+    sender: data.sender || 'unknown',
+    prompt: (data.prompt || '').slice(0, 80),
+    timestamp: data.timestamp,
+    ...analytics,
+  };
+}
+
 function buildLogIndex() {
   try {
     const files = readdirSync(LOGS_DIR).filter(f => f.endsWith('.json'));
@@ -140,32 +186,14 @@ function buildLogIndex() {
     logIndex = files.map(filename => {
       try {
         const data = JSON.parse(readFileSync(join(LOGS_DIR, filename), 'utf-8'));
-        const costEvent = (data.fullEvents || data.events || []).find(e => e.type === 'cost');
-        return {
-          filename,
-          sessionId: data.sessionId || null,
-          conversationNumber: data.conversationNumber ?? null,
-          sender: data.sender || 'unknown',
-          prompt: (data.prompt || '').slice(0, 80),
-          timestamp: data.timestamp,
-          cost: costEvent?.cost || 0,
-        };
+        return buildLogEntry(filename, data);
       } catch { return null; }
     }).filter(Boolean);
   } catch { logIndex = []; }
 }
 
 export function addToLogIndex(filename, data) {
-  const costEvent = (data.fullEvents || data.events || []).find(e => e.type === 'cost');
-  logIndex.push({
-    filename,
-    sessionId: data.sessionId || null,
-    conversationNumber: data.conversationNumber ?? null,
-    sender: data.sender || 'unknown',
-    prompt: (data.prompt || '').slice(0, 80),
-    timestamp: data.timestamp,
-    cost: costEvent?.cost || 0,
-  });
+  logIndex.push(buildLogEntry(filename, data));
 }
 
 // Conversation API endpoints
@@ -208,6 +236,75 @@ app.get('/api/processes', (_req, res) => {
   res.json(getActiveProcessSummary());
 });
 
+// Analytics endpoint — aggregates from in-memory logIndex
+app.get('/api/analytics', (req, res) => {
+  const days = parseInt(req.query.days) || 30;
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+  const filtered = logIndex.filter(e => e.timestamp >= cutoff);
+
+  // Totals
+  const totalMessages = filtered.length;
+  const totalCost = filtered.reduce((s, e) => s + (e.cost || 0), 0);
+  const totalDuration = filtered.reduce((s, e) => s + (e.durationMs || 0), 0);
+  const avgDurationMs = totalMessages > 0 ? Math.round(totalDuration / totalMessages) : 0;
+  const totalInputTokens = filtered.reduce((s, e) => s + (e.inputTokens || 0), 0);
+  const totalOutputTokens = filtered.reduce((s, e) => s + (e.outputTokens || 0), 0);
+  const totalCacheTokens = filtered.reduce((s, e) => s + (e.cacheTokens || 0), 0);
+  const errorCount = filtered.filter(e => e.hasError).length;
+
+  // Daily breakdown
+  const dailyMap = {};
+  for (const e of filtered) {
+    const day = e.timestamp?.slice(0, 10) || 'unknown';
+    if (!dailyMap[day]) dailyMap[day] = { date: day, messages: 0, cost: 0 };
+    dailyMap[day].messages++;
+    dailyMap[day].cost += e.cost || 0;
+  }
+  const daily = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
+
+  // By platform
+  const byPlatform = { whatsapp: 0, web: 0 };
+  for (const e of filtered) byPlatform[e.platform || 'web']++;
+
+  // Top tools
+  const toolTotals = {};
+  for (const e of filtered) {
+    for (const [name, count] of Object.entries(e.toolSummary || {})) {
+      toolTotals[name] = (toolTotals[name] || 0) + count;
+    }
+  }
+  const topTools = Object.entries(toolTotals)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
+
+  // Peak hours
+  const peakHours = new Array(24).fill(0);
+  for (const e of filtered) {
+    try { peakHours[new Date(e.timestamp).getHours()]++; } catch {}
+  }
+
+  // Top senders
+  const senderMap = {};
+  for (const e of filtered) {
+    const name = e.sender || 'unknown';
+    senderMap[name] = (senderMap[name] || 0) + 1;
+  }
+  const topSenders = Object.entries(senderMap)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  res.json({
+    totals: { messages: totalMessages, cost: Math.round(totalCost * 1000) / 1000, avgDurationMs, inputTokens: totalInputTokens, outputTokens: totalOutputTokens, cacheTokens: totalCacheTokens, errors: errorCount },
+    daily,
+    byPlatform,
+    topTools,
+    peakHours,
+    topSenders,
+  });
+});
+
 app.get('/api/conversations/:sessionId', (req, res) => {
   const sid = req.params.sessionId;
   const matching = logIndex.filter(e => e.sessionId === sid);
@@ -234,7 +331,7 @@ app.get('/api/sessions', (_req, res) => {
   res.json(listActiveSessions());
 });
 
-app.delete('/api/sessions/:id', (req, res) => {
+app.delete('/api/sessions/:id', requireLocalAuth, (req, res) => {
   const id = req.params.id;
   const sessions = listActiveSessions();
   const session = sessions.find(s => s.id === id);
@@ -421,7 +518,8 @@ io.on('connection', async (socket) => {
       activePrompts.set(parsed.number, { prompt: finalPrompt, processKey });
     }
 
-    const convoLog = { sender: 'web', prompt: finalPrompt, conversationNumber: parsed.number, resumeSessionId, timestamp: new Date().toISOString(), events: [] };
+    const startTime = Date.now();
+    const convoLog = { sender: 'web', prompt: finalPrompt, conversationNumber: parsed.number, resumeSessionId, timestamp: new Date().toISOString(), platform: 'web', events: [] };
     const isKnownCode = parsed.number !== null && getConversationMode(parsed.number) === 'code';
     // Track current sessionId for progress events (starts with resume or client-provided)
     let currentSessionId = resumeSessionId || clientSessionId || null;
@@ -582,6 +680,7 @@ io.on('connection', async (socket) => {
 
     // Persist log
     try {
+      convoLog.durationMs = Date.now() - startTime;
       mkdirSync(LOGS_DIR, { recursive: true });
       const filename = `${nextLogNumber()}_web.json`;
       writeFileSync(join(LOGS_DIR, filename), JSON.stringify(convoLog, null, 2));
@@ -623,6 +722,12 @@ if (runtimeHealth.stale) {
   console.log(`  [Runtime] changed files: ${runtimeHealth.changedFiles.map(f => f.path).join(', ')}`);
 }
 
+// Auth token endpoint — Electron main process fetches this once on startup
+// Safe because the server only binds to 127.0.0.1
+app.get('/api/auth-token', (_req, res) => {
+  res.json({ token: LOCAL_AUTH_TOKEN });
+});
+
 // Start
 server.listen(config.port, '127.0.0.1', async () => {
   console.log(`\n  Outdoors Bot`);
@@ -647,12 +752,12 @@ server.listen(config.port, '127.0.0.1', async () => {
 });
 
 // Trigger reload endpoint — called by Electron main after config changes
-app.post('/api/triggers/reload', (_req, res) => {
+app.post('/api/triggers/reload', requireLocalAuth, (_req, res) => {
   reloadTriggers();
   res.json({ ok: true });
 });
 
-app.post('/api/whatsapp/reconnect', async (_req, res) => {
+app.post('/api/whatsapp/reconnect', requireLocalAuth, async (_req, res) => {
   try {
     const result = await reconnectWhatsApp();
     res.json(result);
