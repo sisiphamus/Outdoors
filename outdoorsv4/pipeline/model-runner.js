@@ -109,8 +109,7 @@ export function runModel({
       fullPrompt += userPrompt;
     }
 
-    // Codex exec reads prompt from stdin when '-' is passed or no prompt arg
-    // We'll write the prompt via stdin for reliability (avoids arg length limits)
+    console.log(`[model-runner] cmd=${cmd} args=${JSON.stringify(args)} resume=${!!resumeSessionId} sessionId=${resumeSessionId || 'none'} prompt=${(fullPrompt || '').slice(0, 80)}`);
 
     // On Windows, shell: true is needed so spawn resolves .cmd wrappers (e.g. codex.cmd).
     const proc = spawn(cmd, args, {
