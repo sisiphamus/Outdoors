@@ -85,6 +85,49 @@ function getConvLabel(data) {
   return m ? '#' + m[1] : '';
 }
 
+// Dev vs Simple log mode
+let devMode = false;
+document.getElementById('btn-log-mode')?.addEventListener('click', () => {
+  devMode = !devMode;
+  const btn = document.getElementById('btn-log-mode');
+  if (btn) btn.textContent = devMode ? 'Dev' : 'Simple';
+});
+
+function simplifyPhase(desc) {
+  if (!desc) return 'Working...';
+  const d = desc.toLowerCase();
+  if (d.includes('classifying')) return 'Understanding your request...';
+  if (d.includes('complete') && d.includes('intent')) return 'Got it — figuring out the plan';
+  if (d.includes('selecting') && d.includes('memory')) return 'Checking what I know...';
+  if (d.includes('selected:')) return 'Found relevant context';
+  if (d.includes('executing')) return 'Working on it...';
+  if (d.includes('creating') && d.includes('memory')) return 'Learning something new...';
+  if (d.includes('continuing conversation')) return 'Picking up where we left off...';
+  if (d.includes('reviewing') && d.includes('learn')) return 'Reflecting on what I did...';
+  if (d.includes('delegating')) return 'Handing off to a specialist...';
+  if (d.includes('detecting') && d.includes('gap')) return 'Checking if I need more info...';
+  if (d.includes('resumed session returned empty')) return 'Starting fresh...';
+  return desc;
+}
+
+function simplifyTool(toolName) {
+  const t = (toolName || '').toLowerCase();
+  if (t.includes('bash') || t.includes('shell')) return 'Running a command';
+  if (t.includes('read')) return 'Reading a file';
+  if (t.includes('write')) return 'Writing a file';
+  if (t.includes('web_search') || t.includes('websearch')) return 'Searching the web';
+  if (t.includes('web_fetch') || t.includes('webfetch')) return 'Fetching a webpage';
+  if (t.includes('snapshot') || t.includes('screenshot')) return 'Looking at the screen';
+  if (t.includes('navigate')) return 'Opening a page';
+  if (t.includes('click')) return 'Clicking something';
+  if (t.includes('type') || t.includes('fill')) return 'Typing text';
+  if (t.includes('evaluate') || t.includes('script')) return 'Running browser code';
+  if (t.includes('gmail') || t.includes('email')) return 'Working with email';
+  if (t.includes('calendar')) return 'Checking calendar';
+  if (t.includes('drive') || t.includes('docs')) return 'Working with Google Drive';
+  return 'Using ' + toolName;
+}
+
 function handleLogEntry(entry, isHistory) {
   if (!entry || !entry.type) return;
   // Only clear welcome on actual user activity, not status events
@@ -102,13 +145,19 @@ function handleLogEntry(entry, isHistory) {
       addFeedIncoming(ts, sender, prompt, cl);
       break;
     }
-    case 'pipeline_phase':
-      addFeedPhase(ts, cp + (d.description || ('Phase ' + (d.phase || '?'))));
+    case 'pipeline_phase': {
+      const raw = d.description || ('Phase ' + (d.phase || '?'));
+      addFeedPhase(ts, cp + (devMode ? raw : simplifyPhase(raw)));
       break;
+    }
     case 'tool_use': {
       const toolName = d.tool || 'Unknown';
-      const detail = summarizeToolInput(toolName, d.input);
-      addFeedTool(ts, toolName, cp + detail, !isHistory);
+      if (devMode) {
+        const detail = summarizeToolInput(toolName, d.input);
+        addFeedTool(ts, toolName, cp + detail, !isHistory);
+      } else {
+        addFeedPhase(ts, cp + simplifyTool(toolName));
+      }
       break;
     }
     case 'tool_result':
@@ -116,11 +165,16 @@ function handleLogEntry(entry, isHistory) {
       break;
     case 'assistant_text': {
       const text = d.text || '';
-      if (text.length > 0) addFeedThinking(ts, cp + text);
+      if (text.length > 0) {
+        if (devMode) {
+          addFeedThinking(ts, cp + text);
+        }
+        // In simple mode, skip assistant thinking — too noisy
+      }
       break;
     }
     case 'delegation':
-      addFeedPhase(ts, cp + 'Delegating to ' + (d.employee || 'specialist'));
+      addFeedPhase(ts, cp + (devMode ? 'Delegating to ' + (d.employee || 'specialist') : 'Handing off to a specialist...'));
       break;
     case 'cost':
       removeAllSpinners();
