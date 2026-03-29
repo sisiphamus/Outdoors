@@ -94,18 +94,24 @@ document.getElementById('btn-log-mode')?.addEventListener('click', () => {
 });
 
 function simplifyPhase(desc) {
-  if (!desc) return 'Working...';
+  if (!desc) return null;
   const d = desc.toLowerCase();
+  // Skip entirely in simple mode (too technical / noisy)
+  if (d.includes('complete') && d.includes('intent')) return null;  // "Complete → intent=query formats=..."
+  if (d.includes('selected:')) return null;  // "Selected: browser-preferences (always-include)..."
+  if (d.includes('scores:') || d.includes('score=')) return null;  // score details
+  if (d.includes('model b') || d.includes('model c') || d.includes('phase')) return null;
+  if (d.includes('reviewing') && d.includes('learn')) return null;  // learner output
+  if (d.includes('detecting') && d.includes('gap')) return null;
+  if (d.includes('didn\'t identify gaps')) return null;
+  if (d.includes('forcing knowledge')) return null;
+  // Show simplified versions
   if (d.includes('classifying')) return 'Understanding your request...';
-  if (d.includes('complete') && d.includes('intent')) return 'Got it — figuring out the plan';
   if (d.includes('selecting') && d.includes('memory')) return 'Checking what I know...';
-  if (d.includes('selected:')) return 'Found relevant context';
   if (d.includes('executing')) return 'Working on it...';
   if (d.includes('creating') && d.includes('memory')) return 'Learning something new...';
   if (d.includes('continuing conversation')) return 'Picking up where we left off...';
-  if (d.includes('reviewing') && d.includes('learn')) return 'Reflecting on what I did...';
   if (d.includes('delegating')) return 'Handing off to a specialist...';
-  if (d.includes('detecting') && d.includes('gap')) return 'Checking if I need more info...';
   if (d.includes('resumed session returned empty')) return 'Starting fresh...';
   return desc;
 }
@@ -147,7 +153,13 @@ function handleLogEntry(entry, isHistory) {
     }
     case 'pipeline_phase': {
       const raw = d.description || ('Phase ' + (d.phase || '?'));
-      addFeedPhase(ts, cp + (devMode ? raw : simplifyPhase(raw)));
+      if (devMode) {
+        addFeedPhase(ts, cp + raw);
+      } else {
+        const simple = simplifyPhase(raw);
+        if (simple) addFeedPhase(ts, cp + simple);
+        // null = skip this entry in simple mode
+      }
       break;
     }
     case 'tool_use': {
@@ -185,8 +197,10 @@ function handleLogEntry(entry, isHistory) {
       break;
     }
     case 'response': {
-      const rLen = d.responseLength || 0;
-      if (rLen > 0) addFeedEntry('info', cp + 'Response sent (' + rLen + ' chars)');
+      if (devMode) {
+        const rLen = d.responseLength || 0;
+        if (rLen > 0) addFeedEntry('info', cp + 'Response sent (' + rLen + ' chars)');
+      }
       break;
     }
     case 'connected':
@@ -199,7 +213,7 @@ function handleLogEntry(entry, isHistory) {
       addFeedEntry('info', 'WhatsApp QR code generated');
       break;
     case 'processing':
-      addFeedEntry('info', cp + 'Processing request from ' + (d.sender || 'unknown') + '...');
+      if (devMode) addFeedEntry('info', cp + 'Processing request from ' + (d.sender || 'unknown') + '...');
       break;
     case 'clarification_requested':
       addFeedEntry('info', cp + 'Waiting for user input...');
