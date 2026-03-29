@@ -1,6 +1,6 @@
 {
   "name": "outdoors-desktop",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "description": "Outdoors — Stop working, start living.",
   "main": "main.js",
   "scripts": {
