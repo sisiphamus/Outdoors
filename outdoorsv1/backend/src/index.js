@@ -253,6 +253,7 @@ let webSession = { sessionId: null, lastActivity: 0 };  // fallback for non-wind
 const socketSessions = new Map();  // Map<socketId, { sessionId, lastActivity }> — per-socket isolation for dashboard windows
 const activeWebConversations = new Set();  // numbered conv numbers currently in-flight
 const activeWebWindows = new Set();         // windowIds currently in-flight (unnumbered)
+const activePrompts = new Map();            // Map<convNumber, { prompt, processKey }> — for mid-execution context injection
 
 function cleanupShortTerm() {
   try {
@@ -348,6 +349,23 @@ io.on('connection', async (socket) => {
       return;
     }
 
+    // Mid-execution context injection: if this numbered conversation is already running,
+    // kill it, combine prompts, and restart with the combined context
+    if (parsed.number !== null && parsed.command === 'message' && activeWebConversations.has(parsed.number)) {
+      const active = activePrompts.get(parsed.number);
+      if (active) {
+        killProcess(active.processKey);
+        const combined = active.prompt + '\n\n[ADDITIONAL CONTEXT from user]: ' + parsed.body;
+        activePrompts.delete(parsed.number);
+        activeWebConversations.delete(parsed.number);
+        parsed = { ...parsed, body: combined };
+        const truncated = parsed.body.length > 60 ? parsed.body.slice(0, 60) + '...' : parsed.body;
+        socket.emit('chat_response', `Got it — adding to the current task.`);
+        emitLog('context_injected', { sender: 'web', processKey: `web:conv:${parsed.number}`, conversation: parsed.number, addition: truncated });
+        // Fall through to normal execution with combined prompt
+      }
+    }
+
     // Track active conversations/windows (for cleanup gating, not blocking)
     if (parsed.number !== null) {
       activeWebConversations.add(parsed.number);
@@ -396,6 +414,11 @@ io.on('connection', async (socket) => {
       } catch (err) {
         console.log('[web:image_save_error]', err.message);
       }
+    }
+
+    // Store prompt for mid-execution context injection
+    if (parsed.number !== null) {
+      activePrompts.set(parsed.number, { prompt: finalPrompt, processKey });
     }
 
     const convoLog = { sender: 'web', prompt: finalPrompt, conversationNumber: parsed.number, resumeSessionId, timestamp: new Date().toISOString(), events: [] };
@@ -547,6 +570,7 @@ io.on('connection', async (socket) => {
       // Release tracking for this conversation/window
       if (parsed.number !== null) {
         activeWebConversations.delete(parsed.number);
+        activePrompts.delete(parsed.number);
       } else {
         activeWebWindows.delete(windowKey);
       }
