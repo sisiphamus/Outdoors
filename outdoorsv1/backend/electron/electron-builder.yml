@@ -7,6 +7,7 @@ publish:
   provider: github
   owner: sisiphamus
   repo: Outdoors
+  releaseType: release
 
 directories:
   output: dist
@@ -30,10 +31,12 @@ extraResources:
       # Dependencies & build artifacts
       - "!node_modules/**"
       - "!electron/**"
-      # Auth & config
+      # Auth & config — NEVER bundle secrets
       - "!auth_state/**"
       - "!config.json"
       - "!.env"
+      - "!oauth-creds.json"
+      - "!.codex.json"
       # Conversation data
       - "!bot/logs/**"
       - "!bot/outputs/**"
