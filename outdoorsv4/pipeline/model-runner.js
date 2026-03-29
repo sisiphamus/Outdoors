@@ -78,8 +78,10 @@ export function runModel({
     // Skip git repo check since we may run outside a repo
     args.push('--skip-git-repo-check');
 
-    // Don't persist session files for bot executions
-    args.push('--ephemeral');
+    // Only use ephemeral for fire-and-forget tasks (no conversation to resume)
+    if (!resumeSessionId && !processKey) {
+      args.push('--ephemeral');
+    }
 
     const resolvedModel = resolveModel(model);
     if (resolvedModel) {
@@ -87,11 +89,10 @@ export function runModel({
     }
 
     if (resumeSessionId) {
-      // Codex uses 'exec resume --last' for session continuity
-      // Insert 'resume --last' after 'exec'
+      // Pass the specific thread_id to resume the correct conversation
       const execIdx = args.indexOf('exec');
       if (execIdx !== -1) {
-        args.splice(execIdx + 1, 0, 'resume', '--last');
+        args.splice(execIdx + 1, 0, 'resume', resumeSessionId);
       }
     }
 
