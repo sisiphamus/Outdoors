@@ -2482,6 +2482,52 @@ function writeMcpConfig(browserKey, browser) {
   } catch (err) {
     console.error('[mcp-config] Failed to write mcp-bot.json:', err.message);
   }
+
+  // Register MCP servers with Codex CLI (codex mcp add) so they're available globally.
+  // Codex reads from ~/.codex/config.toml, NOT from .codex.json project files.
+  const codexCmd = platform.getCodexCmdPath();
+  for (const [name, server] of Object.entries(botMcpConfig.mcpServers)) {
+    try {
+      const cmdArgs = [server.command, ...(server.args || [])];
+      // Build env flag string if needed
+      const envParts = [];
+      if (server.env) {
+        for (const [k, v] of Object.entries(server.env)) {
+          envParts.push(`${k}=${v}`);
+        }
+      }
+      // Remove existing, then re-add (idempotent)
+      try { execSync(`"${codexCmd}" mcp remove ${name}`, { timeout: 5000, windowsHide: true, stdio: 'ignore', shell: true }); } catch {}
+      const addArgs = ['mcp', 'add', name, '--', ...cmdArgs];
+      execSync(`"${codexCmd}" ${addArgs.map(a => `"${a}"`).join(' ')}`, { timeout: 10000, windowsHide: true, stdio: 'ignore', shell: true });
+      // If env vars needed, write them directly to config.toml
+      if (envParts.length > 0) {
+        const configToml = path.join(process.env.HOME || process.env.USERPROFILE || '', '.codex', 'config.toml');
+        if (fs.existsSync(configToml)) {
+          let toml = fs.readFileSync(configToml, 'utf-8');
+          const envObj = Object.entries(server.env).map(([k, v]) => `${k} = "${v}"`).join(', ');
+          const envLine = `env = { ${envObj} }`;
+          // Add env line after the args line for this server
+          const serverSection = `[mcp_servers.${name}]`;
+          if (toml.includes(serverSection) && !toml.includes(`[mcp_servers.${name}]\n`)) {
+            // Already has env — skip
+          } else {
+            const argsLine = toml.indexOf('args = [', toml.indexOf(serverSection));
+            if (argsLine !== -1) {
+              const lineEnd = toml.indexOf('\n', argsLine);
+              if (lineEnd !== -1 && !toml.slice(lineEnd, lineEnd + 50).includes('env =')) {
+                toml = toml.slice(0, lineEnd + 1) + envLine + '\n' + toml.slice(lineEnd + 1);
+                fs.writeFileSync(configToml, toml);
+              }
+            }
+          }
+        }
+      }
+      console.log(`[mcp-config] Registered Codex MCP server: ${name}`);
+    } catch (err) {
+      console.log(`[mcp-config] Failed to register ${name} with Codex: ${err.message}`);
+    }
+  }
 }
 
 // ── Dev Log Window ──────────────────────────────────────────────────────────
