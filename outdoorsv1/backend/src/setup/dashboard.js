@@ -79,6 +79,12 @@ function connectSocket(backendUrl) {
 // Log Entry Handler
 // ---------------------------------------------------------------------------
 
+function getConvLabel(data) {
+  const pk = data?.processKey || '';
+  const m = pk.match(/:conv:(\d+)/);
+  return m ? '#' + m[1] : '';
+}
+
 function handleLogEntry(entry, isHistory) {
   if (!entry || !entry.type) return;
   // Only clear welcome on actual user activity, not status events
@@ -86,22 +92,23 @@ function handleLogEntry(entry, isHistory) {
 
   const d = entry.data || {};
   const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : now();
+  const cl = getConvLabel(d); // e.g. '#3' or ''
+  const cp = cl ? `[${cl}] ` : ''; // prefix e.g. '[#3] ' or ''
 
   switch (entry.type) {
     case 'incoming': {
       const sender = d.sender || 'unknown';
       const prompt = d.prompt || '';
-      const convLabel = d.conversation != null ? `#${d.conversation}` : '';
-      addFeedIncoming(ts, sender, prompt, convLabel);
+      addFeedIncoming(ts, sender, prompt, cl);
       break;
     }
     case 'pipeline_phase':
-      addFeedPhase(ts, d.description || ('Phase ' + (d.phase || '?')));
+      addFeedPhase(ts, cp + (d.description || ('Phase ' + (d.phase || '?'))));
       break;
     case 'tool_use': {
       const toolName = d.tool || 'Unknown';
       const detail = summarizeToolInput(toolName, d.input);
-      addFeedTool(ts, toolName, detail, !isHistory);
+      addFeedTool(ts, toolName, cp + detail, !isHistory);
       break;
     }
     case 'tool_result':
@@ -109,23 +116,23 @@ function handleLogEntry(entry, isHistory) {
       break;
     case 'assistant_text': {
       const text = d.text || '';
-      if (text.length > 0) addFeedThinking(ts, text);
+      if (text.length > 0) addFeedThinking(ts, cp + text);
       break;
     }
     case 'delegation':
-      addFeedPhase(ts, 'Delegating to ' + (d.employee || 'specialist'));
+      addFeedPhase(ts, cp + 'Delegating to ' + (d.employee || 'specialist'));
       break;
     case 'cost':
       removeAllSpinners();
       break;
     case 'sent': {
       const to = d.to || '';
-      addFeedSent(ts, to, d.responseLength || 0, d.response || '');
+      addFeedSent(ts, to, d.responseLength || 0, d.response || '', cl);
       break;
     }
     case 'response': {
       const rLen = d.responseLength || 0;
-      if (rLen > 0) addFeedEntry('info', 'Response sent (' + rLen + ' chars)');
+      if (rLen > 0) addFeedEntry('info', cp + 'Response sent (' + rLen + ' chars)');
       break;
     }
     case 'connected':
@@ -138,13 +145,13 @@ function handleLogEntry(entry, isHistory) {
       addFeedEntry('info', 'WhatsApp QR code generated');
       break;
     case 'processing':
-      addFeedEntry('info', 'Processing request from ' + (d.sender || 'unknown') + '...');
+      addFeedEntry('info', cp + 'Processing request from ' + (d.sender || 'unknown') + '...');
       break;
     case 'clarification_requested':
-      addFeedEntry('info', 'Waiting for user input...');
+      addFeedEntry('info', cp + 'Waiting for user input...');
       break;
     case 'error':
-      addFeedEntry('error', d.message || d.error || 'Unknown error');
+      addFeedEntry('error', cp + (d.message || d.error || 'Unknown error'));
       break;
     case 'received':
     case 'rate-limited':
@@ -261,11 +268,12 @@ function addFeedThinking(ts, text) {
   feed.scrollTop = feed.scrollHeight;
 }
 
-function addFeedSent(ts, to, len, response) {
+function addFeedSent(ts, to, len, response, convLabel) {
   const feed = document.getElementById('feed');
   const entry = document.createElement('div');
   entry.className = 'feed-entry';
-  let html = '<span class="feed-time">' + ts + '</span><span class="feed-info">Sent to ' + esc(to.split('@')[0] || to) + ' (' + len + ' chars)</span>';
+  const prefix = convLabel ? '[' + convLabel + '] ' : '';
+  let html = '<span class="feed-time">' + ts + '</span><span class="feed-info">' + esc(prefix) + 'Sent to ' + esc(to.split('@')[0] || to) + ' (' + len + ' chars)</span>';
   if (response) {
     let rendered = esc(response);
     rendered = rendered.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
