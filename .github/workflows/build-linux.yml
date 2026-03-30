@@ -1,0 +1,100 @@
+name: Build & Test Linux
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Write OAuth credentials
+        run: echo '${{ secrets.OAUTH_CREDS_JSON }}' > outdoorsv1/backend/oauth-creds.json
+
+      # ── Tests (before build — fast feedback) ─────────────────────
+
+      - name: Install backend dependencies
+        working-directory: outdoorsv1/backend
+        run: npm install
+
+      - name: Run unit tests
+        working-directory: outdoorsv1/backend
+        run: node --test tests/clarification-manager.test.js tests/message-handler.test.js tests/runtime-health.test.js
+
+      - name: Run platform tests
+        working-directory: outdoorsv1/backend
+        run: node --test tests/platform.test.js
+
+      - name: Run Linux integration tests
+        working-directory: outdoorsv1/backend
+        run: node --test tests/linux-integration.test.js
+
+      # ── Build ────────────────────────────────────────────────────
+
+      - name: Install Electron dependencies
+        working-directory: outdoorsv1/backend/electron
+        run: npm install
+
+      - name: Remove secrets before packaging
+        run: rm -f outdoorsv1/backend/oauth-creds.json
+
+      - name: Build and publish Linux installer
+        working-directory: outdoorsv1/backend/electron
+        run: npm run build:linux -- --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Post-build: verify ───────────────────────────────────────
+
+      - name: Verify build output
+        working-directory: outdoorsv1/backend/electron
+        run: |
+          set -e
+
+          # Verify AppImage was produced
+          APPIMAGE=$(ls dist/*.AppImage 2>/dev/null | head -1)
+          if [ -z "$APPIMAGE" ]; then
+            echo "FAIL: No .AppImage found in dist/"
+            ls -la dist/
+            exit 1
+          fi
+          echo "AppImage: $APPIMAGE ($(du -h "$APPIMAGE" | cut -f1))"
+
+          # Verify .deb was produced
+          DEB=$(ls dist/*.deb 2>/dev/null | head -1)
+          if [ -z "$DEB" ]; then
+            echo "WARN: No .deb found (non-critical)"
+          else
+            echo "Deb: $DEB ($(du -h "$DEB" | cut -f1))"
+          fi
+
+          # Verify no secrets in unpacked app
+          UNPACKED=$(find dist -name "resources" -path "*/linux-unpacked/*" | head -1)
+          if [ -n "$UNPACKED" ]; then
+            if [ -f "$UNPACKED/project/config.json" ]; then echo "FAIL: config.json leaked"; exit 1; fi
+            if [ -f "$UNPACKED/project/.env" ]; then echo "FAIL: .env leaked"; exit 1; fi
+            if [ -f "$UNPACKED/project/oauth-creds.json" ]; then echo "FAIL: oauth-creds.json leaked"; exit 1; fi
+          fi
+
+          echo "All Linux build checks passed"
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Outdoors-Linux
+          path: |
+            outdoorsv1/backend/electron/dist/*.AppImage
+            outdoorsv1/backend/electron/dist/*.deb
+          retention-days: 30

@@ -479,6 +479,18 @@ function setupIPC() {
       fixMacPath();
       return;
     }
+    if (process.platform !== 'win32') {
+      // Linux: re-read PATH from shell profile
+      try {
+        const userShell = process.env.SHELL || '/bin/bash';
+        const shellPath = execSync(`${userShell} -ilc 'echo $PATH'`, {
+          encoding: 'utf-8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
+        if (shellPath) process.env.PATH = shellPath;
+        console.log('[deps] Linux PATH refreshed');
+      } catch {}
+      return;
+    }
     try {
       // Windows: Read the machine + user PATH from the registry and merge
       const machinePath = execSync('reg query "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" /v Path', {
@@ -566,14 +578,38 @@ function setupIPC() {
     });
   }
 
+  // Linux: install a package via apt/dnf/pacman
+  function linuxInstall(pkgManager, args, name) {
+    return new Promise((resolve) => {
+      console.log(`[deps] Installing ${name} via ${pkgManager}...`);
+      const proc = spawn('sudo', [pkgManager, ...args], {
+        shell: true,
+        env: process.env,
+      });
+      let output = '';
+      proc.stdout?.on('data', (d) => { output += d.toString(); });
+      proc.stderr?.on('data', (d) => { output += d.toString(); });
+      proc.on('close', (code) => {
+        console.log(`[deps] ${name} ${pkgManager} install exited with code ${code}`);
+        resolve({ ok: code === 0, output });
+      });
+      proc.on('error', (err) => {
+        console.log(`[deps] ${name} ${pkgManager} install error:`, err.message);
+        resolve({ ok: false, output: err.message });
+      });
+    });
+  }
+
   ipcMain.handle('install-system-deps', async () => {
     const IS_WIN = process.platform === 'win32';
     const IS_MAC = process.platform === 'darwin';
+    const IS_LINUX = !IS_WIN && !IS_MAC;
     const results = { node: 'skip', git: 'skip', python: 'skip' };
 
     // Check package manager availability
     let hasWinget = false;
     let hasBrw = false;
+    let linuxPkgMgr = null;
     if (IS_WIN) {
       try {
         execSync('winget --version', { encoding: 'utf-8', shell: true, timeout: 5000, windowsHide: true, stdio: 'pipe' });
@@ -581,6 +617,10 @@ function setupIPC() {
       } catch {}
     } else if (IS_MAC) {
       hasBrw = hasBrew();
+    } else if (IS_LINUX) {
+      if (isCommandAvailable('apt')) linuxPkgMgr = 'apt';
+      else if (isCommandAvailable('dnf')) linuxPkgMgr = 'dnf';
+      else if (isCommandAvailable('pacman')) linuxPkgMgr = 'pacman';
     }
 
     // Node.js
@@ -600,6 +640,13 @@ function setupIPC() {
         }
         results.node = r.ok ? 'installed' : 'failed';
         if (r.ok) refreshPath();
+      } else if (IS_LINUX && linuxPkgMgr) {
+        let r;
+        if (linuxPkgMgr === 'apt') r = await linuxInstall('apt', ['install', '-y', 'nodejs', 'npm'], 'Node.js');
+        else if (linuxPkgMgr === 'dnf') r = await linuxInstall('dnf', ['install', '-y', 'nodejs', 'npm'], 'Node.js');
+        else if (linuxPkgMgr === 'pacman') r = await linuxInstall('pacman', ['-S', '--noconfirm', 'nodejs', 'npm'], 'Node.js');
+        results.node = r?.ok ? 'installed' : 'failed';
+        if (r?.ok) refreshPath();
       } else {
         results.node = 'missing';
       }
@@ -617,8 +664,14 @@ function setupIPC() {
         const r = await brewInstall('git', 'Git');
         results.git = r.ok ? 'installed' : 'failed';
         if (r.ok) refreshPath();
+      } else if (IS_LINUX && linuxPkgMgr) {
+        let r;
+        if (linuxPkgMgr === 'apt') r = await linuxInstall('apt', ['install', '-y', 'git'], 'Git');
+        else if (linuxPkgMgr === 'dnf') r = await linuxInstall('dnf', ['install', '-y', 'git'], 'Git');
+        else if (linuxPkgMgr === 'pacman') r = await linuxInstall('pacman', ['-S', '--noconfirm', 'git'], 'Git');
+        results.git = r?.ok ? 'installed' : 'failed';
+        if (r?.ok) refreshPath();
       } else {
-        // macOS includes git via Xcode CLT; if missing, prompt user
         results.git = 'missing';
       }
     } else {
@@ -635,6 +688,13 @@ function setupIPC() {
         const r = await brewInstall('python@3.13', 'Python');
         results.python = r.ok ? 'installed' : 'failed';
         if (r.ok) refreshPath();
+      } else if (IS_LINUX && linuxPkgMgr) {
+        let r;
+        if (linuxPkgMgr === 'apt') r = await linuxInstall('apt', ['install', '-y', 'python3', 'python3-pip'], 'Python');
+        else if (linuxPkgMgr === 'dnf') r = await linuxInstall('dnf', ['install', '-y', 'python3', 'python3-pip'], 'Python');
+        else if (linuxPkgMgr === 'pacman') r = await linuxInstall('pacman', ['-S', '--noconfirm', 'python', 'python-pip'], 'Python');
+        results.python = r?.ok ? 'installed' : 'failed';
+        if (r?.ok) refreshPath();
       } else {
         results.python = 'missing';
       }
@@ -2830,6 +2890,23 @@ function createDashboardWindow() {
 }
 
 // ── App Lifecycle ───────────────────────────────────────────────────────────
+
+// Prevent multiple instances — second launch focuses the existing window instead.
+// Without this, each instance spawns its own backend + WhatsApp connection,
+// causing auth conflicts and the "spotty connection" symptom.
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  console.log('[lifecycle] Another instance is already running — quitting.');
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // Someone tried to launch a second instance — focus our window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
 
 app.whenReady().then(async () => {
   // Prevent system sleep so the bot stays connected with lid closed

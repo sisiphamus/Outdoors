@@ -262,11 +262,25 @@ function openTerminalWithCommand(cmd, args) {
       detached: true,
     });
   }
-  // Linux fallback
-  return spawn('x-terminal-emulator', ['-e', cmd, ...args], {
-    stdio: 'ignore',
-    detached: true,
-  });
+  // Linux — try common terminal emulators in order
+  const terminals = ['gnome-terminal', 'konsole', 'xfce4-terminal', 'xterm', 'x-terminal-emulator'];
+  for (const term of terminals) {
+    try {
+      execSync(`which ${term}`, { stdio: 'ignore', timeout: 2000 });
+      if (term === 'gnome-terminal') {
+        const proc = spawn(term, ['--', cmd, ...args], { detached: true, stdio: 'ignore' });
+        proc.unref();
+        return proc;
+      }
+      const proc = spawn(term, ['-e', `${cmd} ${args.join(' ')}`], { detached: true, stdio: 'ignore' });
+      proc.unref();
+      return proc;
+    } catch {}
+  }
+  // Last resort: spawn directly without terminal
+  const proc = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+  proc.unref();
+  return proc;
 }
 
 // ── Startup Registration ─────────────────────────────────────────────────────
@@ -307,6 +321,20 @@ function registerStartup(appName, executablePath, workingDir) {
       fs.writeFileSync(plistPath, plist);
       execSync(`launchctl load "${plistPath}"`, { timeout: 5000 });
     } catch {}
+  } else {
+    // Linux XDG autostart
+    const desktopEntry = `[Desktop Entry]
+Type=Application
+Name=${appName}
+Exec=${executablePath}
+Path=${workingDir}
+X-GNOME-Autostart-enabled=true
+Hidden=false`;
+    const autostartDir = path.join(process.env.HOME || '', '.config', 'autostart');
+    try {
+      fs.mkdirSync(autostartDir, { recursive: true });
+      fs.writeFileSync(path.join(autostartDir, `${appName.toLowerCase()}.desktop`), desktopEntry);
+    } catch {}
   }
 }
 
@@ -319,6 +347,10 @@ function unregisterStartup(appName) {
       execSync(`launchctl unload "${plistPath}"`, { timeout: 5000 });
       fs.unlinkSync(plistPath);
     } catch {}
+  } else {
+    // Linux XDG autostart cleanup
+    const desktopFile = path.join(process.env.HOME || '', '.config', 'autostart', `${appName.toLowerCase()}.desktop`);
+    try { fs.unlinkSync(desktopFile); } catch {}
   }
 }
 

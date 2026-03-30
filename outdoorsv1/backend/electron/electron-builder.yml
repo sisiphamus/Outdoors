@@ -88,3 +88,10 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: Outdoors
   include: installer.nsh
+
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: ../src/setup/icon.png
+  category: Utility
