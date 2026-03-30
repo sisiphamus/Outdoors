@@ -222,6 +222,8 @@ function handleLogEntry(entry, isHistory) {
     case 'incoming': {
       const sender = d.sender || 'unknown';
       const prompt = d.prompt || '';
+      // Skip for web messages — sendChatMessage() already added the user bubble
+      if (sender === 'web') break;
       addFeedIncoming(ts, sender, prompt, cl);
       break;
     }
@@ -261,6 +263,8 @@ function handleLogEntry(entry, isHistory) {
       break;
     case 'sent': {
       const to = d.to || '';
+      // Skip for web messages — chat_response already displays the response
+      if (to === 'web' || d.sender === 'web') break;
       addFeedSent(ts, to, d.responseLength || 0, d.response || '', cl);
       break;
     }
