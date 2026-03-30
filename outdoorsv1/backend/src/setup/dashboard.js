@@ -35,15 +35,27 @@ document.getElementById('btn-share-invite')?.addEventListener('click', async () 
 
     if (data.inviteCode) {
       await navigator.clipboard.writeText(data.inviteCode);
-      btn.textContent = 'Code: ' + data.inviteCode + ' (copied!)';
-      setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 5000);
+      btn.textContent = data.inviteCode + ' (copied!)';
+      btn.disabled = false;
+      // Show the code prominently in the chat feed
+      const feed = document.getElementById('feed');
+      const entry = document.createElement('div');
+      entry.className = 'feed-entry feed-msg feed-msg-assistant';
+      entry.innerHTML = '<div class="msg-bubble" style="text-align:center;">' +
+        '<div style="font-size:11px;opacity:0.6;margin-bottom:6px;">Your invite code</div>' +
+        '<div style="font-size:22px;font-weight:700;letter-spacing:2px;font-family:monospace;margin-bottom:8px;">' + data.inviteCode + '</div>' +
+        '<div style="font-size:11px;opacity:0.6;">Copied to clipboard — share it with a friend!</div>' +
+        '</div>';
+      feed.appendChild(entry);
+      feed.scrollTop = feed.scrollHeight;
+      setTimeout(() => { btn.textContent = 'Invite Code'; }, 3000);
     } else {
       btn.textContent = data.error || 'Error';
-      setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
+      setTimeout(() => { btn.textContent = 'Invite Code'; btn.disabled = false; }, 2000);
     }
   } catch (err) {
     btn.textContent = 'Offline';
-    setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
+    setTimeout(() => { btn.textContent = 'Invite Code'; btn.disabled = false; }, 2000);
   }
 });
 
