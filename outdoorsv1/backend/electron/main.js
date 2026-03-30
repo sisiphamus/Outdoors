@@ -2945,19 +2945,24 @@ app.whenReady().then(async () => {
     console.log(`[update] New version available: ${info.version}`);
   });
   autoUpdater.on('update-downloaded', (info) => {
-    console.log(`[update] Update downloaded: ${info.version}. Will install on quit.`);
-    // Notify the user via the dashboard
+    console.log(`[update] Update downloaded: ${info.version}. Restarting to install...`);
+    // Notify the user briefly, then quit and install
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('update-ready', { version: info.version });
     }
+    // Give 3 seconds for the notification to show, then restart
+    setTimeout(() => {
+      autoUpdater.quitAndInstall(false, true); // isSilent=false, isForceRunAfter=true
+    }, 3000);
   });
   autoUpdater.on('error', (err) => {
     console.log('[update] Auto-update error:', err.message);
   });
 
-  // Check for updates (non-blocking — doesn't delay startup)
+  // Check for updates on startup and every 15 minutes
   if (app.isPackaged) {
     setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 5000);
+    setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 15 * 60 * 1000);
   }
 
   const isFirstRun = ensureWorkspace();
