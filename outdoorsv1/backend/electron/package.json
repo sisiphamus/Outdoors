@@ -2,6 +2,8 @@
   "name": "outdoors-desktop",
   "version": "1.2.12",
   "description": "Outdoors — Stop working, start living.",
+  "homepage": "https://tryoutdooors.pages.dev",
+  "author": "Outdoors",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
