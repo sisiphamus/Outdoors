@@ -8,7 +8,7 @@ let socket = null;
 let currentMemoryFile = null;
 let memoryDirty = false;
 
-const REFERRAL_API = 'https://outdoors-referral.towne.workers.dev';
+const REFERRAL_API = 'https://outdoors-referral.outdoors-rice.workers.dev';
 
 // Invite share button
 document.getElementById('btn-share-invite')?.addEventListener('click', async () => {
@@ -18,17 +18,18 @@ document.getElementById('btn-share-invite')?.addEventListener('click', async () 
   btn.disabled = true;
 
   try {
-    const downloadKey = window.electronAPI ? await window.electronAPI.getDownloadKey() : null;
-    if (!downloadKey) {
-      btn.textContent = 'No key';
-      setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
-      return;
+    // Use google email or downloadKey as userId
+    let userId = null;
+    if (window.electronAPI?.getFullConfig) {
+      const cfg = await window.electronAPI.getFullConfig();
+      userId = cfg.googleEmail || cfg.downloadKey || 'user-' + Date.now();
     }
+    if (!userId) userId = 'user-' + Date.now();
 
     const res = await fetch(REFERRAL_API + '/api/create-invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ downloadKey }),
+      body: JSON.stringify({ userId }),
     });
     const data = await res.json();
 

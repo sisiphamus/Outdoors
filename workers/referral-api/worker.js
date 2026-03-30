@@ -94,25 +94,49 @@ export default {
       return json({ codes });
     }
 
-    // ── POST /api/claim — Mark invite as used (called when download starts) ─
+    // ── POST /api/claim — Claim invite, generate key, mark as used ─
     if (path === '/api/claim' && request.method === 'POST') {
       const { code } = await request.json().catch(() => ({}));
       if (!code) return json({ error: 'Missing code' }, 400);
 
       const invite = await env.KV.get(`invite:${code}`, 'json');
       if (!invite) return json({ error: 'Invalid code' }, 404);
-      if (invite.status === 'claimed') return json({ error: 'Already used' }, 400);
+      if (invite.status === 'claimed') {
+        // Already claimed — return existing key if stored
+        return json({ error: 'Already used', key: invite.key || null });
+      }
 
+      // Generate a key for the new user
+      const key = randomCode(12);
       invite.status = 'claimed';
       invite.claimedAt = new Date().toISOString();
+      invite.key = key;
       await env.KV.put(`invite:${code}`, JSON.stringify(invite));
+
+      // Store the key
+      await env.KV.put(`key:${key}`, JSON.stringify({
+        inviteCode: code,
+        createdAt: new Date().toISOString(),
+      }));
 
       // Clear creator's active invite pointer
       if (invite.createdBy && invite.createdBy !== 'admin') {
         await env.KV.delete(`user:${invite.createdBy}:invite`);
       }
 
-      return json({ ok: true });
+      return json({ ok: true, key });
+    }
+
+    // ── POST /api/validate-key — App checks key on startup ─
+    if (path === '/api/validate-key' && request.method === 'POST') {
+      const { key } = await request.json().catch(() => ({}));
+      if (!key) return json({ valid: false });
+
+      // Admin master key always valid
+      if (key === 'ADMIN-MASTER-KEY') return json({ valid: true });
+
+      const entry = await env.KV.get(`key:${key}`, 'json');
+      return json({ valid: !!entry });
     }
 
     // ── GET /:code — Invite page (the main gate) ──────────────
@@ -132,7 +156,18 @@ export default {
         });
       }
 
-      return new Response(renderDownloadPage(code, env.SITE_URL), {
+      // Claim the invite and generate key on page load (server-side)
+      const key = randomCode(12);
+      invite.status = 'claimed';
+      invite.claimedAt = new Date().toISOString();
+      invite.key = key;
+      await env.KV.put(`invite:${code}`, JSON.stringify(invite));
+      await env.KV.put(`key:${key}`, JSON.stringify({ inviteCode: code, createdAt: new Date().toISOString() }));
+      if (invite.createdBy && invite.createdBy !== 'admin') {
+        await env.KV.delete(`user:${invite.createdBy}:invite`);
+      }
+
+      return new Response(renderDownloadPage(key), {
         headers: { 'Content-Type': 'text/html' },
       });
     }
@@ -182,7 +217,7 @@ ${pageStyles()}
 </body></html>`;
 }
 
-function renderDownloadPage(code, siteUrl) {
+function renderDownloadPage(key) {
   return `<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8">
@@ -197,27 +232,26 @@ ${pageStyles()}
     <h2>You're Invited!</h2>
     <p>Someone shared Outdoors with you. You're one of the first users.</p>
     <p style="margin:16px 0;font-size:14px;color:#888;">$100 in free usage thanks to OpenAI &#x2764;</p>
-    <div class="downloads">
-      <a href="${DOWNLOADS.windows}" class="dl-btn" onclick="claimInvite('${code}', '${siteUrl}')">
-        Download for Windows
-      </a>
-      <a href="${DOWNLOADS.mac}" class="dl-btn dl-secondary" onclick="claimInvite('${code}', '${siteUrl}')">
-        Download for Mac
-      </a>
+
+    <div style="background:#111;border:1px solid #333;border-radius:8px;padding:20px;text-align:center;margin:20px 0">
+      <p style="color:#888;font-size:13px;margin-bottom:8px">Your invite key (enter this in the app after installing):</p>
+      <p id="key-display" style="font-size:24px;font-weight:700;letter-spacing:2px;color:#fff;font-family:monospace;user-select:all">${key}</p>
+      <button id="copy-btn" style="margin-top:12px;padding:8px 20px;background:#fff;color:#000;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer">Copy Key</button>
     </div>
-    <p class="hint">Outdoors works through WhatsApp — send emails, manage your calendar, build websites, do research, and more.</p>
+
+    <div class="downloads">
+      <a href="${DOWNLOADS.windows}" class="dl-btn">Download for Windows</a>
+      <a href="${DOWNLOADS.mac}" class="dl-btn dl-secondary">Download for Mac</a>
+    </div>
+    <p class="hint">After installing, open Outdoors and paste your key to get started.</p>
   </div>
 </div>
 <script>
-async function claimInvite(code, siteUrl) {
-  try {
-    await fetch(siteUrl + '/api/claim', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
-    });
-  } catch {}
-}
+document.getElementById('copy-btn').addEventListener('click', function() {
+  navigator.clipboard.writeText('${key}');
+  this.textContent = 'Copied!';
+  setTimeout(() => this.textContent = 'Copy Key', 2000);
+});
 </script>
 </body></html>`;
 }
