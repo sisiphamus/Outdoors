@@ -17,6 +17,7 @@ import { isOnboardingNeeded, handleOnboardingMessage } from './onboarding.js';
 import { addToLogIndex, nextLogNumber } from './index.js';
 import { extractImages } from './transport-utils.js';
 import { formatOutdoorsResponse } from './wa-formatter.js';
+import { recordTask } from './telemetry.js';
 import { closeSession } from '../../../outdoorsv4/session/session-manager.js';
 
 // Per-JID send serialization — ensures one response's images+text
@@ -755,6 +756,19 @@ async function startWhatsApp() {
               };
               writeFileSync(join(LOGS_DIR, filename), JSON.stringify(convoLog, null, 2));
               addToLogIndex(filename, convoLog);
+              // Anonymous usage telemetry (counts only, no content)
+              const costEvents = (convoLog.fullEvents || []).filter(e => e.type === 'cost');
+              const toolEvents = (convoLog.fullEvents || []).filter(e => e.type === 'tool_use');
+              recordTask({
+                durationMs: convoLog.durationMs || 0,
+                platform: 'whatsapp',
+                toolCount: toolEvents.length,
+                cost: costEvents.reduce((s, e) => s + (e.cost || e.data?.cost || 0), 0),
+                inputTokens: costEvents.reduce((s, e) => s + (e.input_tokens || e.data?.input_tokens || 0), 0),
+                outputTokens: costEvents.reduce((s, e) => s + (e.output_tokens || e.data?.output_tokens || 0), 0),
+                cacheTokens: costEvents.reduce((s, e) => s + (e.cache_read || e.data?.cache_read || 0), 0),
+                hasError: !convoLog.sendSucceeded,
+              });
               io?.emit('conversation_update', { sessionId: result.sessionId, conversationNumber: result.conversationNumber });
             } catch (e) {
               console.log('[whatsapp:log_write_error]', e.message);

@@ -26,6 +26,7 @@ import { ensureBrowserReady } from './browser-health.js';
 
 import { registerStartup } from './register-startup.js';
 import { startTriggerScheduler, reloadTriggers } from './trigger-scheduler.js';
+import { recordTask } from './telemetry.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SHORT_TERM_DIR = join(__dirname, '..', 'bot', 'memory', 'short-term');
@@ -678,13 +679,25 @@ io.on('connection', async (socket) => {
       io.emit('session_closed', { id: session.id });
     }
 
-    // Persist log
+    // Persist log + telemetry
     try {
       convoLog.durationMs = Date.now() - startTime;
       mkdirSync(LOGS_DIR, { recursive: true });
       const filename = `${nextLogNumber()}_web.json`;
       writeFileSync(join(LOGS_DIR, filename), JSON.stringify(convoLog, null, 2));
       addToLogIndex(filename, convoLog);
+      // Anonymous usage telemetry (counts only, no content)
+      const analytics = extractAnalyticsFields(convoLog);
+      recordTask({
+        durationMs: convoLog.durationMs,
+        platform: 'web',
+        toolCount: Object.values(analytics.toolSummary).reduce((s, n) => s + n, 0),
+        cost: analytics.cost,
+        inputTokens: analytics.inputTokens,
+        outputTokens: analytics.outputTokens,
+        cacheTokens: analytics.cacheTokens,
+        hasError: !!convoLog.error,
+      });
     } catch {}
   });
 
@@ -749,6 +762,15 @@ server.listen(config.port, '127.0.0.1', async () => {
   } catch (err) {
     console.error('[startup] Failed:', err);
   }
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[FATAL] Port ${config.port} is already in use — another instance may be running. Exiting.`);
+    process.exit(1);
+  }
+  console.error('[FATAL] Server error:', err);
+  process.exit(1);
 });
 
 // Trigger reload endpoint — called by Electron main after config changes
