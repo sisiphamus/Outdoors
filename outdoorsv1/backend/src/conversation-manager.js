@@ -73,6 +73,11 @@ export function parseMessage(text) {
     return { number: null, command: 'status', body: '' };
   }
 
+  const referMatch = text.match(/^refer\s+(\S+@\S+)/i);
+  if (referMatch) {
+    return { number: null, command: 'refer', body: referMatch[1] };
+  }
+
   const numMatch = text.match(/^(\d+)\s+(.+)$/s);
   if (numMatch) {
     const num = parseInt(numMatch[1], 10);

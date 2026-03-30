@@ -18,6 +18,7 @@ import { addToLogIndex, nextLogNumber } from './index.js';
 import { extractImages } from './transport-utils.js';
 import { formatOutdoorsResponse } from './wa-formatter.js';
 import { recordTask } from './telemetry.js';
+import { hasQuota, incrementMessageCount, addReferral, getQuotaStatus } from './quota.js';
 import { closeSession } from '../../../outdoorsv4/session/session-manager.js';
 
 // Per-JID send serialization — ensures one response's images+text
@@ -524,9 +525,22 @@ async function startWhatsApp() {
         const msgSock = sock;
         // (fire-and-forget body — .catch() added at bottom)
 
-        // Retry helper: attempts to send a WhatsApp message up to 3 times
+        // Retry helper: attempts to send a WhatsApp message up to 3 times.
+        // If disconnected, waits up to 60s for reconnection before retrying.
         async function sendWithRetry(jid, content, opts, retries = 3) {
           for (let attempt = 1; attempt <= retries; attempt++) {
+            // Wait for reconnection if socket is dead
+            if (!sock || connectionStatus !== 'connected') {
+              console.log(`[wa:send] Disconnected — waiting up to 60s for reconnect before attempt ${attempt}...`);
+              const start = Date.now();
+              while (Date.now() - start < 60_000) {
+                if (sock && connectionStatus === 'connected') break;
+                await new Promise(r => setTimeout(r, 2000));
+              }
+              if (!sock || connectionStatus !== 'connected') {
+                throw new Error('Still disconnected after 60s — response lost');
+              }
+            }
             try {
               const sent = await sock.sendMessage(jid, content, opts);
               return sent;
@@ -624,6 +638,28 @@ async function startWhatsApp() {
             }
           }
 
+          // Check for refer command
+          const msgText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+          const referMatch = msgText.match(/^refer\s+(\S+@\S+)/i);
+          if (referMatch) {
+            const refResult = addReferral(referMatch[1]);
+            const reply = refResult.ok
+              ? `Added! You now have ${refResult.remaining} messages remaining.`
+              : refResult.error;
+            const sent = await sendWithRetry(jid, { text: formatOutdoorsResponse(reply) });
+            if (sent?.key?.id) { addBotSentId(sent.key.id); storeMessage(sent.key.id, sent.message); }
+            return;
+          }
+
+          // Quota check
+          if (!hasQuota()) {
+            const status = getQuotaStatus();
+            const reply = `You've used all ${status.total} messages! To unlock 40 more, refer a friend:\n\nrefer friend@rice.edu`;
+            const sent = await sendWithRetry(jid, { text: formatOutdoorsResponse(reply) });
+            if (sent?.key?.id) { addBotSentId(sent.key.id); storeMessage(sent.key.id, sent.message); }
+            return;
+          }
+
           var result = await handleMessage(msg, emitLog);
         } catch (handlerErr) {
           // handleMessage threw unexpectedly — send error to user instead of silently dropping
@@ -716,6 +752,7 @@ async function startWhatsApp() {
                 }
               }
               sendSucceeded = true;
+              incrementMessageCount();
               console.log(`Sent to ${result.sender} (${result.response.length} chars)`);
               emitLog('sent', { to: result.sender, response: result.response, responseLength: result.response.length, imageCount: images.length });
             } catch (err) {

@@ -27,6 +27,7 @@ import { ensureBrowserReady } from './browser-health.js';
 import { registerStartup } from './register-startup.js';
 import { startTriggerScheduler, reloadTriggers } from './trigger-scheduler.js';
 import { recordTask } from './telemetry.js';
+import { hasQuota, incrementMessageCount, addReferral, getQuotaStatus } from './quota.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SHORT_TERM_DIR = join(__dirname, '..', 'bot', 'memory', 'short-term');
@@ -447,6 +448,24 @@ io.on('connection', async (socket) => {
       return;
     }
 
+    // Handle refer command
+    if (parsed.command === 'refer') {
+      const result = addReferral(parsed.body);
+      if (result.ok) {
+        socket.emit('chat_response', `Added! You now have ${result.remaining} messages remaining.`);
+      } else {
+        socket.emit('chat_response', result.error);
+      }
+      return;
+    }
+
+    // Quota check — block execution if no remaining messages
+    if (parsed.command === 'message' && !hasQuota()) {
+      const status = getQuotaStatus();
+      socket.emit('chat_response', `You've used all ${status.total} messages! To unlock 40 more, refer a friend:\n\nrefer friend@rice.edu`);
+      return;
+    }
+
     // Mid-execution context injection: if this numbered conversation is already running,
     // kill it, combine prompts, and restart with the combined context
     if (parsed.number !== null && parsed.command === 'message' && activeWebConversations.has(parsed.number)) {
@@ -588,6 +607,7 @@ io.on('connection', async (socket) => {
       convoLog.response = response;
       convoLog.sessionId = sessionId;
       convoLog.fullEvents = fullEvents;
+      incrementMessageCount();
       const { images: responseImages, cleanText: responseCleanText } = extractImages(response);
       socket.emit('chat_response', { response: responseCleanText, sessionId: currentSessionId, images: responseImages, messageId });
       io.emit('conversation_update', { sessionId, conversationNumber: parsed.number });

@@ -19,6 +19,8 @@ const defaults = {
   codeCodexArgs: ['exec'],
   codeWorkingDirectory: process.cwd(),
   prefix: '!outdoors ',
+  messageCount: 0,
+  referrals: [],
   authDir: join(__dirname, '..', 'auth_state'),
   outdoorsGroupJid: '',
 };
