@@ -269,6 +269,11 @@ html, body {
   padding: 0 4px;
 }
 
+/* Dev/Simple mode visibility — toggle via .show-dev on #feed */
+.dev-only { display: none; }
+.feed.show-dev .dev-only { display: block; }
+.feed.show-dev .simple-only { display: none; }
+
 .feed-thinking {
   border-left: 2px solid var(--border);
   padding-left: 10px;

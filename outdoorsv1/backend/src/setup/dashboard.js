@@ -318,6 +318,17 @@ function addFeedEntry(type, text) {
   feed.scrollTop = feed.scrollHeight;
 }
 
+function addFeedEntryDev(type, text) {
+  const feed = document.getElementById('feed');
+  const entry = document.createElement('div');
+  entry.className = 'feed-entry dev-only';
+  const time = now();
+  if (type === 'error') entry.innerHTML = '<span class="feed-time">' + time + '</span><span class="feed-error">' + esc(text) + '</span>';
+  else entry.innerHTML = '<span class="feed-time">' + time + '</span><span class="feed-info">' + esc(text) + '</span>';
+  feed.appendChild(entry);
+  feed.scrollTop = feed.scrollHeight;
+}
+
 function addFeedIncoming(ts, sender, prompt, convLabel) {
   const feed = document.getElementById('feed');
   const entry = document.createElement('div');
@@ -329,19 +340,19 @@ function addFeedIncoming(ts, sender, prompt, convLabel) {
   feed.scrollTop = feed.scrollHeight;
 }
 
-function addFeedPhase(ts, description) {
+function addFeedPhase(ts, description, devOnly) {
   const feed = document.getElementById('feed');
   const entry = document.createElement('div');
-  entry.className = 'feed-entry';
-  entry.innerHTML = '<span class="feed-time">' + ts + '</span><span class="feed-phase">' + esc(description) + '</span>';
+  entry.className = 'feed-entry' + (devOnly ? ' dev-only' : ' simple-only');
+  entry.innerHTML = '<span class="feed-phase">' + esc(description) + '</span>';
   feed.appendChild(entry);
   feed.scrollTop = feed.scrollHeight;
 }
 
-function addFeedTool(ts, toolName, detail, showSpinner) {
+function addFeedTool(ts, toolName, detail, showSpinner, devOnly) {
   const feed = document.getElementById('feed');
   const entry = document.createElement('div');
-  entry.className = 'feed-entry';
+  entry.className = 'feed-entry' + (devOnly ? ' dev-only' : '');
   const spinner = showSpinner ? '<span class="tool-spinner"></span>' : '';
   const detailHtml = detail ? '<div class="feed-tool-detail">' + esc(detail) + '</div>' : '';
   entry.innerHTML = '<div class="feed-tool">' + spinner + '<span class="tool-name">' + esc(toolName) + '</span></div>' + detailHtml;
@@ -349,7 +360,7 @@ function addFeedTool(ts, toolName, detail, showSpinner) {
   feed.scrollTop = feed.scrollHeight;
 }
 
-function addFeedThinking(ts, text) {
+function addFeedThinking(ts, text, devOnly) {
   const feed = document.getElementById('feed');
   const last = feed.lastElementChild;
   if (last && last.classList.contains('feed-thinking')) {
@@ -357,7 +368,7 @@ function addFeedThinking(ts, text) {
     if (span) { span.textContent = truncate(text, 300); feed.scrollTop = feed.scrollHeight; return; }
   }
   const entry = document.createElement('div');
-  entry.className = 'feed-entry feed-thinking';
+  entry.className = 'feed-entry feed-thinking' + (devOnly ? ' dev-only' : '');
   entry.innerHTML = '<span class="feed-time">' + ts + '</span><span class="feed-thinking-text">' + esc(truncate(text, 300)) + '</span>';
   feed.appendChild(entry);
   feed.scrollTop = feed.scrollHeight;
@@ -368,19 +379,14 @@ function addFeedSent(ts, to, len, response, convLabel) {
   if (response) {
     const entry = document.createElement('div');
     entry.className = 'feed-entry feed-msg feed-msg-assistant';
-    let rendered = esc(response);
-    rendered = rendered.replace(/\[IMAGE:[^\]]+\]/g, '');
-    rendered = rendered.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-    rendered = rendered.replace(/`([^`]+)`/g, '<code>$1</code>');
-    rendered = rendered.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     const prefix = convLabel ? '[' + convLabel + '] ' : '';
-    const meta = devMode ? '<div class="msg-meta">' + esc(prefix) + 'Sent to ' + esc(to.split('@')[0] || to) + ' &middot; ' + ts + '</div>' : '';
-    entry.innerHTML = meta + '<div class="msg-bubble">' + rendered + '</div>';
+    const meta = '<div class="msg-meta dev-only">' + esc(prefix) + 'Sent to ' + esc(to.split('@')[0] || to) + ' &middot; ' + ts + '</div>';
+    entry.innerHTML = meta + '<div class="msg-bubble">' + renderMsg(response) + '</div>';
     feed.appendChild(entry);
     feed.scrollTop = feed.scrollHeight;
-  } else if (devMode) {
+  } else {
     const prefix = convLabel ? '[' + convLabel + '] ' : '';
-    addFeedEntry('info', prefix + 'Sent to ' + (to.split('@')[0] || to) + ' (' + len + ' chars)');
+    addFeedEntryDev('info', prefix + 'Sent to ' + (to.split('@')[0] || to) + ' (' + len + ' chars)');
   }
 }
 
@@ -388,11 +394,7 @@ function addAssistantMessage(text) {
   const feed = document.getElementById('feed');
   const entry = document.createElement('div');
   entry.className = 'feed-entry feed-msg feed-msg-assistant';
-  let rendered = esc(text);
-  rendered = rendered.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-  rendered = rendered.replace(/`([^`]+)`/g, '<code>$1</code>');
-  rendered = rendered.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  entry.innerHTML = '<div class="msg-bubble">' + rendered + '</div>';
+  entry.innerHTML = '<div class="msg-bubble">' + renderMsg(text) + '</div>';
   feed.appendChild(entry);
   feed.scrollTop = feed.scrollHeight;
 }
@@ -1137,6 +1139,16 @@ function esc(text) {
   const d = document.createElement('div');
   d.textContent = text;
   return d.innerHTML;
+}
+
+function renderMsg(text) {
+  let r = esc(text);
+  r = r.replace(/\[IMAGE:[^\]]+\]/g, '');
+  r = r.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+  r = r.replace(/`([^`]+)`/g, '<code>$1</code>');
+  r = r.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  r = r.replace(/\n/g, '<br>');
+  return r;
 }
 
 // ---------------------------------------------------------------------------
