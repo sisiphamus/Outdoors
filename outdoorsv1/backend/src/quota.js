@@ -98,7 +98,7 @@ export function sendReferral(email, customMessage, executePrompt, replyFn, killP
     ? ''
     : `\n\n${senderName} says: "${customMessage}"`;
 
-  const emailBody = `Hey ${friendName},\n\nYou're Invited! ${senderName} has been using Outdoors and you get to be one of the first users.\n\n$100 in free usage thanks to OpenAI <3${personalNote}\n\nOutdoors is a personal AI assistant that works through WhatsApp — it can send emails, manage your calendar, build websites, do research, and way more.\n\nGet started: tryoutdoors.com`;
+  const emailBody = `Hey ${friendName},\n\nYou're Invited! ${senderName} has been using Outdoors and you get to be one of the first users.\n\n$100 in free usage thanks to OpenAI <3${personalNote}\n\nOutdoors is a personal AI assistant that works through WhatsApp — it can send emails, manage your calendar, build websites, do research, and way more.\n\nGet started: tryoutdoors-rice.pages.dev`;
 
   const emailPrompt = `Send an email to ${normalized} with subject "You're Invited to Outdoors" and body:\n\n${emailBody}\n\nUse Gmail MCP tools. Send it now.`;
   executePrompt(emailPrompt, { processKey: 'system:refer', onProgress: () => {} }).catch(() => {});
