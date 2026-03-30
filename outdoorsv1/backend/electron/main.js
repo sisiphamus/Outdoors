@@ -3024,7 +3024,4 @@ app.on('before-quit', () => {
   } catch {}
   try { platform.killPort(port); } catch {}
 
-  // Force exit after a short grace period — prevents the app from hanging
-  // if any child process or event loop keeps the Electron process alive.
-  setTimeout(() => process.exit(0), 2000);
 });
