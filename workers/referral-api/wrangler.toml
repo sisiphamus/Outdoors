@@ -3,8 +3,8 @@ main = "worker.js"
 compatibility_date = "2024-01-01"
 
 [vars]
-ADMIN_SECRET = "change-this-in-dashboard"
-SITE_URL = "https://tryoutdooors.pages.dev"
+ADMIN_SECRET = "outdoors-admin-2026"
+SITE_URL = "https://tryoutdoors-rice.pages.dev"
 
 [[kv_namespaces]]
 binding = "KV"
