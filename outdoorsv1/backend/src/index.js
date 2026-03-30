@@ -25,7 +25,7 @@ import { createSession, closeSession, listActiveSessions, cleanupOrphanedSession
 import { ensureBrowserReady } from './browser-health.js';
 
 import { registerStartup } from './register-startup.js';
-import { startTriggerScheduler, reloadTriggers } from './trigger-scheduler.js';
+import { startAutomationScheduler, reloadAutomations } from './automation-scheduler.js';
 import { recordTask } from './telemetry.js';
 import { hasQuota, incrementMessageCount, addReferral, getQuotaStatus } from './quota.js';
 
@@ -778,7 +778,7 @@ server.listen(config.port, '127.0.0.1', async () => {
     startWhatsApp();
 
     // Start trigger scheduler
-    startTriggerScheduler({ io, emitLog, executeCodexPrompt, config, saveConfig, loadConfig });
+    startAutomationScheduler({ io, emitLog, executeCodexPrompt, config, saveConfig, loadConfig });
   } catch (err) {
     console.error('[startup] Failed:', err);
   }
@@ -794,8 +794,8 @@ server.on('error', (err) => {
 });
 
 // Trigger reload endpoint — called by Electron main after config changes
-app.post('/api/triggers/reload', requireLocalAuth, (_req, res) => {
-  reloadTriggers();
+app.post('/api/automations/reload', requireLocalAuth, (_req, res) => {
+  reloadAutomations();
   res.json({ ok: true });
 });
 

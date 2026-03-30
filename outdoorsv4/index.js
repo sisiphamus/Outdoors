@@ -203,6 +203,10 @@ export function killProcess(key) {
   return registry.kill(key);
 }
 
+export function hasActiveProcess(key) {
+  return registry.has(key);
+}
+
 export function codeAgentOptions(baseOptions, modelOverride) {
   const emp = EMPLOYEES.coder;
   return {

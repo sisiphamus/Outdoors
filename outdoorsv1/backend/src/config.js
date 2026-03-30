@@ -29,7 +29,13 @@ function loadConfig() {
   if (existsSync(CONFIG_PATH)) {
     try {
       const file = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
-      return { ...defaults, ...file };
+      const cfg = { ...defaults, ...file };
+      // Migrate: rename triggers → automations (backwards-compatible)
+      if (cfg.triggers && !cfg.automations) {
+        cfg.automations = cfg.triggers;
+        delete cfg.triggers;
+      }
+      return cfg;
     } catch {
       return { ...defaults };
     }

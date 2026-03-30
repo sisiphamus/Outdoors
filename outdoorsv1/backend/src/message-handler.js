@@ -1,4 +1,4 @@
-import { executeCodexPrompt, killProcess, codeAgentOptions, clearClarificationState, getActiveProcessSummary } from './codex-bridge.js';
+import { executeCodexPrompt, killProcess, hasActiveProcess, codeAgentOptions, clearClarificationState, getActiveProcessSummary } from './codex-bridge.js';
 import { config } from './config.js';
 import { parseMessage, resolveSession, createOrUpdateConversation, closeConversation, getConversationMode } from './conversation-manager.js';
 import { downloadContentFromMessage } from '@whiskeysockets/baileys';
@@ -411,6 +411,14 @@ export async function handleMessage(message, emitLog) {
     resumeSessionId = resolveSession(parsed.number);
   }
   const processKey = parsed.number !== null ? `wa:conv:${parsed.number}` : `wa:chat:${jid}`;
+
+  // If this numbered conversation already has a process running, kill it first.
+  // Without this, the second process overwrites the first in the registry,
+  // orphaning the first process (unreachable by stop/pause).
+  if (parsed.number !== null && hasActiveProcess(processKey)) {
+    emitLog?.('killing_duplicate', { sender, processKey, conversation: parsed.number, reason: 'new message for same conversation' });
+    killProcess(processKey);
+  }
 
   emitLog?.('received', { sender, prompt: parsed.body, conversation: parsed.number, processKey });
   emitLog?.('processing', { sender, prompt: parsed.body, conversation: parsed.number, resuming: resumeSessionId, processKey });

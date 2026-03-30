@@ -8,6 +8,10 @@ export function killProcess(key) {
   return outdoorsv4.killProcess(key);
 }
 
+export function hasActiveProcess(key) {
+  return outdoorsv4.hasActiveProcess(key);
+}
+
 export function codeAgentOptions(baseOptions, modelOverride) {
   return outdoorsv4.codeAgentOptions(baseOptions, modelOverride);
 }
