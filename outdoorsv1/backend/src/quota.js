@@ -1,18 +1,15 @@
-// Message quota — daily allowance that grows with referrals.
+// Message quota — daily allowance that grows with verified referrals.
 // 30 messages on first day, then 10/day base + 10/day per verified referral.
-// Referrals require email verification (6-digit code sent via Gmail).
+// Referrals verified by sending an invite email and checking for bounces.
 import { config, saveConfig } from './config.js';
-import { randomInt } from 'crypto';
 
 const FIRST_DAY_ALLOWANCE = 30;
 const DAILY_BASE = 10;
 const DAILY_PER_REFERRAL = 10;
-
-// Pending verification codes: { email: { code, expires } }
-const pendingVerifications = new Map();
+const BOUNCE_CHECK_DELAY_MS = 45000; // 45 seconds
 
 function today() {
-  return new Date().toISOString().slice(0, 10); // "2026-03-29"
+  return new Date().toISOString().slice(0, 10);
 }
 
 function isFirstDay() {
@@ -31,7 +28,6 @@ export function getDailyQuota() {
 
 function getTodayCount() {
   if (config.dailyCountDate !== today()) {
-    // New day — reset counter
     config.dailyCountDate = today();
     config.dailyCount = 0;
     saveConfig(config);
@@ -49,12 +45,14 @@ export function incrementMessageCount() {
     config.dailyCount = 0;
   }
   config.dailyCount = (config.dailyCount || 0) + 1;
-  config.messageCount = (config.messageCount || 0) + 1; // lifetime total
+  config.messageCount = (config.messageCount || 0) + 1;
   saveConfig(config);
 }
 
-// Step 1: Start referral — validate email, generate code, return it for sending
-export function startReferral(email) {
+// Start referral — validate email, send invite, then check for bounce after 45s.
+// executePrompt: function to run a Codex prompt (for sending email + checking bounce)
+// replyFn: function to send a message back to the user after verification
+export function startReferral(email, executePrompt, replyFn) {
   const normalized = email.trim().toLowerCase();
   if (!normalized.endsWith('@rice.edu')) {
     return { ok: false, error: 'Must be a @rice.edu email address.' };
@@ -63,39 +61,52 @@ export function startReferral(email) {
   if (config.referrals.includes(normalized)) {
     return { ok: false, error: 'That email has already been referred.' };
   }
-  const code = String(randomInt(100000, 999999));
-  pendingVerifications.set(normalized, { code, expires: Date.now() + 10 * 60 * 1000 }); // 10 min
-  return { ok: true, needsVerification: true, email: normalized, code };
-}
+  if (!config.pendingReferrals) config.pendingReferrals = [];
+  if (config.pendingReferrals.includes(normalized)) {
+    return { ok: false, error: 'Verification in progress for that email.' };
+  }
 
-// Step 2: Verify code — if correct, add to referrals
-export function verifyReferral(codeInput) {
-  const trimmed = String(codeInput).trim();
-  for (const [email, entry] of pendingVerifications) {
-    if (entry.code === trimmed) {
-      if (Date.now() > entry.expires) {
-        pendingVerifications.delete(email);
-        return { ok: false, error: 'Code expired. Send the refer command again.' };
-      }
-      pendingVerifications.delete(email);
-      if (!config.referrals) config.referrals = [];
-      if (!config.referrals.includes(email)) {
-        config.referrals.push(email);
+  // Send invite email
+  const emailPrompt = `Send an email to ${normalized} with subject "You've been invited to Outdoors" and body "Hey! Someone shared Outdoors with you — a personal AI assistant that works through WhatsApp.\n\nGet started at tryoutdoors.com\n\nOutdoors can send emails, manage your calendar, build websites, research topics, and more — all from your phone.". Use Gmail MCP tools. Send it now, do not ask questions.`;
+  executePrompt(emailPrompt, { processKey: 'system:refer', onProgress: () => {} }).catch(() => {});
+
+  // Add to pending
+  config.pendingReferrals.push(normalized);
+  saveConfig(config);
+
+  // After 45s, check for bounce
+  setTimeout(async () => {
+    try {
+      const bounceCheckPrompt = `Search Gmail for emails from mailer-daemon@googlemail.com received in the last 2 minutes. Check if any mention "${normalized}" as an undeliverable address. Respond with ONLY the word "BOUNCED" if you find a delivery failure for that address, or ONLY the word "DELIVERED" if no bounce was found. Do not include any other text.`;
+      const result = await executePrompt(bounceCheckPrompt, { processKey: 'system:bounce-check', onProgress: () => {} });
+      const response = (result.response || '').trim().toUpperCase();
+      const bounced = response.includes('BOUNCED');
+
+      // Remove from pending
+      config.pendingReferrals = (config.pendingReferrals || []).filter(e => e !== normalized);
+
+      if (bounced) {
         saveConfig(config);
+        replyFn(`The email ${normalized} doesn't exist — referral not counted.`);
+      } else {
+        if (!config.referrals.includes(normalized)) {
+          config.referrals.push(normalized);
+        }
+        saveConfig(config);
+        const status = getQuotaStatus();
+        replyFn(`Verified! ${normalized} confirmed. Your daily limit is now ${status.dailyQuota} messages (${status.remaining} remaining today).`);
       }
-      const status = getQuotaStatus();
-      return { ok: true, email, remaining: status.remaining, dailyQuota: status.dailyQuota };
+    } catch {
+      // On error, give benefit of the doubt
+      config.pendingReferrals = (config.pendingReferrals || []).filter(e => e !== normalized);
+      if (!config.referrals.includes(normalized)) {
+        config.referrals.push(normalized);
+      }
+      saveConfig(config);
     }
-  }
-  return { ok: false, error: 'Invalid code. Check the email and try again.' };
-}
+  }, BOUNCE_CHECK_DELAY_MS);
 
-export function hasPendingVerification() {
-  // Clean expired
-  for (const [email, entry] of pendingVerifications) {
-    if (Date.now() > entry.expires) pendingVerifications.delete(email);
-  }
-  return pendingVerifications.size > 0;
+  return { ok: true, pending: true };
 }
 
 export function getQuotaStatus() {

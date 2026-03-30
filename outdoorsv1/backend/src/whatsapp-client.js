@@ -18,7 +18,7 @@ import { addToLogIndex, nextLogNumber } from './index.js';
 import { extractImages } from './transport-utils.js';
 import { formatOutdoorsResponse } from './wa-formatter.js';
 import { recordTask } from './telemetry.js';
-import { hasQuota, incrementMessageCount, startReferral, verifyReferral, getQuotaStatus } from './quota.js';
+import { hasQuota, incrementMessageCount, startReferral, getQuotaStatus } from './quota.js';
 import { closeSession } from '../../../outdoorsv4/session/session-manager.js';
 
 // Per-JID send serialization — ensures one response's images+text
@@ -638,32 +638,19 @@ async function startWhatsApp() {
             }
           }
 
-          // Check for refer/verify commands
+          // Check for refer command
           const msgText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
           const referMatch = msgText.match(/^refer\s+(\S+@\S+)/i);
           if (referMatch) {
-            const refResult = startReferral(referMatch[1]);
-            let reply;
-            if (refResult.needsVerification) {
-              // Send verification email via bot execution (fire-and-forget)
-              const { executeCodexPrompt } = await import('./codex-bridge.js');
-              const emailPrompt = `Send an email to ${refResult.email} with subject "Outdoors Verification Code" and body: "Your verification code is: ${refResult.code}\n\nEnter this code in Outdoors to confirm the referral.\n\nGet Outdoors at tryoutdoors.com". Use Gmail MCP tools. Do NOT include any other text.`;
-              executeCodexPrompt(emailPrompt, { processKey: 'system:verify', onProgress: () => {} }).catch(() => {});
-              reply = `Verification code sent to ${refResult.email}. Reply with:\n\nverify <code>`;
-            } else {
-              reply = refResult.error;
-            }
-            const sent = await sendWithRetry(jid, { text: formatOutdoorsResponse(reply) });
-            if (sent?.key?.id) { addBotSentId(sent.key.id); storeMessage(sent.key.id, sent.message); }
-            return;
-          }
-
-          const verifyMatch = msgText.match(/^verify\s+(\d{6})/i);
-          if (verifyMatch) {
-            const vResult = verifyReferral(verifyMatch[1]);
-            const reply = vResult.ok
-              ? `Verified! ${vResult.email} confirmed. Your daily limit is now ${vResult.dailyQuota} messages (${vResult.remaining} remaining today).`
-              : vResult.error;
+            const { executeCodexPrompt } = await import('./codex-bridge.js');
+            const replyFn = async (msg) => {
+              const s = await sendWithRetry(jid, { text: formatOutdoorsResponse(msg) });
+              if (s?.key?.id) { addBotSentId(s.key.id); storeMessage(s.key.id, s.message); }
+            };
+            const refResult = startReferral(referMatch[1], executeCodexPrompt, replyFn);
+            const reply = refResult.pending
+              ? `Sending invite to ${referMatch[1].trim().toLowerCase()}... I'll verify the email in about 45 seconds.`
+              : refResult.error;
             const sent = await sendWithRetry(jid, { text: formatOutdoorsResponse(reply) });
             if (sent?.key?.id) { addBotSentId(sent.key.id); storeMessage(sent.key.id, sent.message); }
             return;

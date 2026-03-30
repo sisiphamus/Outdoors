@@ -78,11 +78,6 @@ export function parseMessage(text) {
     return { number: null, command: 'refer', body: referMatch[1] };
   }
 
-  const verifyMatch = text.match(/^verify\s+(\d{6})/i);
-  if (verifyMatch) {
-    return { number: null, command: 'verify', body: verifyMatch[1] };
-  }
-
   const numMatch = text.match(/^(\d+)\s+(.+)$/s);
   if (numMatch) {
     const num = parseInt(numMatch[1], 10);
