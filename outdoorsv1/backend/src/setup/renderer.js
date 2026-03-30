@@ -5,7 +5,7 @@
 
 const isElectron = !!(window.electronAPI);
 let currentPage = 0;
-const totalPages = 6; // Reduced: merged browser + google into one page
+const totalPages = 7; // Added key entry page at start
 
 // ---------------------------------------------------------------------------
 // Page navigation
@@ -28,11 +28,11 @@ function goToPage(index) {
   dots[currentPage].classList.remove('completed');
   dots[currentPage].classList.add('active');
 
-  // Trigger page-specific logic
-  if (currentPage === 1) runInstallPage();
-  if (currentPage === 2) runAuthPage();
-  if (currentPage === 3) runConnectPage();
-  if (currentPage === 4) runTelegramPage();
+  // Trigger page-specific logic (page 0 = key entry, page 1 = welcome)
+  if (currentPage === 2) runInstallPage();
+  if (currentPage === 3) runAuthPage();
+  if (currentPage === 4) runConnectPage();
+  if (currentPage === 5) runTelegramPage();
 }
 
 function nextPage() {
@@ -40,14 +40,75 @@ function nextPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Page 1: Welcome
+// Page 0: Download Key Entry
 // ---------------------------------------------------------------------------
 
-document.getElementById('btn-begin').addEventListener('click', () => {
+const REFERRAL_API = 'https://outdoors-referral.towne.workers.dev';
+
+// Skip key entry if user already has a valid download key
+(async () => {
+  if (isElectron && window.electronAPI.getDownloadKey) {
+    const existingKey = await window.electronAPI.getDownloadKey();
+    if (existingKey) {
+      goToPage(1); // Skip to welcome page
+    }
+  }
+})();
+
+document.getElementById('btn-activate-key')?.addEventListener('click', async () => {
+  const input = document.getElementById('download-key-input');
+  const status = document.getElementById('key-status');
+  const key = (input.value || '').trim();
+
+  if (!key) {
+    status.textContent = 'Please enter your download key.';
+    status.className = 'key-status';
+    return;
+  }
+
+  status.textContent = 'Validating...';
+  status.className = 'key-status';
+
+  try {
+    const res = await fetch(REFERRAL_API + '/api/validate-key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ downloadKey: key }),
+    });
+    const data = await res.json();
+
+    if (data.valid) {
+      status.textContent = 'Activated!';
+      status.className = 'key-status success';
+      // Store the key in config via IPC (if Electron) or localStorage
+      if (isElectron && window.electronAPI.saveDownloadKey) {
+        await window.electronAPI.saveDownloadKey(key);
+      }
+      setTimeout(() => goToPage(1), 500);
+    } else {
+      status.textContent = 'Invalid key. Get an invite from someone using Outdoors.';
+      status.className = 'key-status';
+    }
+  } catch (err) {
+    status.textContent = 'Could not connect to server. Check your internet.';
+    status.className = 'key-status';
+  }
+});
+
+// Allow Enter key to activate
+document.getElementById('download-key-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('btn-activate-key')?.click();
+});
+
+// ---------------------------------------------------------------------------
+// Page 1: Welcome (post-activation)
+// ---------------------------------------------------------------------------
+
+document.getElementById('btn-begin')?.addEventListener('click', () => {
   if (isElectron) {
     nextPage();
   } else {
-    goToPage(3);
+    goToPage(4);
   }
 });
 

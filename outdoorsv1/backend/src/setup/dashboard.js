@@ -8,6 +8,44 @@ let socket = null;
 let currentMemoryFile = null;
 let memoryDirty = false;
 
+const REFERRAL_API = 'https://outdoors-referral.towne.workers.dev';
+
+// Invite share button
+document.getElementById('btn-share-invite')?.addEventListener('click', async () => {
+  const btn = document.getElementById('btn-share-invite');
+  const originalText = btn.textContent;
+  btn.textContent = 'Loading...';
+  btn.disabled = true;
+
+  try {
+    const downloadKey = window.electronAPI ? await window.electronAPI.getDownloadKey() : null;
+    if (!downloadKey) {
+      btn.textContent = 'No key';
+      setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
+      return;
+    }
+
+    const res = await fetch(REFERRAL_API + '/api/create-invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ downloadKey }),
+    });
+    const data = await res.json();
+
+    if (data.inviteUrl) {
+      await navigator.clipboard.writeText(data.inviteUrl);
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 3000);
+    } else {
+      btn.textContent = data.error || 'Error';
+      setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
+    }
+  } catch (err) {
+    btn.textContent = 'Offline';
+    setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Initialization
 // ---------------------------------------------------------------------------

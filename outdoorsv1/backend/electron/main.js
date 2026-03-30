@@ -1754,6 +1754,28 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
   });
 
   // Mark setup complete and start the backend
+  ipcMain.handle('save-download-key', async (_event, key) => {
+    try {
+      let cfg = {};
+      if (fs.existsSync(CONFIG_PATH)) cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+      cfg.downloadKey = key;
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('get-download-key', async () => {
+    try {
+      if (fs.existsSync(CONFIG_PATH)) {
+        const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+        return cfg.downloadKey || null;
+      }
+    } catch {}
+    return null;
+  });
+
   ipcMain.handle('complete-setup', async () => {
     fs.writeFileSync(SETUP_DONE_FLAG, new Date().toISOString());
     setupAutoLaunch();

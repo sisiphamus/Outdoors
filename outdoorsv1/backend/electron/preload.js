@@ -43,6 +43,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getBackendUrl: () => ipcRenderer.invoke('get-backend-url'),
   reconnectWhatsApp: () => ipcRenderer.invoke('reconnect-whatsapp'),
 
+  // Referral / download key
+  saveDownloadKey: (key) => ipcRenderer.invoke('save-download-key', key),
+  getDownloadKey: () => ipcRenderer.invoke('get-download-key'),
+
   // Setup lifecycle
   completeSetup: () => ipcRenderer.invoke('complete-setup'),
   closeWindow: () => ipcRenderer.invoke('close-window'),
