@@ -19,7 +19,6 @@ import { extractImages } from './transport-utils.js';
 import { formatOutdoorsResponse } from './wa-formatter.js';
 import { recordTask } from './telemetry.js';
 import { hasQuota, incrementMessageCount, initReferral, sendReferral, getPendingReferralEmail, getQuotaStatus } from './quota.js';
-import { config } from './config.js';
 import { closeSession } from '../../../outdoorsv4/session/session-manager.js';
 
 // Per-JID send serialization — ensures one response's images+text
