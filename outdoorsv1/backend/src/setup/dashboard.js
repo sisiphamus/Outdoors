@@ -33,10 +33,10 @@ document.getElementById('btn-share-invite')?.addEventListener('click', async () 
     });
     const data = await res.json();
 
-    if (data.inviteUrl) {
-      await navigator.clipboard.writeText(data.inviteUrl);
-      btn.textContent = 'Copied!';
-      setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 3000);
+    if (data.inviteCode) {
+      await navigator.clipboard.writeText(data.inviteCode);
+      btn.textContent = 'Code: ' + data.inviteCode + ' (copied!)';
+      setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 5000);
     } else {
       btn.textContent = data.error || 'Error';
       setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);

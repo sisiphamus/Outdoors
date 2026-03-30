@@ -58,31 +58,49 @@ const REFERRAL_API = 'https://outdoors-referral.outdoors-rice.workers.dev';
 document.getElementById('btn-activate-key')?.addEventListener('click', async () => {
   const input = document.getElementById('download-key-input');
   const status = document.getElementById('key-status');
-  const key = (input?.value || '').trim();
+  const code = (input?.value || '').trim().toUpperCase();
 
-  if (!key) {
-    if (status) { status.textContent = 'Please enter your invite key.'; status.className = 'key-status'; }
+  if (!code) {
+    if (status) { status.textContent = 'Please enter your invite code.'; status.className = 'key-status'; }
     return;
   }
 
-  if (status) { status.textContent = 'Validating...'; status.className = 'key-status'; }
+  if (status) { status.textContent = 'Checking...'; status.className = 'key-status'; }
 
   try {
-    const res = await fetch(REFERRAL_API + '/api/validate-key', {
+    // Try claiming the invite code
+    const res = await fetch(REFERRAL_API + '/api/claim', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key }),
+      body: JSON.stringify({ code }),
     });
     const data = await res.json();
 
-    if (data.valid) {
-      if (status) { status.textContent = 'Activated!'; status.className = 'key-status success'; }
+    if (data.ok || data.key) {
+      if (status) { status.textContent = 'Welcome to Outdoors!'; status.className = 'key-status success'; }
       if (isElectron && window.electronAPI.saveDownloadKey) {
-        await window.electronAPI.saveDownloadKey(key);
+        await window.electronAPI.saveDownloadKey(code);
       }
       setTimeout(() => goToPage(1), 500);
+    } else if (data.error === 'Already used') {
+      // Code was already claimed — check if this is the same user re-entering their code
+      const res2 = await fetch(REFERRAL_API + '/api/validate-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: code }),
+      });
+      const data2 = await res2.json();
+      if (data2.valid) {
+        if (status) { status.textContent = 'Welcome back!'; status.className = 'key-status success'; }
+        if (isElectron && window.electronAPI.saveDownloadKey) {
+          await window.electronAPI.saveDownloadKey(code);
+        }
+        setTimeout(() => goToPage(1), 500);
+      } else {
+        if (status) { status.textContent = 'This code has already been used by someone else.'; status.className = 'key-status'; }
+      }
     } else {
-      if (status) { status.textContent = 'Invalid key. Get an invite from someone using Outdoors.'; status.className = 'key-status'; }
+      if (status) { status.textContent = data.error || 'Invalid code. Get one from someone using Outdoors.'; status.className = 'key-status'; }
     }
   } catch {
     if (status) { status.textContent = 'Could not connect. Check your internet.'; status.className = 'key-status'; }

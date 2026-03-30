@@ -106,15 +106,13 @@ export default {
         return json({ error: 'Already used', key: invite.key || null });
       }
 
-      // Generate a key for the new user
-      const key = randomCode(12);
+      // Mark as claimed — the invite code itself becomes the user's key
       invite.status = 'claimed';
       invite.claimedAt = new Date().toISOString();
-      invite.key = key;
       await env.KV.put(`invite:${code}`, JSON.stringify(invite));
 
-      // Store the key
-      await env.KV.put(`key:${key}`, JSON.stringify({
+      // Store the code as a valid key (so validate-key works for app re-validation)
+      await env.KV.put(`key:${code}`, JSON.stringify({
         inviteCode: code,
         createdAt: new Date().toISOString(),
       }));
@@ -124,7 +122,7 @@ export default {
         await env.KV.delete(`user:${invite.createdBy}:invite`);
       }
 
-      return json({ ok: true, key });
+      return json({ ok: true });
     }
 
     // ── POST /api/validate-key — App checks key on startup ─
