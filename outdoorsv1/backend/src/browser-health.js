@@ -195,6 +195,48 @@ function openBrowser(executablePath, cdpPort, userDataDir, profileDir, firstRun 
   });
 }
 
+/**
+ * Closes all open tabs except one (navigates it to about:blank).
+ * Frozen/suspended tabs from previous sessions cause chrome-devtools-mcp
+ * to hang on tool calls (Network.enable timeout on frozen pages).
+ */
+async function cleanStaleTabs(cdpPort) {
+  const http = await import('http');
+  try {
+    const pages = await new Promise((resolve, reject) => {
+      http.default.get(`http://localhost:${cdpPort}/json`, { timeout: 3000 }, (res) => {
+        let data = '';
+        res.on('data', c => { data += c; });
+        res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve([]); } });
+      }).on('error', () => resolve([]));
+    });
+
+    const realPages = pages.filter(p => p.type === 'page' && !p.parentId);
+    if (realPages.length <= 1) return; // nothing to clean
+
+    // Close all pages except the first one
+    for (let i = 1; i < realPages.length; i++) {
+      await new Promise((resolve) => {
+        http.default.get(`http://localhost:${cdpPort}/json/close/${realPages[i].id}`, { timeout: 2000 }, () => resolve())
+          .on('error', () => resolve());
+      });
+    }
+
+    // Navigate the remaining page to about:blank to unfreeze it
+    if (realPages[0].url !== 'about:blank' && realPages[0].url !== 'chrome://newtab/') {
+      await new Promise((resolve) => {
+        const url = encodeURIComponent('about:blank');
+        http.default.get(`http://localhost:${cdpPort}/json/navigate/${realPages[0].id}?${url}`, { timeout: 2000 }, () => resolve())
+          .on('error', () => resolve());
+      });
+    }
+
+    console.log(`  [BrowserHealth] Cleaned ${realPages.length - 1} stale tab(s)`);
+  } catch (err) {
+    // Non-critical — if cleanup fails, browser still works
+  }
+}
+
 export async function ensureBrowserReady() {
   const prefs = readBrowserPrefs();
   const preferredBrowser = prefs.preferredBrowser || 'Google Chrome';
@@ -210,6 +252,7 @@ export async function ensureBrowserReady() {
 
   if (await isCdpReachable(cdpPort)) {
     console.log(`  [BrowserHealth] CDP reachable on port ${cdpPort} ✓`);
+    await cleanStaleTabs(cdpPort);
     return;
   }
 
@@ -249,6 +292,7 @@ export async function ensureBrowserReady() {
   try {
     await openBrowser(executablePath, cdpPort, userDataDir, profileDir, firstRun);
     console.log(`  [BrowserHealth] ${preferredBrowser} launched with CDP on port ${cdpPort} ✓`);
+    await cleanStaleTabs(cdpPort);
   } catch (err) {
     console.warn(`  [BrowserHealth] Failed to launch ${preferredBrowser}: ${err.message}`);
   }

@@ -394,22 +394,6 @@ function ensureWorkspace() {
     fs.writeFileSync(versionFile, currentVersion);
   } catch {}
 
-  // Regenerate MCP config if oauth-creds exist — the update wiped .codex.json
-  // but the user's Google creds survived. This ensures the bot works even if
-  // the user skips the Connect page in the wizard.
-  try {
-    const oauthCredsPath = path.join(BACKEND_DIR, 'oauth-creds.json');
-    if (fs.existsSync(oauthCredsPath)) {
-      writeMcpConfig('chrome', {
-        mcpName: 'chrome',
-        mcpArgs: ['chrome-devtools-mcp@latest', '--browserUrl', 'http://127.0.0.1:9222'],
-      });
-      console.log('[workspace] Regenerated MCP config after update');
-    }
-  } catch (err) {
-    console.error('[workspace] Failed to regenerate MCP config:', err.message);
-  }
-
   return true;
 }
 
