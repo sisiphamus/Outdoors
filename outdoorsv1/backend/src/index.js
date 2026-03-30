@@ -27,7 +27,7 @@ import { ensureBrowserReady } from './browser-health.js';
 import { registerStartup } from './register-startup.js';
 import { startAutomationScheduler, reloadAutomations } from './automation-scheduler.js';
 import { recordTask } from './telemetry.js';
-import { hasQuota, incrementMessageCount, addReferral, getQuotaStatus } from './quota.js';
+import { hasQuota, incrementMessageCount, startReferral, verifyReferral, getQuotaStatus } from './quota.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SHORT_TERM_DIR = join(__dirname, '..', 'bot', 'memory', 'short-term');
@@ -450,9 +450,22 @@ io.on('connection', async (socket) => {
 
     // Handle refer command
     if (parsed.command === 'refer') {
-      const result = addReferral(parsed.body);
+      const result = startReferral(parsed.body);
+      if (result.needsVerification) {
+        // Send verification email via the bot's own execution
+        const emailPrompt = `Send an email to ${result.email} with subject "Outdoors Verification Code" and body: "Your verification code is: ${result.code}\n\nEnter this code in Outdoors to confirm the referral.\n\nGet Outdoors at tryoutdoors.com". Use Gmail MCP tools. Do NOT include any other text.`;
+        executeCodexPrompt(emailPrompt, { processKey: 'system:verify', onProgress: () => {} }).catch(() => {});
+        socket.emit('chat_response', `Verification code sent to ${result.email}. Reply with:\n\nverify <code>`);
+      } else {
+        socket.emit('chat_response', result.error);
+      }
+      return;
+    }
+
+    if (parsed.command === 'verify') {
+      const result = verifyReferral(parsed.body);
       if (result.ok) {
-        socket.emit('chat_response', `Added! Your daily limit is now ${result.dailyQuota} messages (${result.remaining} remaining today).`);
+        socket.emit('chat_response', `Verified! ${result.email} confirmed. Your daily limit is now ${result.dailyQuota} messages (${result.remaining} remaining today).`);
       } else {
         socket.emit('chat_response', result.error);
       }
@@ -462,7 +475,7 @@ io.on('connection', async (socket) => {
     // Quota check — block execution if daily limit reached
     if (parsed.command === 'message' && !hasQuota()) {
       const status = getQuotaStatus();
-      socket.emit('chat_response', `You've used your ${status.dailyQuota} messages for today! Share Outdoors with a friend to get +5 messages/day:\n\nrefer friend@rice.edu`);
+      socket.emit('chat_response', `You've used your ${status.dailyQuota} messages for today! Share Outdoors with a friend to get +10 messages/day:\n\nrefer friend@rice.edu`);
       return;
     }
 
