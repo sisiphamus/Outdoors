@@ -452,17 +452,17 @@ io.on('connection', async (socket) => {
     if (parsed.command === 'refer') {
       const result = addReferral(parsed.body);
       if (result.ok) {
-        socket.emit('chat_response', `Added! You now have ${result.remaining} messages remaining.`);
+        socket.emit('chat_response', `Added! Your daily limit is now ${result.dailyQuota} messages (${result.remaining} remaining today).`);
       } else {
         socket.emit('chat_response', result.error);
       }
       return;
     }
 
-    // Quota check — block execution if no remaining messages
+    // Quota check — block execution if daily limit reached
     if (parsed.command === 'message' && !hasQuota()) {
       const status = getQuotaStatus();
-      socket.emit('chat_response', `You've used all ${status.total} messages! To unlock 40 more, refer a friend:\n\nrefer friend@rice.edu`);
+      socket.emit('chat_response', `You've used your ${status.dailyQuota} messages for today! Share Outdoors with a friend to get +5 messages/day:\n\nrefer friend@rice.edu`);
       return;
     }
 
@@ -777,7 +777,7 @@ server.listen(config.port, '127.0.0.1', async () => {
     console.log('  [WhatsApp] Starting...');
     startWhatsApp();
 
-    // Start trigger scheduler
+    // Start automation scheduler
     startAutomationScheduler({ io, emitLog, executeCodexPrompt, config, saveConfig, loadConfig });
   } catch (err) {
     console.error('[startup] Failed:', err);
@@ -793,7 +793,7 @@ server.on('error', (err) => {
   process.exit(1);
 });
 
-// Trigger reload endpoint — called by Electron main after config changes
+// Automation reload endpoint — called by Electron main after config changes
 app.post('/api/automations/reload', requireLocalAuth, (_req, res) => {
   reloadAutomations();
   res.json({ ok: true });

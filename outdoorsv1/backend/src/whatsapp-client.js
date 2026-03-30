@@ -644,7 +644,7 @@ async function startWhatsApp() {
           if (referMatch) {
             const refResult = addReferral(referMatch[1]);
             const reply = refResult.ok
-              ? `Added! You now have ${refResult.remaining} messages remaining.`
+              ? `Added! Your daily limit is now ${refResult.dailyQuota} messages (${refResult.remaining} remaining today).`
               : refResult.error;
             const sent = await sendWithRetry(jid, { text: formatOutdoorsResponse(reply) });
             if (sent?.key?.id) { addBotSentId(sent.key.id); storeMessage(sent.key.id, sent.message); }
@@ -654,7 +654,7 @@ async function startWhatsApp() {
           // Quota check
           if (!hasQuota()) {
             const status = getQuotaStatus();
-            const reply = `You've used all ${status.total} messages! To unlock 40 more, refer a friend:\n\nrefer friend@rice.edu`;
+            const reply = `You've used your ${status.dailyQuota} messages for today! Share Outdoors with a friend to get +5 messages/day:\n\nrefer friend@rice.edu`;
             const sent = await sendWithRetry(jid, { text: formatOutdoorsResponse(reply) });
             if (sent?.key?.id) { addBotSentId(sent.key.id); storeMessage(sent.key.id, sent.message); }
             return;
