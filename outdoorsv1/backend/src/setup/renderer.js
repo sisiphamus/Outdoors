@@ -64,7 +64,7 @@ const REFERRAL_API = 'https://outdoors-referral.outdoors-rice.workers.dev';
 document.getElementById('btn-activate-key')?.addEventListener('click', async () => {
   const input = document.getElementById('download-key-input');
   const status = document.getElementById('key-status');
-  const code = (input?.value || '').trim().toUpperCase();
+  const code = (input?.value || '').trim();
 
   if (!code) {
     if (status) { status.textContent = 'Please enter your invite code.'; status.className = 'key-status'; }
