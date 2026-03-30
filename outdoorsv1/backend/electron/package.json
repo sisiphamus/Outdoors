@@ -3,7 +3,7 @@
   "version": "1.2.12",
   "description": "Outdoors — Stop working, start living.",
   "homepage": "https://tryoutdooors.pages.dev",
-  "author": "Outdoors",
+  "author": { "name": "Outdoors", "email": "hello@tryoutdooors.com" },
   "main": "main.js",
   "scripts": {
     "start": "electron .",
