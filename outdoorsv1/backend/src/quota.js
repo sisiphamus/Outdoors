@@ -1,12 +1,15 @@
 // Message quota — daily allowance that grows with verified referrals.
 // 30 messages on first day, then 10/day base + 10/day per verified referral.
-// Referrals verified by sending an invite email and checking for bounces.
+// Referrals grant quota immediately; revoked if email bounces.
 import { config, saveConfig } from './config.js';
 
 const FIRST_DAY_ALLOWANCE = 30;
 const DAILY_BASE = 10;
 const DAILY_PER_REFERRAL = 10;
-const BOUNCE_CHECK_DELAY_MS = 45000; // 45 seconds
+const BOUNCE_CHECK_DELAY_MS = 45000;
+
+// Pending referral customization: email → { stage, senderName }
+const pendingCustomization = new Map();
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -49,10 +52,8 @@ export function incrementMessageCount() {
   saveConfig(config);
 }
 
-// Start referral — validate email, send invite, then check for bounce after 45s.
-// executePrompt: function to run a Codex prompt (for sending email + checking bounce)
-// replyFn: function to send a message back to the user after verification
-export function startReferral(email, executePrompt, replyFn) {
+// Step 1: User sends "refer friend@rice.edu" — validate and ask for customization
+export function initReferral(email, senderName) {
   const normalized = email.trim().toLowerCase();
   if (!normalized.endsWith('@rice.edu')) {
     return { ok: false, error: 'Must be a @rice.edu email address.' };
@@ -63,50 +64,98 @@ export function startReferral(email, executePrompt, replyFn) {
   }
   if (!config.pendingReferrals) config.pendingReferrals = [];
   if (config.pendingReferrals.includes(normalized)) {
-    return { ok: false, error: 'Verification in progress for that email.' };
+    return { ok: false, error: 'Already sending an invite to that email.' };
   }
 
-  // Send invite email
-  const emailPrompt = `Send an email to ${normalized} with subject "You've been invited to Outdoors" and body "Hey! Someone shared Outdoors with you — a personal AI assistant that works through WhatsApp.\n\nGet started at tryoutdoors.com\n\nOutdoors can send emails, manage your calendar, build websites, research topics, and more — all from your phone.". Use Gmail MCP tools. Send it now, do not ask questions.`;
+  // Extract friend's name from email (before @)
+  const friendName = normalized.split('@')[0].replace(/[._]/g, ' ').replace(/\d+/g, '').trim();
+  const friendFirst = friendName.split(' ')[0];
+  const capitalizedFriend = friendFirst.charAt(0).toUpperCase() + friendFirst.slice(1);
+
+  pendingCustomization.set(normalized, { senderName, friendName: capitalizedFriend });
+
+  return {
+    ok: true,
+    needsCustomization: true,
+    email: normalized,
+    friendName: capitalizedFriend,
+    prompt: `Want to add a personal message to ${capitalizedFriend}? Reply with your message, or just say "send" to use the default invite.`,
+  };
+}
+
+// Step 2: User replies with custom message or "send" — send the email and grant quota immediately
+export function sendReferral(email, customMessage, executePrompt, replyFn, killProcessFn) {
+  const normalized = email.trim().toLowerCase();
+  const pending = pendingCustomization.get(normalized);
+  if (!pending) return { ok: false, error: 'No pending referral for that email.' };
+  pendingCustomization.delete(normalized);
+
+  const senderName = pending.senderName || 'A friend';
+  const friendName = pending.friendName || 'there';
+  const isDefault = !customMessage || customMessage.toLowerCase() === 'send';
+
+  const personalNote = isDefault
+    ? ''
+    : `\n\n${senderName} says: "${customMessage}"`;
+
+  const emailBody = `Hey ${friendName},\n\nYou're Invited! ${senderName} has been using Outdoors and you get to be one of the first users.\n\n$100 in free usage thanks to OpenAI <3${personalNote}\n\nOutdoors is a personal AI assistant that works through WhatsApp — it can send emails, manage your calendar, build websites, do research, and way more.\n\nGet started: tryoutdoors.com`;
+
+  const emailPrompt = `Send an email to ${normalized} with subject "You're Invited to Outdoors" and body:\n\n${emailBody}\n\nUse Gmail MCP tools. Send it now.`;
   executePrompt(emailPrompt, { processKey: 'system:refer', onProgress: () => {} }).catch(() => {});
 
-  // Add to pending
+  // Grant quota immediately
+  if (!config.referrals) config.referrals = [];
+  if (!config.referrals.includes(normalized)) {
+    config.referrals.push(normalized);
+  }
+  if (!config.pendingReferrals) config.pendingReferrals = [];
   config.pendingReferrals.push(normalized);
   saveConfig(config);
 
-  // After 45s, check for bounce
+  const status = getQuotaStatus();
+
+  // After 45s, check for bounce — revoke if fake
   setTimeout(async () => {
     try {
-      const bounceCheckPrompt = `Search Gmail for emails from mailer-daemon@googlemail.com received in the last 2 minutes. Check if any mention "${normalized}" as an undeliverable address. Respond with ONLY the word "BOUNCED" if you find a delivery failure for that address, or ONLY the word "DELIVERED" if no bounce was found. Do not include any other text.`;
+      const bounceCheckPrompt = `Search Gmail for emails from mailer-daemon@googlemail.com received in the last 2 minutes. Check if any mention "${normalized}" as an undeliverable address. Respond with ONLY the word "BOUNCED" if you find a delivery failure, or ONLY "DELIVERED" if no bounce found.`;
       const result = await executePrompt(bounceCheckPrompt, { processKey: 'system:bounce-check', onProgress: () => {} });
-      const response = (result.response || '').trim().toUpperCase();
-      const bounced = response.includes('BOUNCED');
+      const bounced = (result.response || '').trim().toUpperCase().includes('BOUNCED');
 
-      // Remove from pending
       config.pendingReferrals = (config.pendingReferrals || []).filter(e => e !== normalized);
 
       if (bounced) {
+        // Revoke the referral
+        config.referrals = (config.referrals || []).filter(e => e !== normalized);
         saveConfig(config);
-        replyFn(`The email ${normalized} doesn't exist — referral not counted.`);
-      } else {
-        if (!config.referrals.includes(normalized)) {
-          config.referrals.push(normalized);
+        // Kill any running task and notify
+        if (killProcessFn) {
+          try { killProcessFn(); } catch {}
         }
+        replyFn(`That email (${normalized}) doesn't exist — the referral has been revoked and your daily limit has been reduced. Please refer a real Rice email to get it back.`);
+      } else {
+        // Confirmed — just clean up pending
         saveConfig(config);
-        const status = getQuotaStatus();
-        replyFn(`Verified! ${normalized} confirmed. Your daily limit is now ${status.dailyQuota} messages (${status.remaining} remaining today).`);
       }
     } catch {
-      // On error, give benefit of the doubt
+      // On error, keep the referral (benefit of the doubt)
       config.pendingReferrals = (config.pendingReferrals || []).filter(e => e !== normalized);
-      if (!config.referrals.includes(normalized)) {
-        config.referrals.push(normalized);
-      }
       saveConfig(config);
     }
   }, BOUNCE_CHECK_DELAY_MS);
 
-  return { ok: true, pending: true };
+  return { ok: true, remaining: status.remaining, dailyQuota: status.dailyQuota };
+}
+
+// Check if there's a pending customization waiting for user reply
+export function getPendingReferralEmail() {
+  if (pendingCustomization.size === 0) return null;
+  // Return the most recently added email
+  const entries = [...pendingCustomization.keys()];
+  return entries[entries.length - 1];
+}
+
+export function cancelPendingReferral(email) {
+  pendingCustomization.delete(email);
 }
 
 export function getQuotaStatus() {

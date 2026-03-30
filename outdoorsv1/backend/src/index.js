@@ -27,7 +27,7 @@ import { ensureBrowserReady } from './browser-health.js';
 import { registerStartup } from './register-startup.js';
 import { startAutomationScheduler, reloadAutomations } from './automation-scheduler.js';
 import { recordTask } from './telemetry.js';
-import { hasQuota, incrementMessageCount, startReferral, getQuotaStatus } from './quota.js';
+import { hasQuota, incrementMessageCount, initReferral, sendReferral, getPendingReferralEmail, getQuotaStatus } from './quota.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SHORT_TERM_DIR = join(__dirname, '..', 'bot', 'memory', 'short-term');
@@ -450,10 +450,25 @@ io.on('connection', async (socket) => {
 
     // Handle refer command
     if (parsed.command === 'refer') {
+      // Get sender name from config (set during onboarding) or default
+      const senderName = config.googleEmail?.split('@')[0]?.replace(/[._]/g, ' ') || 'A friend';
+      const result = initReferral(parsed.body, senderName);
+      if (result.needsCustomization) {
+        socket.emit('chat_response', result.prompt);
+      } else {
+        socket.emit('chat_response', result.error);
+      }
+      return;
+    }
+
+    // Check if user is replying to a pending referral customization
+    const pendingEmail = getPendingReferralEmail();
+    if (pendingEmail && parsed.command === 'message') {
       const replyFn = (msg) => socket.emit('chat_response', msg);
-      const result = startReferral(parsed.body, executeCodexPrompt, replyFn);
-      if (result.pending) {
-        socket.emit('chat_response', `Sending invite to ${parsed.body.trim().toLowerCase()}... I'll verify the email in about 45 seconds.`);
+      const killFn = () => { /* kill any running task for this user */ };
+      const result = sendReferral(pendingEmail, parsed.body, executeCodexPrompt, replyFn, killFn);
+      if (result.ok) {
+        socket.emit('chat_response', `Invite sent! Your daily limit is now ${result.dailyQuota} messages (${result.remaining} remaining today). You can keep using Outdoors — I'll verify the email in the background.`);
       } else {
         socket.emit('chat_response', result.error);
       }
