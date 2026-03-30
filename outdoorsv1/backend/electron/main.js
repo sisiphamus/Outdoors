@@ -394,6 +394,22 @@ function ensureWorkspace() {
     fs.writeFileSync(versionFile, currentVersion);
   } catch {}
 
+  // Regenerate MCP config if oauth-creds exist — the update wiped .codex.json
+  // but the user's Google creds survived. This ensures the bot works even if
+  // the user skips the Connect page in the wizard.
+  try {
+    const oauthCredsPath = path.join(BACKEND_DIR, 'oauth-creds.json');
+    if (fs.existsSync(oauthCredsPath)) {
+      writeMcpConfig('chrome', {
+        mcpName: 'chrome',
+        mcpArgs: ['chrome-devtools-mcp@latest', '--browserUrl', 'http://127.0.0.1:9222'],
+      });
+      console.log('[workspace] Regenerated MCP config after update');
+    }
+  } catch (err) {
+    console.error('[workspace] Failed to regenerate MCP config:', err.message);
+  }
+
   return true;
 }
 
@@ -440,6 +456,51 @@ function createSetupWindow() {
 // ── IPC Handlers ────────────────────────────────────────────────────────────
 
 function setupIPC() {
+
+  // ── Existing setup state check ───────────────────────────────────────────────
+  // Returns which components are already configured so the wizard can skip them.
+
+  ipcMain.handle('check-existing-setup', async () => {
+    const automationProfileExists = fs.existsSync(
+      path.join(platform.getAutomationProfileDir(), 'Default', 'Preferences')
+    );
+    const googleCredsDir = path.join(
+      process.env.HOME || process.env.USERPROFILE || '',
+      '.google_workspace_mcp', 'credentials'
+    );
+    let googleCredsExist = false;
+    try {
+      googleCredsExist = fs.existsSync(googleCredsDir) &&
+        fs.readdirSync(googleCredsDir).some(f => f.endsWith('.json'));
+    } catch {}
+    const codexAuthExists = fs.existsSync(
+      path.join(process.env.HOME || process.env.USERPROFILE || '', '.codex', 'auth.json')
+    );
+    const nodeModulesExist = fs.existsSync(path.join(BACKEND_DIR, 'node_modules', '.package-lock.json'));
+    const oauthCredsExist = fs.existsSync(path.join(BACKEND_DIR, 'oauth-creds.json'));
+
+    return {
+      automationProfile: automationProfileExists,
+      googleCreds: googleCredsExist,
+      codexAuth: codexAuthExists,
+      nodeModules: nodeModulesExist,
+      oauthCreds: oauthCredsExist,
+    };
+  });
+
+  // ── Regenerate MCP config (called when skipping Connect page) ──────────────
+
+  ipcMain.handle('regenerate-mcp-config', async () => {
+    try {
+      writeMcpConfig('chrome', {
+        mcpName: 'chrome',
+        mcpArgs: ['chrome-devtools-mcp@latest', '--browserUrl', 'http://127.0.0.1:9222'],
+      });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
 
   // ── Auto-install system dependencies ────────────────────────────────────────
   // Checks for Node.js, Git, Python and installs any missing ones via winget
@@ -2012,18 +2073,8 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
           };
           fs.writeFileSync(claudeConfigPath, JSON.stringify(mcpConfig, null, 2) + '\n');
 
-          // Also update mcp-bot.json in outdoorsv4 with google_workspace + email
-          const v4Dir = IS_DEV
-            ? path.join(__dirname, '..', '..', '..', 'outdoorsv4')
-            : path.join(WORKSPACE, 'outdoorsv4');
-          const botMcpPath = path.join(v4Dir, 'mcp-bot.json');
-          try {
-            let botMcp = {};
-            if (fs.existsSync(botMcpPath)) botMcp = JSON.parse(fs.readFileSync(botMcpPath, 'utf-8'));
-            if (!botMcp.mcpServers) botMcp.mcpServers = {};
-            botMcp.mcpServers.google_workspace = mcpConfig.mcpServers.google_workspace;
-            fs.writeFileSync(botMcpPath, JSON.stringify(botMcp, null, 2) + '\n');
-          } catch {}
+          // google_workspace is NOT added to mcp-bot.json — the CLI already loads it
+          // from .claude.json/.codex.json in the working directory. Duplicating causes port conflicts.
 
           // Save email to config so the bot always uses the right account
           if (userEmail) {
@@ -2552,8 +2603,10 @@ function writeMcpConfig(browserKey, browser) {
   fs.mkdirSync(claudeConfigDir, { recursive: true });
   fs.writeFileSync(claudeConfigPath, JSON.stringify(config, null, 2) + '\n');
 
-  // Also write mcp-bot.json in outdoorsv4/ — this is what the bot's runtime pipeline uses
-  // (model-runner.js reads this, NOT .codex.json)
+  // Also write mcp-bot.json in outdoorsv4/ — browser-only tools for the bot runtime.
+  // google_workspace is NOT included here because the CLI already loads it from
+  // .claude.json/.codex.json in the working directory. Including it in both causes a
+  // port conflict (workspace-mcp binds port 8000 for OAuth) and both instances fail.
   const botMcpConfig = {
     mcpServers: {
       [browser.mcpName]: {
@@ -2566,35 +2619,6 @@ function writeMcpConfig(browserKey, browser) {
       },
     },
   };
-
-  // Add google_workspace to bot runtime config too
-  if (oauthClientId && oauthClientSecret) {
-    // If uvxCommand is a real path to uvx.exe, use it directly
-    // Otherwise fall back to python -m uv tool run
-    const uvxIsReal = uvxCommand && uvxCommand !== 'uvx' && fs.existsSync(uvxCommand);
-    const wsCmd = uvxIsReal ? uvxCommand : (process.platform === 'win32' ? 'python' : 'python3');
-    const wsArgs = uvxIsReal
-      ? ['workspace-mcp']
-      : ['-m', 'uv', 'tool', 'run', 'workspace-mcp'];
-    let googleTools = [];
-    try {
-      if (fs.existsSync(CONFIG_PATH)) {
-        const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-        if (cfg.googleServices && cfg.googleServices.length > 0) googleTools = cfg.googleServices;
-      }
-    } catch {}
-    if (googleTools.length > 0) wsArgs.push('--tools', ...googleTools);
-
-    botMcpConfig.mcpServers.google_workspace = {
-      type: 'stdio',
-      command: wsCmd,
-      args: wsArgs,
-      env: {
-        GOOGLE_OAUTH_CLIENT_ID: oauthClientId,
-        GOOGLE_OAUTH_CLIENT_SECRET: oauthClientSecret,
-      },
-    };
-  }
 
   const v4Dir = IS_DEV
     ? path.join(__dirname, '..', '..', '..', 'outdoorsv4')

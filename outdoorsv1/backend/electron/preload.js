@@ -7,6 +7,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  // Existing setup state (for skipping already-configured steps)
+  checkExistingSetup: () => ipcRenderer.invoke('check-existing-setup'),
+  regenerateMcpConfig: () => ipcRenderer.invoke('regenerate-mcp-config'),
+
   // Dependency installation
   installSystemDeps: () => ipcRenderer.invoke('install-system-deps'),
   installNodeDeps: () => ipcRenderer.invoke('install-node-deps'),

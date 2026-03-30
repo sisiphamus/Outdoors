@@ -2,7 +2,7 @@ import { executeCodexPrompt, killProcess, hasActiveProcess, codeAgentOptions, cl
 import { config } from './config.js';
 import { parseMessage, resolveSession, createOrUpdateConversation, closeConversation, getConversationMode } from './conversation-manager.js';
 import { downloadContentFromMessage } from '@whiskeysockets/baileys';
-import { writeFileSync, mkdirSync, readFileSync, existsSync, renameSync } from 'fs';
+import { writeFileSync, mkdirSync, readFileSync, readdirSync, existsSync, renameSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { randomBytes } from 'crypto';
@@ -322,9 +322,11 @@ export async function handleMessage(message, emitLog) {
   const sender = message.pushName || jid.replace(/@.*/, '');
   emitLog?.('incoming', { sender, prompt, jid });
 
-  // Validate sender: check participant JID for group messages, sender JID for DMs
+  // Validate sender: always allow messages from the Outdoors group,
+  // check participant JID for other groups, sender JID for DMs
+  const isOutdoorsGroup = isGroup && config.outdoorsGroupJid && jid === config.outdoorsGroupJid;
   const senderJid = isGroup ? (message.key.participant || jid) : jid;
-  if (!isSelfMessage && !isAllowed(senderJid)) {
+  if (!isSelfMessage && !isOutdoorsGroup && !isAllowed(senderJid)) {
     emitLog?.('blocked', { sender, jid: senderJid, reason: 'not in allowed list' });
     return null;
   }

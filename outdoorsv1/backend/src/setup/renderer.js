@@ -7,6 +7,12 @@ const isElectron = !!(window.electronAPI);
 let currentPage = 0;
 const totalPages = 7; // Key entry, welcome, deps, auth, connect, telegram, done
 
+// Cached existing setup state — fetched once on load, used to skip configured pages
+let existingSetup = null;
+if (isElectron && window.electronAPI.checkExistingSetup) {
+  window.electronAPI.checkExistingSetup().then(state => { existingSetup = state; }).catch(() => {});
+}
+
 // ---------------------------------------------------------------------------
 // Page navigation
 // ---------------------------------------------------------------------------
@@ -157,6 +163,14 @@ function setInstallStatus(text) {
 
 async function runInstallPage() {
   if (!isElectron) { nextPage(); return; }
+
+  // Skip if dependencies already installed (e.g. re-running wizard after update with preserved node_modules)
+  if (existingSetup && existingSetup.nodeModules) {
+    setInstallStatus('Dependencies already installed.');
+    await delay(600);
+    nextPage();
+    return;
+  }
 
   // Step 0: Install system dependencies (Node, Git, Python) if missing
   setInstallItemState('install-system-deps', 'active');
@@ -338,6 +352,19 @@ function getSelectedServices() {
 async function runConnectPage() {
   if (connectDone) return;
   if (!isElectron) { nextPage(); return; }
+
+  // Skip if AutomationProfile and Google creds already exist (update scenario)
+  if (existingSetup && existingSetup.automationProfile && existingSetup.googleCreds) {
+    connectDone = true;
+    showConnectSection('connect-success');
+    const emailEl = document.getElementById('connect-email');
+    if (emailEl) emailEl.textContent = '(already configured)';
+    // Regenerate MCP config in background (may have been wiped by update)
+    window.electronAPI.regenerateMcpConfig?.().catch(() => {});
+    await delay(1000);
+    nextPage();
+    return;
+  }
 
   // Check if oauth-creds.json exists
   const credsCheck = await window.electronAPI.checkGoogleCreds();

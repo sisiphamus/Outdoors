@@ -33,6 +33,8 @@ function cleanEnv() {
   for (const key of Object.keys(env)) {
     if (key.startsWith('CLAUDE')) delete env[key];
   }
+  // workspace-mcp takes ~30s to boot; default MCP timeout is 30s which is too tight
+  env.MCP_TIMEOUT = '60000';
   return env;
 }
 
