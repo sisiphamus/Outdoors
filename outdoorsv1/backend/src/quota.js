@@ -1,11 +1,13 @@
 // Message quota — daily allowance that grows with verified referrals.
 // 30 messages on first day, then 10/day base + 10/day per verified referral.
+// Each referral also grants +20 bonus messages on the day it's made.
 // Referrals grant quota immediately; revoked if email bounces.
 import { config, saveConfig } from './config.js';
 
 const FIRST_DAY_ALLOWANCE = 30;
 const DAILY_BASE = 10;
 const DAILY_PER_REFERRAL = 10;
+const REFERRAL_BONUS = 20; // immediate bonus messages on the day of referral
 const BOUNCE_CHECK_DELAY_MS = 45000;
 
 // Pending referral customization: email → { stage, senderName }
@@ -25,8 +27,10 @@ function isFirstDay() {
 
 export function getDailyQuota() {
   const referrals = (config.referrals || []).length;
-  if (isFirstDay()) return FIRST_DAY_ALLOWANCE;
-  return DAILY_BASE + (DAILY_PER_REFERRAL * referrals);
+  const base = isFirstDay() ? FIRST_DAY_ALLOWANCE : DAILY_BASE + (DAILY_PER_REFERRAL * referrals);
+  // Add same-day referral bonus (expires at midnight)
+  const bonus = config.referralBonusDate === today() ? (config.referralBonus || 0) : 0;
+  return base + bonus;
 }
 
 function getTodayCount() {
@@ -103,13 +107,16 @@ export function sendReferral(email, customMessage, executePrompt, replyFn, killP
   const emailPrompt = `Send an email to ${normalized} with subject "You're Invited to Outdoors" and body:\n\n${emailBody}\n\nUse Gmail MCP tools. Send it now.`;
   executePrompt(emailPrompt, { processKey: 'system:refer', onProgress: () => {} }).catch(() => {});
 
-  // Grant quota immediately
+  // Grant quota immediately — +10/day permanent and +20 bonus today
   if (!config.referrals) config.referrals = [];
   if (!config.referrals.includes(normalized)) {
     config.referrals.push(normalized);
   }
   if (!config.pendingReferrals) config.pendingReferrals = [];
   config.pendingReferrals.push(normalized);
+  // Give immediate bonus messages for today
+  config.referralBonus = (config.referralBonus || 0) + REFERRAL_BONUS;
+  config.referralBonusDate = today();
   saveConfig(config);
 
   const status = getQuotaStatus();
@@ -124,8 +131,11 @@ export function sendReferral(email, customMessage, executePrompt, replyFn, killP
       config.pendingReferrals = (config.pendingReferrals || []).filter(e => e !== normalized);
 
       if (bounced) {
-        // Revoke the referral
+        // Revoke the referral and same-day bonus
         config.referrals = (config.referrals || []).filter(e => e !== normalized);
+        if (config.referralBonusDate === today()) {
+          config.referralBonus = Math.max(0, (config.referralBonus || 0) - REFERRAL_BONUS);
+        }
         saveConfig(config);
         // Kill any running task and notify
         if (killProcessFn) {
