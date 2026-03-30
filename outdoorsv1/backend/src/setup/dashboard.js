@@ -34,19 +34,17 @@ document.getElementById('btn-share-invite')?.addEventListener('click', async () 
     const data = await res.json();
 
     if (data.inviteCode) {
-      const inviteUrl = data.inviteUrl || ('https://tryoutdoors-rice.pages.dev/' + data.inviteCode);
-      await navigator.clipboard.writeText(inviteUrl);
-      btn.textContent = 'Copied!';
+      await navigator.clipboard.writeText(data.inviteCode);
+      btn.textContent = data.inviteCode + ' (copied!)';
       btn.disabled = false;
-      // Show the invite link prominently in the chat feed
+      // Show the code in the chat feed
       const feed = document.getElementById('feed');
       const entry = document.createElement('div');
       entry.className = 'feed-entry feed-msg feed-msg-assistant';
       entry.innerHTML = '<div class="msg-bubble" style="text-align:center;">' +
-        '<div style="font-size:11px;opacity:0.6;margin-bottom:6px;">Your invite link (copied to clipboard)</div>' +
-        '<div style="font-size:15px;font-weight:600;margin-bottom:6px;word-break:break-all;">' + inviteUrl + '</div>' +
-        '<div style="font-size:18px;font-weight:700;letter-spacing:2px;font-family:monospace;margin-bottom:8px;">Code: ' + data.inviteCode + '</div>' +
-        '<div style="font-size:11px;opacity:0.6;">Send the link to a friend — they\'ll get the download + your code!</div>' +
+        '<div style="font-size:11px;opacity:0.6;margin-bottom:6px;">Your invite code</div>' +
+        '<div style="font-size:22px;font-weight:700;letter-spacing:2px;font-family:monospace;margin-bottom:8px;">' + data.inviteCode + '</div>' +
+        '<div style="font-size:11px;opacity:0.6;">Copied to clipboard — share it with a friend!</div>' +
         '</div>';
       feed.appendChild(entry);
       feed.scrollTop = feed.scrollHeight;
