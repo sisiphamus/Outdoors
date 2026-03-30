@@ -2930,17 +2930,14 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   console.log('[lifecycle] Another instance is already running — quitting.');
   app.quit();
-  // app.quit() is async — process.exit() ensures we don't fall through to whenReady
-  process.exit(0);
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
 }
-
-app.on('second-instance', () => {
-  // Someone tried to launch a second instance — focus our window
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-  }
-});
 
 app.whenReady().then(async () => {
   // Prevent system sleep so the bot stays connected with lid closed
