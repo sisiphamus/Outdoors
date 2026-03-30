@@ -227,6 +227,21 @@ export function runModel({
                 fullEvents,
                 questionRequest: fullEvents._questionRequest || null,
               });
+              // Clean up the process shortly after delivering the response.
+              // This prevents orphan Codex processes from accumulating.
+              setTimeout(() => {
+                try {
+                  if (process.platform === 'win32') {
+                    const taskkill = `${process.env.SystemRoot || 'C:\\Windows'}\\System32\\taskkill.exe`;
+                    spawn(taskkill, ['/T', '/F', '/PID', String(proc.pid)], {
+                      shell: false, stdio: 'ignore', detached: true,
+                    });
+                  } else {
+                    try { process.kill(-proc.pid, 'SIGTERM'); } catch {}
+                    try { process.kill(proc.pid, 'SIGTERM'); } catch {}
+                  }
+                } catch {}
+              }, 500);
             }
             break;
           }
