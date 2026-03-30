@@ -815,7 +815,7 @@ app.post('/api/automations/reload', requireLocalAuth, (_req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/whatsapp/reconnect', requireLocalAuth, async (_req, res) => {
+app.post('/api/whatsapp/reconnect', async (_req, res) => {
   try {
     const result = await reconnectWhatsApp();
     res.json(result);
