@@ -1,0 +1,12 @@
+{
+  "name": "outdoors-telemetry",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create outdoors-telemetry",
+    "db:init": "wrangler d1 execute outdoors-telemetry --file=./schema.sql",
+    "db:init:local": "wrangler d1 execute outdoors-telemetry --local --file=./schema.sql"
+  }
+}
