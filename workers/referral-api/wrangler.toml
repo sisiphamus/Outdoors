@@ -1,0 +1,11 @@
+name = "outdoors-referral"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+ADMIN_SECRET = "change-this-in-dashboard"
+SITE_URL = "https://tryoutdooors.pages.dev"
+
+[[kv_namespaces]]
+binding = "KV"
+id = ""  # Fill after creating: wrangler kv namespace create OUTDOORS_REFERRAL

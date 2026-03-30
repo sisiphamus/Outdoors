@@ -10,8 +10,24 @@
 <body>
   <div class="wizard">
 
-    <!-- Page 1: Welcome -->
+    <!-- Page 0: Download Key -->
     <div class="page active" data-page="0">
+      <div class="page-content welcome">
+        <p class="welcome-label">Welcome to</p>
+        <h1 class="brand">Outdoors</h1>
+        <p class="tagline">Stop working, start living.</p>
+        <p class="description">
+          Enter the download key you received from your invite link.
+        </p>
+        <input type="text" id="download-key-input" class="key-input" placeholder="e.g. AbC3dEf7hJkM" autocomplete="off" spellcheck="false" />
+        <p class="key-status" id="key-status"></p>
+        <button class="btn-primary" id="btn-activate-key">Activate</button>
+        <p class="key-hint">Don't have a key? Ask someone with Outdoors to share their invite link.</p>
+      </div>
+    </div>
+
+    <!-- Page 1: Welcome (post-activation) -->
+    <div class="page" data-page="1">
       <div class="page-content welcome">
         <p class="welcome-label">Welcome to</p>
         <h1 class="brand">Outdoors</h1>
