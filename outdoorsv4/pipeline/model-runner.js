@@ -126,6 +126,7 @@ export function runModel({
     let buffer = '';
     let response_streamed = false;
     let killedForQuestion = false;
+    let resolved = false;
 
     // Activity-based timeout: resets every time the model produces output
     // (tool calls, streamed text, turn completions). This lets long multi-turn
@@ -211,8 +212,22 @@ export function runModel({
                 cache_read: event.usage.cached_input_tokens,
               });
             }
-            // Let the process continue — Codex exits naturally when all turns
-            // are done. The idle timeout is the safety net against runaway costs.
+            // Resolve the promise so the caller gets the response immediately.
+            // The Codex process may keep running (multi-turn), but we deliver
+            // the latest response now. If more turns happen, subsequent
+            // turn.completed events will be ignored (already resolved).
+            // The idle timeout or natural exit handles process cleanup.
+            if (response && !resolved && !killedForQuestion) {
+              resolved = true;
+              if (processKey) unregister(processKey);
+              if (timeoutTimer) clearTimeout(timeoutTimer);
+              resolve({
+                response,
+                sessionId,
+                fullEvents,
+                questionRequest: fullEvents._questionRequest || null,
+              });
+            }
             break;
           }
 
@@ -241,6 +256,9 @@ export function runModel({
           if (event.type === 'thread.started' && event.thread_id) sessionId = event.thread_id;
         } catch {}
       }
+
+      // Already resolved from turn.completed — nothing to do
+      if (resolved) return;
 
       if (proc._stoppedByUser) {
         reject({ stopped: true, message: 'Process stopped by user' });

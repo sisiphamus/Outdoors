@@ -75,7 +75,7 @@
         <div class="settings-tabs">
           <button class="settings-tab active" data-tab="memory">Memory</button>
           <button class="settings-tab" data-tab="general">General</button>
-          <button class="settings-tab" data-tab="triggers">Triggers</button>
+          <button class="settings-tab" data-tab="automations">Automations</button>
           <button class="settings-tab" data-tab="outputs">Projects</button>
         </div>
 
@@ -122,19 +122,19 @@
           </div>
         </div>
 
-        <!-- Triggers tab -->
-        <div class="settings-content hidden" id="tab-triggers">
-          <div class="triggers-container" id="triggers-view">
-            <div class="triggers-header">
-              <p class="triggers-note">Triggers only fire while Outdoors is running.</p>
-              <button class="btn-primary btn-small" id="btn-add-trigger">+ Add Trigger</button>
+        <!-- Automations tab -->
+        <div class="settings-content hidden" id="tab-automations">
+          <div class="automations-container" id="automations-view">
+            <div class="automations-header">
+              <p class="automations-note">Automations only fire while Outdoors is running.</p>
+              <button class="btn-primary btn-small" id="btn-add-automation">+ Add Automation</button>
             </div>
-            <div class="triggers-list" id="triggers-list"></div>
+            <div class="automations-list" id="automations-list"></div>
           </div>
-          <div class="trigger-form hidden" id="trigger-form">
-            <div class="trigger-form-header">
-              <h3 id="trigger-form-title">New Trigger</h3>
-              <button class="settings-close" id="btn-trigger-cancel">&times;</button>
+          <div class="automation-form hidden" id="automation-form">
+            <div class="automation-form-header">
+              <h3 id="automation-form-title">New Automation</h3>
+              <button class="settings-close" id="btn-automation-cancel">&times;</button>
             </div>
             <div class="settings-form">
               <div class="form-group">
@@ -143,21 +143,22 @@
               </div>
               <div class="form-group">
                 <label>Prompt</label>
-                <textarea id="tf-prompt" class="trigger-prompt-input" rows="3" placeholder="The message to send to the bot..."></textarea>
+                <textarea id="tf-prompt" class="automation-prompt-input" rows="3" placeholder="The message to send to the bot..."></textarea>
               </div>
               <div class="form-group">
-                <label>Schedule</label>
+                <label>Trigger</label>
                 <select id="tf-type">
                   <option value="interval">Repeat on interval</option>
                   <option value="daily">Daily</option>
                   <option value="weekly">Weekly</option>
                   <option value="once">One time</option>
+                  <option value="email">When email arrives from...</option>
                 </select>
               </div>
-              <div class="trigger-schedule-fields">
+              <div class="automation-schedule-fields">
                 <div class="form-group" id="tf-interval-group">
                   <label>Every</label>
-                  <div class="trigger-inline">
+                  <div class="automation-inline">
                     <input type="number" id="tf-interval-value" value="1" min="1">
                     <select id="tf-interval-unit">
                       <option value="minutes">minutes</option>
@@ -186,10 +187,14 @@
                   <label>Date & Time</label>
                   <input type="datetime-local" id="tf-datetime">
                 </div>
+                <div class="form-group hidden" id="tf-email-group">
+                  <label>From address</label>
+                  <input type="email" id="tf-email-from" placeholder="sender@example.com">
+                </div>
               </div>
-              <div class="trigger-form-actions">
-                <button class="btn-secondary" id="btn-trigger-form-cancel">Cancel</button>
-                <button class="btn-primary" id="btn-trigger-save">Save Trigger</button>
+              <div class="automation-form-actions">
+                <button class="btn-secondary" id="btn-automation-form-cancel">Cancel</button>
+                <button class="btn-primary" id="btn-automation-save">Save Automation</button>
               </div>
             </div>
           </div>

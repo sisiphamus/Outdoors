@@ -57,11 +57,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getConfig: () => ipcRenderer.invoke('get-full-config'),
   saveConfig: (data) => ipcRenderer.invoke('save-full-config', data),
 
-  // Triggers
-  getTriggers: () => ipcRenderer.invoke('get-triggers'),
-  saveTrigger: (trigger) => ipcRenderer.invoke('save-trigger', trigger),
-  deleteTrigger: (triggerId) => ipcRenderer.invoke('delete-trigger', triggerId),
-  toggleTrigger: (triggerId, enabled) => ipcRenderer.invoke('toggle-trigger', triggerId, enabled),
+  // Automations
+  getAutomations: () => ipcRenderer.invoke('get-automations'),
+  saveAutomation: (automation) => ipcRenderer.invoke('save-automation', automation),
+  deleteAutomation: (automationId) => ipcRenderer.invoke('delete-automation', automationId),
+  toggleAutomation: (automationId, enabled) => ipcRenderer.invoke('toggle-automation', automationId, enabled),
 
   // Projects (outputs)
   listOutputFiles: () => ipcRenderer.invoke('list-output-files'),

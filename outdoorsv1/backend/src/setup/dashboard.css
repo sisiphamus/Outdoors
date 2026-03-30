@@ -733,18 +733,18 @@ html, body {
 .project-btn-delete { background: var(--error); color: var(--white); border-color: var(--error); }
 .project-btn-delete:hover { background: #B5553F; color: var(--white); }
 
-/* ── Triggers ────────────────────────────────────────────── */
+/* ── Automations ─────────────────────────────────────────── */
 
-.triggers-container { display: flex; flex-direction: column; height: 100%; }
+.automations-container { display: flex; flex-direction: column; height: 100%; }
 
-.triggers-header {
+.automations-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 14px;
 }
 
-.triggers-note {
+.automations-note {
   font-size: 12px;
   font-style: italic;
   color: var(--text-muted);
@@ -765,7 +765,7 @@ html, body {
 }
 .btn-secondary:hover { background: var(--border); color: var(--text); }
 
-.triggers-list {
+.automations-list {
   flex: 1;
   overflow-y: auto;
   display: flex;
@@ -773,7 +773,7 @@ html, body {
   gap: 8px;
 }
 
-.triggers-empty {
+.automations-empty {
   padding: 24px;
   text-align: center;
   color: var(--text-muted);
@@ -781,7 +781,7 @@ html, body {
   font-style: italic;
 }
 
-.trigger-card {
+.automation-card {
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -791,18 +791,18 @@ html, body {
   background: var(--white);
   transition: border-color 0.15s;
 }
-.trigger-card:hover { border-color: var(--accent); }
-.trigger-card.disabled { opacity: 0.5; }
+.automation-card:hover { border-color: var(--accent); }
+.automation-card.disabled { opacity: 0.5; }
 
-.trigger-toggle {
+.automation-toggle {
   position: relative;
   width: 36px;
   height: 20px;
   flex-shrink: 0;
   margin-top: 2px;
 }
-.trigger-toggle input { opacity: 0; width: 0; height: 0; }
-.trigger-toggle .slider {
+.automation-toggle input { opacity: 0; width: 0; height: 0; }
+.automation-toggle .slider {
   position: absolute;
   inset: 0;
   background: var(--border);
@@ -810,7 +810,7 @@ html, body {
   cursor: pointer;
   transition: background 0.2s;
 }
-.trigger-toggle .slider::before {
+.automation-toggle .slider::before {
   content: '';
   position: absolute;
   left: 2px;
@@ -821,22 +821,22 @@ html, body {
   border-radius: 50%;
   transition: transform 0.2s;
 }
-.trigger-toggle input:checked + .slider { background: var(--accent); }
-.trigger-toggle input:checked + .slider::before { transform: translateX(16px); }
+.automation-toggle input:checked + .slider { background: var(--accent); }
+.automation-toggle input:checked + .slider::before { transform: translateX(16px); }
 
-.trigger-info { flex: 1; min-width: 0; }
-.trigger-name {
+.automation-info { flex: 1; min-width: 0; }
+.automation-name {
   font-weight: 600;
   font-size: 13px;
   color: var(--text);
   margin-bottom: 2px;
 }
-.trigger-schedule {
+.automation-schedule {
   font-size: 11px;
   color: var(--text-muted);
   margin-bottom: 4px;
 }
-.trigger-prompt-preview {
+.automation-prompt-preview {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   color: var(--text-muted);
@@ -845,14 +845,14 @@ html, body {
   text-overflow: ellipsis;
 }
 
-.trigger-actions {
+.automation-actions {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
   margin-top: 2px;
 }
 
-.trigger-btn {
+.automation-btn {
   background: none;
   border: 1px solid var(--border);
   padding: 3px 10px;
@@ -862,36 +862,36 @@ html, body {
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.trigger-btn:hover { background: var(--bg-secondary); color: var(--text); }
-.trigger-btn.delete:hover { background: var(--error); color: var(--white); border-color: var(--error); }
+.automation-btn:hover { background: var(--bg-secondary); color: var(--text); }
+.automation-btn.delete:hover { background: var(--error); color: var(--white); border-color: var(--error); }
 
 /* Trigger Form */
 
-.trigger-form {
+.automation-form {
   display: flex;
   flex-direction: column;
   height: 100%;
 }
 
-.trigger-form .settings-form {
+.automation-form .settings-form {
   max-width: 420px;
   flex: 1;
 }
 
-.trigger-form-header {
+.automation-form-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 14px;
 }
 
-.trigger-form-header h3 {
+.automation-form-header h3 {
   font-family: 'Playfair Display', serif;
   font-size: 16px;
   font-weight: 600;
 }
 
-.trigger-prompt-input {
+.automation-prompt-input {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--border);
@@ -903,14 +903,14 @@ html, body {
   background: var(--white);
   resize: vertical;
 }
-.trigger-prompt-input:focus { outline: none; border-color: var(--accent); }
+.automation-prompt-input:focus { outline: none; border-color: var(--accent); }
 
-.trigger-inline {
+.automation-inline {
   display: flex;
   gap: 8px;
 }
-.trigger-inline input { flex: 1; }
-.trigger-inline select { flex: 1; }
+.automation-inline input { flex: 1; }
+.automation-inline select { flex: 1; }
 
 .form-group select {
   width: 100%;
@@ -925,9 +925,9 @@ html, body {
 }
 .form-group select:focus { outline: none; border-color: var(--accent); }
 
-.trigger-schedule-fields { min-height: 50px; }
+.automation-schedule-fields { min-height: 50px; }
 
-.trigger-form-actions {
+.automation-form-actions {
   display: flex;
   gap: 10px;
   margin-top: 18px;

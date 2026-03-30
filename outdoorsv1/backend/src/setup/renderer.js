@@ -369,8 +369,8 @@ async function handleStartAuth() {
 
         await delay(1500);
 
-        // Run onboarding scan
-        await runOnboardingScan();
+        // Run onboarding scan in background — don't block the wizard
+        runOnboardingScan();
 
         nextPage();
       } else {
@@ -383,7 +383,7 @@ async function handleStartAuth() {
       showConnectSection('connect-success');
       try { await window.electronAPI.closeAutomationChrome(); } catch {}
       await delay(1500);
-      await runOnboardingScan();
+      runOnboardingScan();
       nextPage();
     } else {
       showConnectError(result.error || 'Could not get Google auth URL.');
@@ -424,64 +424,16 @@ let onboardingSkipped = false;
 async function runOnboardingScan() {
   if (!isElectron || selectedGoogleServices.length === 0) return;
 
-  showConnectSection('connect-onboarding');
-  const statusEl = document.getElementById('onboarding-status');
-  const barEl = document.getElementById('onboarding-bar');
-
-  const serviceNames = {
-    gmail: 'Gmail', calendar: 'Calendar', contacts: 'Contacts',
-    drive: 'Drive', docs: 'Docs', sheets: 'Sheets',
-    slides: 'Slides', tasks: 'Tasks', forms: 'Forms', search: 'Search',
-  };
-
-  const names = selectedGoogleServices.map(s => serviceNames[s] || s).join(', ');
-  if (statusEl) statusEl.textContent = `Scanning ${names}...`;
-
-  let progressPct = 5;
-  if (barEl) barEl.style.width = progressPct + '%';
-
-  const totalServices = selectedGoogleServices.length;
-  let scannedCount = 0;
-
-  window.electronAPI.onOnboardingProgress?.((text) => {
-    if (onboardingSkipped) return;
-    for (const [key, name] of Object.entries(serviceNames)) {
-      if (text.toLowerCase().includes(key) && selectedGoogleServices.includes(key)) {
-        if (statusEl) statusEl.textContent = `Scanning ${name}...`;
-        scannedCount = Math.max(scannedCount, selectedGoogleServices.indexOf(key) + 1);
-        progressPct = Math.min(90, Math.round((scannedCount / totalServices) * 90));
-        if (barEl) barEl.style.width = progressPct + '%';
-        break;
-      }
-    }
-  });
-
-  const progressTimer = setInterval(() => {
-    if (progressPct < 85) {
-      progressPct += 2;
-      if (barEl) barEl.style.width = progressPct + '%';
-    }
-  }, 3000);
-
+  // Runs in background — no UI updates needed since the wizard has already
+  // advanced to the next page. User doesn't need to watch personalization.
   try {
     const result = await window.electronAPI.runOnboardingScan(selectedGoogleServices);
-    clearInterval(progressTimer);
-
     if (result.ok) {
-      if (barEl) barEl.style.width = '95%';
-      if (statusEl) statusEl.textContent = 'Indexing local files...';
       try { await window.electronAPI.runFilesystemIndex(); } catch {}
-      if (barEl) barEl.style.width = '100%';
-      if (statusEl) statusEl.textContent = 'Personalization complete!';
-      await delay(1500);
-    } else {
-      if (statusEl) statusEl.textContent = 'Scan finished with some issues — you can re-run later.';
-      await delay(2000);
     }
-  } catch {
-    clearInterval(progressTimer);
-    if (statusEl) statusEl.textContent = 'Scan encountered an error — skipping.';
-    await delay(1500);
+    console.log('[onboarding] Background scan complete:', result.ok ? 'success' : 'partial');
+  } catch (err) {
+    console.log('[onboarding] Background scan error:', err.message);
   }
 }
 

@@ -2376,7 +2376,7 @@ Updated: ${today}
     return { ok: true };
   });
 
-  // ── Trigger CRUD ────────────────────────────────────────────────────────────
+  // ── Automation CRUD ─────────────────────────────────────────────────────────
 
   function readConfig() {
     try {
@@ -2389,53 +2389,53 @@ Updated: ${today}
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
   }
 
-  async function notifyBackendTriggersChanged() {
+  async function notifyBackendAutomationsChanged() {
     try {
       const cfg = readConfig();
       const port = cfg.port || 3847;
       const http = require('http');
-      const req = http.request({ hostname: '127.0.0.1', port, path: '/api/triggers/reload', method: 'POST' });
+      const req = http.request({ hostname: '127.0.0.1', port, path: '/api/automations/reload', method: 'POST' });
       req.on('error', () => {});
       req.end();
     } catch {}
   }
 
-  ipcMain.handle('get-triggers', async () => {
+  ipcMain.handle('get-automations', async () => {
     const cfg = readConfig();
-    return cfg.triggers || [];
+    return cfg.automations || [];
   });
 
-  ipcMain.handle('save-trigger', async (_event, trigger) => {
+  ipcMain.handle('save-automation', async (_event, automation) => {
     const cfg = readConfig();
-    if (!cfg.triggers) cfg.triggers = [];
-    const idx = cfg.triggers.findIndex(t => t.id === trigger.id);
+    if (!cfg.automations) cfg.automations = [];
+    const idx = cfg.automations.findIndex(t => t.id === automation.id);
     if (idx >= 0) {
-      cfg.triggers[idx] = trigger;
+      cfg.automations[idx] = automation;
     } else {
-      cfg.triggers.push(trigger);
+      cfg.automations.push(automation);
     }
     writeConfig(cfg);
-    await notifyBackendTriggersChanged();
+    await notifyBackendAutomationsChanged();
     return { ok: true };
   });
 
-  ipcMain.handle('delete-trigger', async (_event, triggerId) => {
+  ipcMain.handle('delete-automation', async (_event, automationId) => {
     const cfg = readConfig();
-    if (!cfg.triggers) return { ok: true };
-    cfg.triggers = cfg.triggers.filter(t => t.id !== triggerId);
+    if (!cfg.automations) return { ok: true };
+    cfg.automations = cfg.automations.filter(t => t.id !== automationId);
     writeConfig(cfg);
-    await notifyBackendTriggersChanged();
+    await notifyBackendAutomationsChanged();
     return { ok: true };
   });
 
-  ipcMain.handle('toggle-trigger', async (_event, triggerId, enabled) => {
+  ipcMain.handle('toggle-automation', async (_event, automationId, enabled) => {
     const cfg = readConfig();
-    if (!cfg.triggers) return { ok: false };
-    const trigger = cfg.triggers.find(t => t.id === triggerId);
-    if (!trigger) return { ok: false };
-    trigger.enabled = enabled;
+    if (!cfg.automations) return { ok: false };
+    const automation = cfg.automations.find(t => t.id === automationId);
+    if (!automation) return { ok: false };
+    automation.enabled = enabled;
     writeConfig(cfg);
-    await notifyBackendTriggersChanged();
+    await notifyBackendAutomationsChanged();
     return { ok: true };
   });
 }

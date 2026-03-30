@@ -471,7 +471,7 @@ function setupSettings() {
       tab.classList.add('active');
       document.getElementById('tab-' + tab.dataset.tab).classList.remove('hidden');
       if (tab.dataset.tab === 'outputs') loadOutputsTree();
-      if (tab.dataset.tab === 'triggers') loadTriggers();
+      if (tab.dataset.tab === 'automations') loadAutomations();
       if (tab.dataset.tab === 'analytics') loadAnalytics();
     });
   });
@@ -897,52 +897,52 @@ document.getElementById('btn-new-project-file')?.addEventListener('click', async
 });
 
 // ---------------------------------------------------------------------------
-// Triggers
+// Automations
 // ---------------------------------------------------------------------------
 
-let triggersCache = [];
-let editingTriggerId = null;
+let automationsCache = [];
+let editingAutomationId = null;
 
-async function loadTriggers() {
-  const list = document.getElementById('triggers-list');
-  list.innerHTML = '<div class="triggers-empty">Loading...</div>';
-  showTriggersView();
+async function loadAutomations() {
+  const list = document.getElementById('automations-list');
+  list.innerHTML = '<div class="automations-empty">Loading...</div>';
+  showAutomationsView();
   try {
-    triggersCache = await window.electronAPI.getTriggers();
-    renderTriggersList();
+    automationsCache = await window.electronAPI.getAutomations();
+    renderAutomationsList();
   } catch {
-    list.innerHTML = '<div class="triggers-empty">Failed to load triggers</div>';
+    list.innerHTML = '<div class="automations-empty">Failed to load automations</div>';
   }
 }
 
-function renderTriggersList() {
-  const list = document.getElementById('triggers-list');
+function renderAutomationsList() {
+  const list = document.getElementById('automations-list');
   list.innerHTML = '';
-  if (triggersCache.length === 0) {
-    list.innerHTML = '<div class="triggers-empty">No triggers yet. Create one to automate tasks.</div>';
+  if (automationsCache.length === 0) {
+    list.innerHTML = '<div class="automations-empty">No automations yet. Create one to automate tasks.</div>';
     return;
   }
-  for (const trigger of triggersCache) {
+  for (const automation of automationsCache) {
     const card = document.createElement('div');
-    card.className = 'trigger-card' + (trigger.enabled ? '' : ' disabled');
+    card.className = 'automation-card' + (automation.enabled ? '' : ' disabled');
     card.innerHTML =
-      '<label class="trigger-toggle">' +
-        '<input type="checkbox"' + (trigger.enabled ? ' checked' : '') + '>' +
+      '<label class="automation-toggle">' +
+        '<input type="checkbox"' + (automation.enabled ? ' checked' : '') + '>' +
         '<span class="slider"></span>' +
       '</label>' +
-      '<div class="trigger-info">' +
-        '<div class="trigger-name">' + esc(trigger.name || 'Untitled') + '</div>' +
-        '<div class="trigger-schedule">' + esc(formatSchedule(trigger.schedule)) + '</div>' +
-        '<div class="trigger-prompt-preview">' + esc(truncate(trigger.prompt || '', 100)) + '</div>' +
+      '<div class="automation-info">' +
+        '<div class="automation-name">' + esc(automation.name || 'Untitled') + '</div>' +
+        '<div class="automation-schedule">' + esc(formatSchedule(automation.schedule)) + '</div>' +
+        '<div class="automation-prompt-preview">' + esc(truncate(automation.prompt || '', 100)) + '</div>' +
       '</div>' +
-      '<div class="trigger-actions">' +
-        '<button class="trigger-btn edit">Edit</button>' +
-        '<button class="trigger-btn delete">Delete</button>' +
+      '<div class="automation-actions">' +
+        '<button class="automation-btn edit">Edit</button>' +
+        '<button class="automation-btn delete">Delete</button>' +
       '</div>';
     const toggleInput = card.querySelector('input[type="checkbox"]');
-    toggleInput.addEventListener('change', () => onToggleTrigger(trigger.id, toggleInput.checked));
-    card.querySelector('.trigger-btn.edit').addEventListener('click', () => openTriggerForm(trigger));
-    card.querySelector('.trigger-btn.delete').addEventListener('click', () => onDeleteTrigger(trigger.id, trigger.name));
+    toggleInput.addEventListener('change', () => onToggleAutomation(automation.id, toggleInput.checked));
+    card.querySelector('.automation-btn.edit').addEventListener('click', () => openAutomationForm(automation));
+    card.querySelector('.automation-btn.delete').addEventListener('click', () => onDeleteAutomation(automation.id, automation.name));
     list.appendChild(card);
   }
 }
@@ -967,6 +967,8 @@ function formatSchedule(schedule) {
       const d = new Date(schedule.datetime);
       return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) + ' at ' + formatTime(schedule.timeOfDay || d.toTimeString().slice(0, 5));
     }
+    case 'email':
+      return 'When email from ' + (schedule.fromAddress || '(not set)');
     default:
       return 'Unknown schedule';
   }
@@ -979,23 +981,23 @@ function formatTime(t) {
   return h12 + ':' + String(m).padStart(2, '0') + ' ' + suffix;
 }
 
-function showTriggersView() {
-  document.getElementById('triggers-view').classList.remove('hidden');
-  document.getElementById('trigger-form').classList.add('hidden');
+function showAutomationsView() {
+  document.getElementById('automations-view').classList.remove('hidden');
+  document.getElementById('automation-form').classList.add('hidden');
 }
 
-function showTriggerForm() {
-  document.getElementById('triggers-view').classList.add('hidden');
-  document.getElementById('trigger-form').classList.remove('hidden');
+function showAutomationForm() {
+  document.getElementById('automations-view').classList.add('hidden');
+  document.getElementById('automation-form').classList.remove('hidden');
 }
 
-function openTriggerForm(trigger) {
-  editingTriggerId = trigger ? trigger.id : null;
-  document.getElementById('trigger-form-title').textContent = trigger ? 'Edit Trigger' : 'New Trigger';
-  document.getElementById('tf-name').value = trigger ? trigger.name : '';
-  document.getElementById('tf-prompt').value = trigger ? trigger.prompt : '';
+function openAutomationForm(automation) {
+  editingAutomationId = automation ? automation.id : null;
+  document.getElementById('automation-form-title').textContent = automation ? 'Edit Automation' : 'New Automation';
+  document.getElementById('tf-name').value = automation ? automation.name : '';
+  document.getElementById('tf-prompt').value = automation ? automation.prompt : '';
 
-  const schedule = trigger ? trigger.schedule : { type: 'interval', intervalMinutes: 1440 };
+  const schedule = automation ? automation.schedule : { type: 'interval', intervalMinutes: 1440 };
   document.getElementById('tf-type').value = schedule.type || 'interval';
 
   // Set interval fields
@@ -1029,8 +1031,11 @@ function openTriggerForm(trigger) {
     document.getElementById('tf-datetime').value = d.toISOString().slice(0, 16);
   }
 
+  // Set email field
+  document.getElementById('tf-email-from').value = schedule.fromAddress || '';
+
   updateScheduleFields();
-  showTriggerForm();
+  showAutomationForm();
 }
 
 function updateScheduleFields() {
@@ -1039,9 +1044,10 @@ function updateScheduleFields() {
   document.getElementById('tf-time-group').classList.toggle('hidden', type !== 'daily' && type !== 'weekly');
   document.getElementById('tf-day-group').classList.toggle('hidden', type !== 'weekly');
   document.getElementById('tf-datetime-group').classList.toggle('hidden', type !== 'once');
+  document.getElementById('tf-email-group').classList.toggle('hidden', type !== 'email');
 }
 
-async function saveTriggerForm() {
+async function saveAutomationForm() {
   const name = document.getElementById('tf-name').value.trim();
   const prompt = document.getElementById('tf-prompt').value.trim();
   if (!name || !prompt) { alert('Name and prompt are required.'); return; }
@@ -1067,10 +1073,16 @@ async function saveTriggerForm() {
     case 'once':
       schedule.datetime = document.getElementById('tf-datetime').value;
       break;
+    case 'email': {
+      const fromAddr = document.getElementById('tf-email-from').value.trim();
+      if (!fromAddr) { alert('Email address is required for email automations.'); return; }
+      schedule.fromAddress = fromAddr;
+      break;
+    }
   }
 
-  const trigger = {
-    id: editingTriggerId || ('t_' + Math.random().toString(36).slice(2, 10)),
+  const automation = {
+    id: editingAutomationId || ('a_' + Math.random().toString(36).slice(2, 10)),
     name,
     prompt,
     enabled: true,
@@ -1080,55 +1092,55 @@ async function saveTriggerForm() {
   };
 
   // Preserve existing fields when editing
-  if (editingTriggerId) {
-    const existing = triggersCache.find(t => t.id === editingTriggerId);
+  if (editingAutomationId) {
+    const existing = automationsCache.find(a => a.id === editingAutomationId);
     if (existing) {
-      trigger.lastFiredAt = existing.lastFiredAt;
-      trigger.createdAt = existing.createdAt;
-      trigger.enabled = existing.enabled;
+      automation.lastFiredAt = existing.lastFiredAt;
+      automation.createdAt = existing.createdAt;
+      automation.enabled = existing.enabled;
     }
   }
 
-  const saveBtn = document.getElementById('btn-trigger-save');
+  const saveBtn = document.getElementById('btn-automation-save');
   saveBtn.textContent = 'Saving...';
   saveBtn.disabled = true;
   try {
-    await window.electronAPI.saveTrigger(trigger);
-    await loadTriggers();
+    await window.electronAPI.saveAutomation(automation);
+    await loadAutomations();
   } catch (err) {
     alert('Failed to save: ' + (err.message || 'Unknown error'));
   } finally {
-    saveBtn.textContent = 'Save Trigger';
+    saveBtn.textContent = 'Save Automation';
     saveBtn.disabled = false;
   }
 }
 
-async function onDeleteTrigger(id, name) {
-  if (!confirm('Delete trigger "' + name + '"?')) return;
+async function onDeleteAutomation(id, name) {
+  if (!confirm('Delete automation "' + name + '"?')) return;
   try {
-    await window.electronAPI.deleteTrigger(id);
-    await loadTriggers();
+    await window.electronAPI.deleteAutomation(id);
+    await loadAutomations();
   } catch (err) {
     alert('Failed to delete: ' + (err.message || 'Unknown error'));
   }
 }
 
-async function onToggleTrigger(id, enabled) {
+async function onToggleAutomation(id, enabled) {
   try {
-    await window.electronAPI.toggleTrigger(id, enabled);
-    const t = triggersCache.find(t => t.id === id);
-    if (t) t.enabled = enabled;
-    renderTriggersList();
+    await window.electronAPI.toggleAutomation(id, enabled);
+    const a = automationsCache.find(a => a.id === id);
+    if (a) a.enabled = enabled;
+    renderAutomationsList();
   } catch (err) {
     alert('Failed to toggle: ' + (err.message || 'Unknown error'));
   }
 }
 
-// Wire up trigger form events
-document.getElementById('btn-add-trigger')?.addEventListener('click', () => openTriggerForm(null));
-document.getElementById('btn-trigger-cancel')?.addEventListener('click', showTriggersView);
-document.getElementById('btn-trigger-form-cancel')?.addEventListener('click', showTriggersView);
-document.getElementById('btn-trigger-save')?.addEventListener('click', saveTriggerForm);
+// Wire up automation form events
+document.getElementById('btn-add-automation')?.addEventListener('click', () => openAutomationForm(null));
+document.getElementById('btn-automation-cancel')?.addEventListener('click', showAutomationsView);
+document.getElementById('btn-automation-form-cancel')?.addEventListener('click', showAutomationsView);
+document.getElementById('btn-automation-save')?.addEventListener('click', saveAutomationForm);
 document.getElementById('tf-type')?.addEventListener('change', updateScheduleFields);
 
 // ---------------------------------------------------------------------------
