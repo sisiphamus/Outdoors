@@ -8,4 +8,4 @@ SITE_URL = "https://tryoutdoors-rice.pages.dev"
 
 [[kv_namespaces]]
 binding = "KV"
-id = ""  # Fill after creating: wrangler kv namespace create OUTDOORS_REFERRAL
+id = "94831bce1e1645b79cb4cd13ce118cb8"
