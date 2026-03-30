@@ -1350,3 +1350,17 @@ function formatTokens(n) {
 
 document.getElementById('btn-refresh-analytics')?.addEventListener('click', loadAnalytics);
 document.getElementById('analytics-days')?.addEventListener('change', loadAnalytics);
+
+// ---------------------------------------------------------------------------
+// Version label
+// ---------------------------------------------------------------------------
+
+(async () => {
+  const el = document.getElementById('version-label');
+  if (el && window.electronAPI?.getAppVersion) {
+    try {
+      const v = await window.electronAPI.getAppVersion();
+      if (v) el.textContent = 'v' + v;
+    } catch {}
+  }
+})();

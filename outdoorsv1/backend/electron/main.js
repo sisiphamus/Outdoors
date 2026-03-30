@@ -1791,7 +1791,7 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
 
   // Close/hide window
   ipcMain.handle('close-window', () => {
-    if (mainWindow) mainWindow.hide();
+    app.quit();
   });
 
   ipcMain.handle('open-external', async (_event, url) => {
@@ -1799,6 +1799,8 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
       await shell.openExternal(url);
     }
   });
+
+  ipcMain.handle('get-app-version', () => app.getVersion());
 
   // ── Dashboard IPC ─────────────────────────────────────────────────────────
 
