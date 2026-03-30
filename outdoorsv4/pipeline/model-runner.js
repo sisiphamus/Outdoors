@@ -2,16 +2,8 @@
 // Built from scratch using Node's child_process.spawn.
 
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import { config } from '../config.js';
 import { register, unregister, emitActivity } from '../util/process-registry.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-// mcp-bot.json lives in outdoorsv4/ — contains all MCP servers (browser + google_workspace)
-const MCP_CONFIG_PATH = join(__dirname, '..', 'mcp-bot.json');
 
 const MODEL_MAP = {
   opus: 'gpt-5.4',
@@ -117,6 +109,7 @@ export function runModel({
       env: cleanEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: process.platform === 'win32',
+      detached: process.platform !== 'win32',
     });
 
     proc.stdin.on('error', () => { /* pipe closed — ignore */ });
@@ -133,20 +126,26 @@ export function runModel({
     let buffer = '';
     let response_streamed = false;
     let killedForQuestion = false;
-    let killedAfterResult = false;
 
-    // Enforce timeout if specified
+    // Activity-based timeout: resets every time the model produces output
+    // (tool calls, streamed text, turn completions). This lets long multi-turn
+    // sessions survive while still killing truly stuck processes.
+    const IDLE_TIMEOUT = Math.min(timeout || 1800000, 1800000); // cap at 30 min idle
     let timeoutTimer = null;
-    if (timeout && timeout > 0) {
-      timeoutTimer = setTimeout(() => {
-        if (!killedAfterResult && !killedForQuestion) {
-          onProgress?.('warning', { message: `Model timed out after ${timeout}ms` });
-          try { proc.kill(); } catch (e) {
-            process.stderr.write(`[model-runner] Failed to kill timed-out process: ${e.message}\n`);
+    function resetTimeout() {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (IDLE_TIMEOUT > 0) {
+        timeoutTimer = setTimeout(() => {
+          if (!killedForQuestion) {
+            onProgress?.('warning', { message: `Model idle for ${IDLE_TIMEOUT / 1000}s — killing` });
+            try { proc.kill(); } catch (e) {
+              process.stderr.write(`[model-runner] Failed to kill timed-out process: ${e.message}\n`);
+            }
           }
-        }
-      }, timeout);
+        }, IDLE_TIMEOUT);
+      }
     }
+    resetTimeout();
 
     // Write prompt to stdin and close
     if (fullPrompt) {
@@ -180,6 +179,7 @@ export function runModel({
           case 'item.completed': {
             const item = event.item;
             if (!item) break;
+            resetTimeout(); // Activity detected — extend idle deadline
 
             if (item.type === 'agent_message' && item.text) {
               response = item.text;
@@ -201,6 +201,7 @@ export function runModel({
           }
 
           case 'turn.completed': {
+            resetTimeout(); // Turn done — reset idle timer for potential next turn
             if (event.usage) {
               onProgress?.('cost', {
                 cost: event.usage.total_cost_usd,
@@ -210,25 +211,8 @@ export function runModel({
                 cache_read: event.usage.cached_input_tokens,
               });
             }
-            // After the turn completes, kill the process tree to prevent background
-            // tasks from triggering additional model turns that waste API credits.
-            if (!killedAfterResult && !killedForQuestion) {
-              killedAfterResult = true;
-              setTimeout(() => {
-                try {
-                  if (process.platform === 'win32') {
-                    const taskkill = `${process.env.SystemRoot || 'C:\\Windows'}\\System32\\taskkill.exe`;
-                    spawn(taskkill, ['/T', '/F', '/PID', String(proc.pid)], {
-                      shell: false,
-                      stdio: 'ignore',
-                      detached: true,
-                    });
-                  } else {
-                    process.kill(-proc.pid, 'SIGTERM');
-                  }
-                } catch {}
-              }, 500);
-            }
+            // Let the process continue — Codex exits naturally when all turns
+            // are done. The idle timeout is the safety net against runaway costs.
             break;
           }
 

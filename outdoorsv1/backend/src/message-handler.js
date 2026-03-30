@@ -85,7 +85,8 @@ function isRateLimited(jid) {
   const now = Date.now();
   const timestamps = rateLimitMap.get(jid) || [];
   const recent = timestamps.filter((t) => now - t < 60000);
-  rateLimitMap.set(jid, recent);
+  if (recent.length === 0) { rateLimitMap.delete(jid); }
+  else { rateLimitMap.set(jid, recent); }
   return recent.length >= config.rateLimitPerMinute;
 }
 
@@ -321,8 +322,10 @@ export async function handleMessage(message, emitLog) {
   const sender = message.pushName || jid.replace(/@.*/, '');
   emitLog?.('incoming', { sender, prompt, jid });
 
-  if (!isSelfMessage && !isGroup && !isAllowed(jid)) {
-    emitLog?.('blocked', { sender, jid, reason: 'not in allowed list' });
+  // Validate sender: check participant JID for group messages, sender JID for DMs
+  const senderJid = isGroup ? (message.key.participant || jid) : jid;
+  if (!isSelfMessage && !isAllowed(senderJid)) {
+    emitLog?.('blocked', { sender, jid: senderJid, reason: 'not in allowed list' });
     return null;
   }
 
@@ -424,7 +427,7 @@ export async function handleMessage(message, emitLog) {
       emitLog?.('voice', { sender, path: audioPath });
       const transcript = await transcribeAudio(audioPath);
       if (transcript) {
-        finalPrompt = transcript + (finalPrompt ? `\n\n${finalPrompt}` : '');
+        finalPrompt = `<user_voice_transcript>${transcript}</user_voice_transcript>${finalPrompt ? `\n\n${finalPrompt}` : ''}`;
         emitLog?.('transcription', { sender, text: transcript.slice(0, 100) });
       } else {
         finalPrompt = `[The user sent a voice message but transcription failed. The audio file is at: ${audioPath}]\n\n${finalPrompt || 'Voice message'}`;
@@ -446,7 +449,7 @@ export async function handleMessage(message, emitLog) {
         });
         const transcript = await transcribeAudio(audioFromVideo);
         if (transcript) {
-          finalPrompt = `[The user sent a video. Audio transcript: "${transcript}"]\n[Video file at: ${videoPath}]\n\n${finalPrompt || ''}`;
+          finalPrompt = `[The user sent a video.]\n<user_voice_transcript>${transcript}</user_voice_transcript>\n[Video file at: ${videoPath}]\n\n${finalPrompt || ''}`;
         } else {
           finalPrompt = `[The user sent a video at: ${videoPath}]\n\n${finalPrompt || 'Video message'}`;
         }
@@ -496,7 +499,7 @@ export async function handleMessage(message, emitLog) {
     }
     if (execResult.status === 'needs_user_input') {
       const response = formatQuestionsForText(execResult.questions);
-      return { response, sender, prompt: parsed.body, jid, sessionId: execResult.sessionId, fullEvents: execResult.fullEvents, conversationNumber: parsed.number };
+      return { response, sender, prompt: parsed.body, jid, sessionId: execResult.sessionId, fullEvents: execResult.fullEvents, conversationNumber: parsed.number, internalSessionId: session.id };
     }
     let response = execResult.response;
 
@@ -534,6 +537,7 @@ export async function handleMessage(message, emitLog) {
       sessionId: execResult.sessionId,
       fullEvents: execResult.fullEvents,
       conversationNumber: parsed.number,
+      internalSessionId: session.id,
       runtimeFingerprint: progressWrapper.health.bootFingerprint,
       runtimeStaleDetected: progressWrapper.health.stale,
       runtimeChangedFiles: progressWrapper.health.changedFiles,
@@ -563,7 +567,7 @@ export async function handleMessage(message, emitLog) {
         }
         if (retryResult.status === 'needs_user_input') {
           const response = formatQuestionsForText(retryResult.questions);
-          return { response, sender, prompt: parsed.body, jid, sessionId: retryResult.sessionId, fullEvents: retryResult.fullEvents, conversationNumber: parsed.number };
+          return { response, sender, prompt: parsed.body, jid, sessionId: retryResult.sessionId, fullEvents: retryResult.fullEvents, conversationNumber: parsed.number, internalSessionId: session.id };
         }
         const mode = (isKnownCode || didRetryDelegate) ? 'code' : 'assistant';
         if (retryResult.sessionId) {
@@ -581,6 +585,7 @@ export async function handleMessage(message, emitLog) {
           sessionId: retryResult.sessionId,
           fullEvents: retryResult.fullEvents,
           conversationNumber: parsed.number,
+          internalSessionId: session.id,
           runtimeFingerprint: retryProgressWrapper.health.bootFingerprint,
           runtimeStaleDetected: retryProgressWrapper.health.stale,
           runtimeChangedFiles: retryProgressWrapper.health.changedFiles,
@@ -588,7 +593,7 @@ export async function handleMessage(message, emitLog) {
       } catch (retryErr) {
         console.error('[message-handler] Retry failed:', retryErr);
         emitLog?.('error', { sender, prompt: parsed.body, error: retryErr.message });
-        return { response: 'Something went wrong — check server logs for details.', sender, prompt: parsed.body, jid };
+        return { response: 'Something went wrong — check server logs for details.', sender, prompt: parsed.body, jid, internalSessionId: session.id };
       }
     }
     console.error('[message-handler] Execution failed:', err);
@@ -598,13 +603,16 @@ export async function handleMessage(message, emitLog) {
       sender,
       prompt: parsed.body,
       jid,
+      internalSessionId: session.id,
       runtimeFingerprint: progressWrapper.health.bootFingerprint,
       runtimeStaleDetected: progressWrapper.health.stale,
       runtimeChangedFiles: progressWrapper.health.changedFiles,
     };
   } finally {
-    // Clean up this session's short-term files
-    closeSession(session.id);
+    // Session cleanup is deferred to the caller (whatsapp-client.js) so that
+    // image files in shortTermDir survive until after they've been read and sent.
+    // The caller cleans up via result.internalSessionId.
+    // Fallback: cleanupStaleSessions() catches any stragglers every 5 minutes.
   }
 }
 

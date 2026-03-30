@@ -16,7 +16,7 @@ const defaults = {
   codexCommand: 'codex',
   codexArgs: ['exec'],
   maxResponseLength: 4000,
-  messageTimeout: 900000,
+  messageTimeout: 1800000,
   rateLimitPerMinute: 10,
   workingDirectory: process.cwd(),
   codeCodexArgs: ['exec'],

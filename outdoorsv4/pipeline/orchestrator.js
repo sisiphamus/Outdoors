@@ -13,7 +13,7 @@ import { getFullInventory, getContents, writeMemory, updateMemory, detectSiteCon
 import { config } from '../config.js';
 import { setClaudeSessionId } from '../session/session-manager.js';
 import { redactSecrets } from './redact-secrets.js';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import { mkdirSync, readdirSync, statSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
@@ -461,9 +461,17 @@ async function tryInstallFromMemory(mem, onProgress) {
       onProgress?.('warning', { message: `Blocked unsafe install command: ${cmd}` });
       continue;
     }
+    // Reject commands containing shell metacharacters to prevent injection
+    if (/[;&|`$(){}]/.test(cmd)) {
+      console.warn(`[security] Blocked shell metacharacters in install command: ${cmd}`);
+      onProgress?.('warning', { message: `Blocked suspicious install command: ${cmd}` });
+      continue;
+    }
     onProgress?.('tool_install', { message: `Installing: ${cmd}` });
     try {
-      execSync(cmd, { stdio: 'pipe', timeout: 60000, shell: true });
+      // Split into executable + args to avoid shell interpretation
+      const parts = cmd.split(/\s+/);
+      execFileSync(parts[0], parts.slice(1), { stdio: 'pipe', timeout: 60000 });
       onProgress?.('tool_install', { message: `Installed: ${cmd}` });
     } catch (err) {
       onProgress?.('warning', { message: `Install failed (${cmd}): ${err.message?.slice(0, 200)}` });
@@ -603,7 +611,7 @@ function learnInBackground(prompt, outputSpec, executionResponse, fullEvents, on
       for (const update of learnerResult.updates) {
         try {
           if (update.path) {
-            if (update.path.includes('..') || update.path.startsWith('/') || /^[a-zA-Z]:/.test(update.path)) {
+            if (update.path.includes('..') || update.path.startsWith('/') || /^[a-zA-Z]:/.test(update.path) || update.path.includes('\\')) {
               process.stderr.write(`[learner] Blocked path traversal: ${update.path}\n`);
               continue;
             }

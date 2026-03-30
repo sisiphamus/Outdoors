@@ -169,8 +169,11 @@ function addMessage(role, text, sessionId) {
     rendered = rendered.replace(/`([^`]+)`/g, '<code>$1</code>');
     // Bold
     rendered = rendered.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    // Links
-    rendered = rendered.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+    // Links — only allow http(s) schemes to prevent javascript: XSS
+    rendered = rendered.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
+      if (/^https?:\/\//i.test(url)) return `<a href="${url}" target="_blank">${text}</a>`;
+      return match;
+    });
   }
 
   const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

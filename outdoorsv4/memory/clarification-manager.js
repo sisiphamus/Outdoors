@@ -6,8 +6,17 @@
 
 const store = new Map();
 
+const CLARIFICATION_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 export function get(key) {
-  return store.get(key) || null;
+  const entry = store.get(key);
+  if (!entry) return null;
+  // Evict stale clarifications — the Claude subprocess that asked is long dead
+  if (Date.now() - entry.timestamp > CLARIFICATION_TTL_MS) {
+    store.delete(key);
+    return null;
+  }
+  return entry;
 }
 
 export function setPending(key, { originalPrompt, pendingQuestions, sessionId }) {

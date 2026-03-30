@@ -24,12 +24,14 @@ const SAVE_DEBOUNCE_MS = 500;
 
 function save() {
   // Debounce to coalesce rapid concurrent updates.
-  // In-memory state is always up-to-date; disk persistence is eventual.
+  // Snapshot the state now so the write captures the current state, not
+  // whatever the mutable object looks like when the timer fires.
+  const snapshot = JSON.parse(JSON.stringify(conversations));
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
       const tmpPath = CONVERSATIONS_PATH + `.tmp.${randomBytes(4).toString('hex')}`;
-      writeFileSync(tmpPath, JSON.stringify(conversations, null, 2));
+      writeFileSync(tmpPath, JSON.stringify(snapshot, null, 2));
       renameSync(tmpPath, CONVERSATIONS_PATH);
     } catch {}
     saveTimer = null;
@@ -73,7 +75,10 @@ export function parseMessage(text) {
 
   const numMatch = text.match(/^(\d+)\s+(.+)$/s);
   if (numMatch) {
-    return { number: parseInt(numMatch[1], 10), command: 'message', body: numMatch[2] };
+    const num = parseInt(numMatch[1], 10);
+    // Cap conversation numbers to prevent unbounded state growth
+    if (num > 99) return { number: null, command: 'message', body: text };
+    return { number: num, command: 'message', body: numMatch[2] };
   }
 
   return { number: null, command: 'message', body: text };

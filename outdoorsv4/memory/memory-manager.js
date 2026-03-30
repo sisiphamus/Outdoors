@@ -2,7 +2,7 @@
 // Categories: skills, knowledge, preferences, sites.
 
 import { readdirSync, readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'fs';
-import { join, dirname, basename } from 'path';
+import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { randomBytes } from 'crypto';
 import { enqueueWrite } from './memory-write-queue.js';
@@ -127,6 +127,12 @@ export function writeMemory(name, category, content) {
 }
 
 export function updateMemory(path, action, content) {
+  // Validate path stays within MEMORY_ROOT — defense against traversal from any caller
+  const resolved = resolve(join(MEMORY_ROOT, path));
+  const root = resolve(MEMORY_ROOT);
+  if (!resolved.startsWith(root + '/') && !resolved.startsWith(root + '\\') && resolved !== root) {
+    throw new Error(`Blocked unsafe memory path: ${path}`);
+  }
   return enqueueWrite(() => {
     if (action === 'append') {
       const existing = existsSync(path) ? readFileSync(path, 'utf-8') : '';

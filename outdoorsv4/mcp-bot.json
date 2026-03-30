@@ -2,11 +2,11 @@
   "mcpServers": {
     "chrome": {
       "command": "npx",
-      "args": ["chrome-devtools-mcp@latest", "--browserUrl", "http://127.0.0.1:9222"]
+      "args": ["chrome-devtools-mcp@0.20.3", "--browserUrl", "http://127.0.0.1:9222"]
     },
     "playwright": {
       "command": "npx",
-      "args": ["@playwright/mcp@latest", "--cdp-endpoint", "http://localhost:9222", "--no-isolated", "--timeout-navigation", "10000", "--timeout-action", "5000"]
+      "args": ["@playwright/mcp@0.0.68", "--cdp-endpoint", "http://localhost:9222", "--no-isolated", "--timeout-navigation", "10000", "--timeout-action", "5000"]
     }
   }
 }

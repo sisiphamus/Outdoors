@@ -12,6 +12,7 @@ import { sendToOutdoorsGroup } from './whatsapp-client.js';
 let deps = null;
 let checkInterval = null;
 let triggers = [];
+const firingTriggers = new Set(); // In-flight guard to prevent duplicate fires
 
 export function startTriggerScheduler(context) {
   deps = context;
@@ -35,6 +36,7 @@ async function checkTriggers() {
 
   for (const trigger of triggers) {
     if (!trigger.enabled) continue;
+    if (firingTriggers.has(trigger.id)) continue; // Already in-flight
     if (shouldFire(trigger, now)) {
       try {
         await fireTrigger(trigger, now);
@@ -96,6 +98,7 @@ function isSameDay(a, b) {
 
 async function fireTrigger(trigger, now) {
   console.log(`[Triggers] Firing "${trigger.name}": ${trigger.prompt.slice(0, 80)}`);
+  firingTriggers.add(trigger.id);
 
   const { io, emitLog, executeCodexPrompt } = deps;
   const processKey = `trigger:${trigger.id}`;
@@ -137,6 +140,7 @@ async function fireTrigger(trigger, now) {
     emitLog('sent', { to: `Trigger: ${trigger.name}`, response: responseText || '', responseLength: responseLen });
   } finally {
     closeSession(session.id);
+    firingTriggers.delete(trigger.id);
   }
 
   // Only update lastFiredAt on success — failed triggers should retry next cycle

@@ -17,6 +17,22 @@ import { isOnboardingNeeded, handleOnboardingMessage } from './onboarding.js';
 import { addToLogIndex, nextLogNumber } from './index.js';
 import { extractImages } from './transport-utils.js';
 import { formatOutdoorsResponse } from './wa-formatter.js';
+import { closeSession } from '../../../outdoorsv4/session/session-manager.js';
+
+// Per-JID send serialization — ensures one response's images+text
+// finish sending before the next response starts sending.
+const jidSendLock = new Map();
+
+async function withSendLock(jid, fn) {
+  const prev = jidSendLock.get(jid) || Promise.resolve();
+  const current = prev.then(fn, fn);
+  jidSendLock.set(jid, current);
+  try {
+    return await current;
+  } finally {
+    if (jidSendLock.get(jid) === current) jidSendLock.delete(jid);
+  }
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOGS_DIR = join(__dirname, '..', 'bot', 'logs');
@@ -29,7 +45,9 @@ function enqueueMessage(msg) {
 }
 
 function dequeueMessage(msgId) {
-  try { unlinkSync(join(QUEUE_DIR, `${msgId}.json`)); } catch {}
+  try { unlinkSync(join(QUEUE_DIR, `${msgId}.json`)); } catch (err) {
+    console.warn(`[wa:dequeue] Failed to delete ${msgId}.json: ${err.message}`);
+  }
 }
 
 function getPendingMessages() {
@@ -61,7 +79,7 @@ async function sendOnboardingWelcome(sock, groupJid) {
     );
     const sent = await sock.sendMessage(groupJid, { text: msg });
     if (sent?.key?.id) {
-      botSentIds.add(sent.key.id);
+      addBotSentId(sent.key.id);
       storeMessage(sent.key.id, sent.message);
     }
   } catch (err) {
@@ -107,7 +125,7 @@ async function createOutdoorsGroup(sock, emitLog) {
         );
         const sent = await sock.sendMessage(groupJid, { text: welcome });
         if (sent?.key?.id) {
-          botSentIds.add(sent.key.id);
+          addBotSentId(sent.key.id);
           storeMessage(sent.key.id, sent.message);
         }
       } catch (err) {
@@ -128,11 +146,31 @@ let reconnectAttempt = 0;
 let manualReconnecting = false; // prevents close handler from auto-reconnecting during manual reconnect
 const MAX_RECONNECT_ATTEMPTS = 10;
 let healthCheckTimer = null;
+let healthCheckFailures = 0; // consecutive failures before forcing reconnect
+const HEALTH_CHECK_FAIL_THRESHOLD = 2; // require 2 consecutive failures
 let stabilityTimer = null; // full backoff reset after connection proves stable
 const seenTimestampKeys = new Set();
+const MAX_SEEN_TS_KEYS = 10000;
 
 // Track message IDs sent by the bot to prevent infinite loops
 const botSentIds = new Set();
+const MAX_BOT_SENT_IDS = 500;
+
+// Bounded add helpers — evict oldest entries when Sets exceed max size
+function addBotSentId(id) {
+  botSentIds.add(id);
+  if (botSentIds.size > MAX_BOT_SENT_IDS) {
+    const first = botSentIds.values().next().value;
+    botSentIds.delete(first);
+  }
+}
+function addSeenTsKey(key) {
+  seenTimestampKeys.add(key);
+  if (seenTimestampKeys.size > MAX_SEEN_TS_KEYS) {
+    const first = seenTimestampKeys.values().next().value;
+    seenTimestampKeys.delete(first);
+  }
+}
 const processedMsgIds = new Set(); // dedup incoming messages
 // Track message IDs currently being processed to deduplicate Baileys' multiple upsert events
 const processingIds = new Set();
@@ -187,7 +225,10 @@ async function startWhatsApp() {
 
   let version;
   try {
-    const result = await fetchLatestWaWebVersion({});
+    const versionTimeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('version fetch timeout')), 10_000)
+    );
+    const result = await Promise.race([fetchLatestWaWebVersion({}), versionTimeout]);
     version = result.version;
     console.log(`Using WhatsApp Web version: ${version.join('.')}`);
   } catch {
@@ -207,6 +248,7 @@ async function startWhatsApp() {
     markOnlineOnConnect: true,
     keepAliveIntervalMs: 45_000,
     retryRequestDelayMs: 500,
+    connectTimeoutMs: 30_000,
     getMessage: async (key) => {
       const stored = messageStore.get(key.id);
       return stored || undefined;
@@ -295,26 +337,33 @@ async function startWhatsApp() {
 
       // Zombie connection watchdog — detect when the socket is functionally dead
       // but Baileys hasn't fired 'close'. Sends a lightweight presence update every
-      // 45 seconds. If it fails or times out, force-close the socket and let the
-      // close handler drive reconnection (single reconnection path avoids races).
+      // 30 seconds. Requires 2 consecutive failures before killing the connection
+      // to avoid unnecessary reconnects on transient network blips.
       if (healthCheckTimer) clearInterval(healthCheckTimer);
+      healthCheckFailures = 0;
       healthCheckTimer = setInterval(async () => {
         if (connectionStatus !== 'connected' || !sock) return;
         try {
-          const timeout = new Promise((_, reject) =>
+          const hcTimeout = new Promise((_, reject) =>
             setTimeout(() => reject(new Error('health check timeout')), 5_000)
           );
           await Promise.race([
             sock.sendPresenceUpdate('available'),
-            timeout,
+            hcTimeout,
           ]);
+          healthCheckFailures = 0; // Reset on success
         } catch (err) {
-          console.log(`[wa:health] Zombie connection detected: ${err.message}. Forcing close.`);
-          emitLog('zombie_disconnect', { message: `Health check failed: ${err.message}` });
-          // Only close the socket — the close handler will handle reconnection
-          try { sock.end(new Error('Zombie connection')); } catch {}
+          healthCheckFailures++;
+          console.log(`[wa:health] Check failed (${healthCheckFailures}/${HEALTH_CHECK_FAIL_THRESHOLD}): ${err.message}`);
+          if (healthCheckFailures >= HEALTH_CHECK_FAIL_THRESHOLD) {
+            console.log(`[wa:health] Zombie connection detected after ${healthCheckFailures} consecutive failures. Forcing close.`);
+            emitLog('zombie_disconnect', { message: `Health check failed ${healthCheckFailures}x: ${err.message}` });
+            healthCheckFailures = 0;
+            // Only close the socket — the close handler will handle reconnection
+            try { sock.end(new Error('Zombie connection')); } catch {}
+          }
         }
-      }, 45_000); // every 45 seconds
+      }, 30_000); // every 30 seconds (staggered from 45s keepalive)
 
       // Drain any recent messages left in queue from a previous crash
       // Discard messages older than 5 minutes — they're stale
@@ -404,7 +453,7 @@ async function startWhatsApp() {
         console.log(`[wa:dedup-ts] Skipping duplicate ${msgId} (ts=${ts})`);
         continue;
       }
-      seenTimestampKeys.add(tsKey);
+      addSeenTsKey(tsKey);
 
       if (processingIds.has(msgId)) {
         console.log(`[wa:dedup] Skipping already-processing message ${msgId}`);
@@ -543,7 +592,7 @@ async function startWhatsApp() {
                     const chunk = formatted.slice(i, i + 4000);
                     const sent = await sendWithRetry(jid, { text: chunk }, quoteOpts);
                     if (sent?.key?.id) {
-                      botSentIds.add(sent.key.id);
+                      addBotSentId(sent.key.id);
                       storeMessage(sent.key.id, sent.message);
                     }
                   }
@@ -561,7 +610,7 @@ async function startWhatsApp() {
                   const commandsMsg = formatOutdoorsResponse(commandsText);
                   const cmdSent = await sendWithRetry(jid, { text: commandsMsg });
                   if (cmdSent?.key?.id) {
-                    botSentIds.add(cmdSent.key.id);
+                    addBotSentId(cmdSent.key.id);
                     storeMessage(cmdSent.key.id, cmdSent.message);
                   }
 
@@ -584,7 +633,7 @@ async function startWhatsApp() {
               const errorMsg = formatOutdoorsResponse(`Something went wrong processing your message. Please try again.`);
               const sent = await sendWithRetry(jid, { text: errorMsg }, { quoted: msg });
               if (sent?.key?.id) {
-                botSentIds.add(sent.key.id);
+                addBotSentId(sent.key.id);
                 storeMessage(sent.key.id, sent.message);
               }
             } catch {}
@@ -609,94 +658,108 @@ async function startWhatsApp() {
           try {
             const fallback = formatOutdoorsResponse('I processed your message but the response was empty. Try again?');
             const sent = await sendWithRetry(result.jid, { text: fallback }, { quoted: msg });
-            if (sent?.key?.id) { botSentIds.add(sent.key.id); storeMessage(sent.key.id, sent.message); }
+            if (sent?.key?.id) { addBotSentId(sent.key.id); storeMessage(sent.key.id, sent.message); }
           } catch {}
+          // Clean up session for no-response path (send block cleanup won't run)
+          if (result.internalSessionId) closeSession(result.internalSessionId);
         }
 
         if (result && result.response) {
-          let sendSucceeded = false;
-          try {
-            const { images, cleanText } = extractImages(result.response);
-            const quoteOpts = { quoted: msg };
-            // Send each image first
-            for (const imagePath of images) {
-              try {
-                const imageData = readFileSync(imagePath);
-                const imgSent = await sendWithRetry(result.jid, { image: imageData }, quoteOpts);
-                if (imgSent?.key?.id) {
-                  botSentIds.add(imgSent.key.id);
-                  storeMessage(imgSent.key.id, imgSent.message);
+          // Serialize sends per-JID so one response's images+text finish
+          // before the next response starts — prevents interleaving.
+          await withSendLock(result.jid, async () => {
+            let sendSucceeded = false;
+            try {
+              const { images, cleanText } = extractImages(result.response);
+              const quoteOpts = { quoted: msg };
+              // Send each image with conversation number caption
+              const caption = result.conversationNumber != null
+                ? `*#${result.conversationNumber}*`
+                : undefined;
+              for (const imagePath of images) {
+                try {
+                  const imageData = readFileSync(imagePath);
+                  const imgSent = await sendWithRetry(result.jid, { image: imageData, caption }, quoteOpts);
+                  if (imgSent?.key?.id) {
+                    addBotSentId(imgSent.key.id);
+                    storeMessage(imgSent.key.id, imgSent.message);
+                  }
+                } catch (imgErr) {
+                  emitLog('send_image_error', { to: result.sender, path: imagePath, error: imgErr.message });
                 }
-              } catch (imgErr) {
-                emitLog('send_image_error', { to: result.sender, path: imagePath, error: imgErr.message });
               }
-            }
-            // Send text in chunks (~4000 chars each) with Outdoors formatting
-            if (cleanText) {
-              const labeledText = result.conversationNumber != null
-                ? `*#${result.conversationNumber}*\n${cleanText}`
-                : cleanText;
-              const formatted = formatOutdoorsResponse(labeledText);
-              for (let i = 0; i < formatted.length; i += 4000) {
-                const chunk = formatted.slice(i, i + 4000);
-                const sent = await sendWithRetry(result.jid, { text: chunk }, quoteOpts);
-                console.log('[wa:send] result:', JSON.stringify(sent?.key));
+              // Send text in chunks (~4000 chars each) with Outdoors formatting
+              if (cleanText) {
+                const labeledText = result.conversationNumber != null
+                  ? `*#${result.conversationNumber}*\n${cleanText}`
+                  : cleanText;
+                const formatted = formatOutdoorsResponse(labeledText);
+                for (let i = 0; i < formatted.length; i += 4000) {
+                  const chunk = formatted.slice(i, i + 4000);
+                  const sent = await sendWithRetry(result.jid, { text: chunk }, quoteOpts);
+                  console.log('[wa:send] result:', JSON.stringify(sent?.key));
+                  if (sent?.key?.id) {
+                    addBotSentId(sent.key.id);
+                    storeMessage(sent.key.id, sent.message);
+                  }
+                }
+              }
+              if (!cleanText && images.length === 0) {
+                // Response existed but was empty after processing — notify user
+                emitLog('empty_response', { to: result.sender, rawLength: result.response.length });
+                const fallback = formatOutdoorsResponse(`I processed your message but had nothing to say. Try rephrasing?`);
+                const sent = await sendWithRetry(result.jid, { text: fallback }, quoteOpts);
                 if (sent?.key?.id) {
-                  botSentIds.add(sent.key.id);
+                  addBotSentId(sent.key.id);
                   storeMessage(sent.key.id, sent.message);
                 }
               }
-            }
-            if (!cleanText && images.length === 0) {
-              // Response existed but was empty after processing — notify user
-              emitLog('empty_response', { to: result.sender, rawLength: result.response.length });
-              const fallback = formatOutdoorsResponse(`I processed your message but had nothing to say. Try rephrasing?`);
-              const sent = await sendWithRetry(result.jid, { text: fallback }, quoteOpts);
-              if (sent?.key?.id) {
-                botSentIds.add(sent.key.id);
-                storeMessage(sent.key.id, sent.message);
+              sendSucceeded = true;
+              console.log(`Sent to ${result.sender} (${result.response.length} chars)`);
+              emitLog('sent', { to: result.sender, response: result.response, responseLength: result.response.length, imageCount: images.length });
+            } catch (err) {
+              emitLog('send_error', { to: result.sender, error: err.message });
+              // Last-resort: retry raw text without quoting or formatting
+              try {
+                const sent = await sendWithRetry(result.jid, { text: result.response.slice(0, 4000) });
+                if (sent?.key?.id) { addBotSentId(sent.key.id); storeMessage(sent.key.id, sent.message); }
+                sendSucceeded = true;
+                emitLog('sent_fallback', { to: result.sender, responseLength: result.response.length });
+              } catch (retryErr) {
+                emitLog('send_error_final', { to: result.sender, error: retryErr.message });
+              }
+            } finally {
+              // Clean up session now that all image files have been read and sent
+              if (result.internalSessionId) {
+                closeSession(result.internalSessionId);
               }
             }
-            sendSucceeded = true;
-            console.log(`Sent to ${result.sender} (${result.response.length} chars)`);
-            emitLog('sent', { to: result.sender, response: result.response, responseLength: result.response.length, imageCount: images.length });
-          } catch (err) {
-            emitLog('send_error', { to: result.sender, error: err.message });
-            // Last-resort: retry raw text without quoting or formatting
-            try {
-              const sent = await sendWithRetry(result.jid, { text: result.response.slice(0, 4000) });
-              if (sent?.key?.id) { botSentIds.add(sent.key.id); storeMessage(sent.key.id, sent.message); }
-              sendSucceeded = true;
-              emitLog('sent_fallback', { to: result.sender, responseLength: result.response.length });
-            } catch (retryErr) {
-              emitLog('send_error_final', { to: result.sender, error: retryErr.message });
-            }
-          }
 
-          // Persist conversation log
-          try {
-            mkdirSync(LOGS_DIR, { recursive: true });
-            const filename = `${nextLogNumber()}_${result.sender}.json`;
-            const convoLog = {
-              sender: result.sender,
-              prompt: result.prompt,
-              jid: result.jid,
-              conversationNumber: result.conversationNumber ?? null,
-              sessionId: result.sessionId || null,
-              timestamp: new Date().toISOString(),
-              fullEvents: result.fullEvents || [],
-              response: result.response,
-              sendSucceeded,
-              runtimeFingerprint: result.runtimeFingerprint || null,
-              runtimeStaleDetected: !!result.runtimeStaleDetected,
-              runtimeChangedFiles: result.runtimeChangedFiles || [],
-            };
-            writeFileSync(join(LOGS_DIR, filename), JSON.stringify(convoLog, null, 2));
-            addToLogIndex(filename, convoLog);
-            io?.emit('conversation_update', { sessionId: result.sessionId, conversationNumber: result.conversationNumber });
-          } catch (e) {
-            console.log('[whatsapp:log_write_error]', e.message);
-          }
+            // Persist conversation log
+            try {
+              mkdirSync(LOGS_DIR, { recursive: true });
+              const filename = `${nextLogNumber()}_${result.sender}.json`;
+              const convoLog = {
+                sender: result.sender,
+                prompt: result.prompt,
+                jid: result.jid,
+                conversationNumber: result.conversationNumber ?? null,
+                sessionId: result.sessionId || null,
+                timestamp: new Date().toISOString(),
+                fullEvents: result.fullEvents || [],
+                response: result.response,
+                sendSucceeded,
+                runtimeFingerprint: result.runtimeFingerprint || null,
+                runtimeStaleDetected: !!result.runtimeStaleDetected,
+                runtimeChangedFiles: result.runtimeChangedFiles || [],
+              };
+              writeFileSync(join(LOGS_DIR, filename), JSON.stringify(convoLog, null, 2));
+              addToLogIndex(filename, convoLog);
+              io?.emit('conversation_update', { sessionId: result.sessionId, conversationNumber: result.conversationNumber });
+            } catch (e) {
+              console.log('[whatsapp:log_write_error]', e.message);
+            }
+          });
         }
       })().catch(err => console.error('[WhatsApp] Message handler error:', err));
     }
@@ -772,7 +835,7 @@ async function sendToOutdoorsGroup(text) {
     try {
       const sent = await sock.sendMessage(groupJid, { text: formatted });
       if (sent?.key?.id) {
-        botSentIds.add(sent.key.id);
+        addBotSentId(sent.key.id);
         storeMessage(sent.key.id, sent.message);
       }
       return sent;

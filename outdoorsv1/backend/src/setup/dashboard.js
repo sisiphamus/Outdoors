@@ -125,6 +125,8 @@ document.getElementById('btn-log-mode')?.addEventListener('click', () => {
   devMode = !devMode;
   const btn = document.getElementById('btn-log-mode');
   if (btn) btn.textContent = devMode ? 'Dev' : 'Simple';
+  // Toggle visibility of dev-only entries
+  document.getElementById('feed')?.classList.toggle('show-dev', devMode);
 });
 
 function simplifyPhase(desc) {
@@ -187,23 +189,19 @@ function handleLogEntry(entry, isHistory) {
     }
     case 'pipeline_phase': {
       const raw = d.description || ('Phase ' + (d.phase || '?'));
-      if (devMode) {
-        addFeedPhase(ts, cp + raw);
-      } else {
-        const simple = simplifyPhase(raw);
-        if (simple) addFeedPhase(ts, cp + simple);
-        // null = skip this entry in simple mode
-      }
+      const simple = simplifyPhase(raw);
+      // Show simplified version always, raw version as dev-only
+      if (simple) addFeedPhase(ts, cp + simple);
+      addFeedPhase(ts, cp + raw, true); // dev-only
       break;
     }
     case 'tool_use': {
       const toolName = d.tool || 'Unknown';
-      if (devMode) {
-        const detail = summarizeToolInput(toolName, d.input);
-        addFeedTool(ts, toolName, cp + detail, !isHistory);
-      } else {
-        addFeedPhase(ts, cp + simplifyTool(toolName));
-      }
+      // Simplified version for simple mode
+      addFeedPhase(ts, cp + simplifyTool(toolName));
+      // Full detail for dev mode
+      const detail = summarizeToolInput(toolName, d.input);
+      addFeedTool(ts, toolName, cp + detail, !isHistory, true); // dev-only
       break;
     }
     case 'tool_result':
@@ -212,15 +210,13 @@ function handleLogEntry(entry, isHistory) {
     case 'assistant_text': {
       const text = d.text || '';
       if (text.length > 0) {
-        if (devMode) {
-          addFeedThinking(ts, cp + text);
-        }
-        // In simple mode, skip assistant thinking — too noisy
+        addFeedThinking(ts, cp + text, true); // dev-only
       }
       break;
     }
     case 'delegation':
-      addFeedPhase(ts, cp + (devMode ? 'Delegating to ' + (d.employee || 'specialist') : 'Handing off to a specialist...'));
+      addFeedPhase(ts, cp + 'Handing off to a specialist...');
+      addFeedPhase(ts, cp + 'Delegating to ' + (d.employee || 'specialist'), true); // dev-only
       break;
     case 'cost':
       removeAllSpinners();
@@ -231,10 +227,8 @@ function handleLogEntry(entry, isHistory) {
       break;
     }
     case 'response': {
-      if (devMode) {
-        const rLen = d.responseLength || 0;
-        if (rLen > 0) addFeedEntry('info', cp + 'Response sent (' + rLen + ' chars)');
-      }
+      const rLen = d.responseLength || 0;
+      if (rLen > 0) addFeedEntryDev('info', cp + 'Response sent (' + rLen + ' chars)');
       break;
     }
     case 'connected':
@@ -247,7 +241,7 @@ function handleLogEntry(entry, isHistory) {
       addFeedEntry('info', 'WhatsApp QR code generated');
       break;
     case 'processing':
-      if (devMode) addFeedEntry('info', cp + 'Processing request from ' + (d.sender || 'unknown') + '...');
+      addFeedEntryDev('info', cp + 'Processing request from ' + (d.sender || 'unknown') + '...');
       break;
     case 'clarification_requested':
       addFeedEntry('info', cp + 'Waiting for user input...');
