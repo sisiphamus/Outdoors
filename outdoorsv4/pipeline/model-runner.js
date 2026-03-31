@@ -188,12 +188,14 @@ export function runModel({
               response = item.text;
               response_streamed = true;
               onProgress?.('assistant_text', { text: item.text });
-            } else if (item.type === 'tool_use' || item.type === 'function_call') {
+            } else if (item.type === 'tool_use' || item.type === 'function_call'
+                    || item.type === 'command_execution' || item.type === 'file_change'
+                    || item.type === 'mcp_tool_call') {
               onProgress?.('tool_use', {
-                tool: item.tool_name || item.name,
+                tool: item.tool_name || item.name || item.type,
                 input: item.input || item.arguments,
               });
-              emitActivity(processKey, 'tool_use', item.tool_name || item.name);
+              emitActivity(processKey, 'tool_use', item.tool_name || item.name || item.type);
             } else if (item.type === 'tool_result' || item.type === 'function_call_output') {
               onProgress?.('tool_result', {
                 tool: item.tool_name || item.call_id,
