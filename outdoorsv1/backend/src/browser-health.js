@@ -16,6 +16,26 @@ const PREFS_PATH = join(__dirname, '..', 'bot', 'memory', 'preferences', 'browse
 const IS_WIN = process.platform === 'win32';
 const IS_MAC = process.platform === 'darwin';
 
+/** Kill any process listening on the given port. */
+function killPort(port) {
+  try {
+    if (IS_WIN) {
+      const pids = execSync(
+        `powershell.exe -NoProfile -Command "Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"`,
+        { encoding: 'utf-8', timeout: 5000, windowsHide: true }
+      ).trim().split(/\r?\n/).filter(Boolean).map(Number);
+      for (const pid of pids) {
+        try { execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000, windowsHide: true, stdio: 'ignore' }); } catch {}
+      }
+    } else {
+      const pids = execSync(`lsof -ti :${port}`, { encoding: 'utf-8', timeout: 5000 }).trim().split(/\n/).filter(Boolean).map(Number);
+      for (const pid of pids) {
+        try { process.kill(pid, 'SIGTERM'); } catch {}
+      }
+    }
+  } catch {}
+}
+
 function readBrowserPrefs() {
   if (!existsSync(PREFS_PATH)) return {};
   const text = readFileSync(PREFS_PATH, 'utf-8');
@@ -288,12 +308,26 @@ export async function ensureBrowserReady() {
     console.log(`  [BrowserHealth] First run detected — will open Google sign-in page.`);
   }
 
+  // Kill any stale process holding the CDP port before launching
+  console.log(`  [BrowserHealth] Clearing port ${cdpPort} before launch...`);
+  killPort(cdpPort);
+  await new Promise(r => setTimeout(r, 1000));
+
   console.log(`  [BrowserHealth] ${preferredBrowser} not running — launching with CDP flag...`);
   try {
     await openBrowser(executablePath, cdpPort, userDataDir, profileDir, firstRun);
     console.log(`  [BrowserHealth] ${preferredBrowser} launched with CDP on port ${cdpPort} ✓`);
     await cleanStaleTabs(cdpPort);
   } catch (err) {
-    console.warn(`  [BrowserHealth] Failed to launch ${preferredBrowser}: ${err.message}`);
+    console.warn(`  [BrowserHealth] First launch failed: ${err.message} — killing port and retrying`);
+    killPort(cdpPort);
+    await new Promise(r => setTimeout(r, 2000));
+    try {
+      await openBrowser(executablePath, cdpPort, userDataDir, profileDir, firstRun);
+      console.log(`  [BrowserHealth] Retry succeeded — CDP on port ${cdpPort} ✓`);
+      await cleanStaleTabs(cdpPort);
+    } catch (retryErr) {
+      console.warn(`  [BrowserHealth] Retry also failed: ${retryErr.message}`);
+    }
   }
 }
