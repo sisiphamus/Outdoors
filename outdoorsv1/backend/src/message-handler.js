@@ -513,6 +513,21 @@ export async function handleMessage(message, emitLog) {
     }
     let response = execResult.response;
 
+    // If Codex process died without producing a response (e.g. mid-task quota switch),
+    // retry once with a fresh session — the new session will use credits from the start.
+    if (!response || !response.trim()) {
+      console.log('[message-handler] Codex returned empty response — retrying once...');
+      emitLog?.('empty_retry', { sender, reason: 'empty response from Codex' });
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const retryResult = await executeCodexPrompt(finalPrompt, { onProgress, processKey, clarificationKey: processKey, detectDelegation: !isKnownCode, sessionContext: session });
+        execResult = retryResult;
+        response = retryResult.response;
+      } catch (retryErr) {
+        console.error('[message-handler] Empty-response retry failed:', retryErr.message);
+      }
+    }
+
     // If Claude returned an API error as response text, retry up to 2 times
     let apiRetries = 0;
     while (response && /^API Error:|"type"\s*:\s*"error"|"api_error"|Internal server error/i.test(response) && apiRetries < 2) {

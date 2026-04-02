@@ -2562,7 +2562,7 @@ function writeMcpConfig(browserKey, browser) {
       }
     } catch {}
 
-    const wsArgs = ['workspace-mcp'];
+    const wsArgs = ['workspace-mcp==1.16.1'];
     if (googleTools.length > 0) {
       wsArgs.push('--tools', ...googleTools);
     }
