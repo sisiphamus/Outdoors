@@ -168,8 +168,8 @@ function openBrowser(executablePath, cdpPort, userDataDir, profileDir, firstRun 
       `--disable-external-intent-requests`,
       `--disable-popup-blocking`,
       `--autoplay-policy=no-user-gesture-required`,
-      // Run headless unless first run (need visible window for Google sign-in)
-      ...(!firstRun ? ['--headless=new'] : []),
+      // Run headless only if the profile already exists (headless can't create a new profile)
+      ...(!firstRun && existsSync(join(userDataDir, profileDir, 'Preferences')) ? ['--headless=new'] : []),
       ...(firstRun ? [`https://accounts.google.com/`] : []),
     ];
 

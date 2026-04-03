@@ -950,11 +950,11 @@ function setupIPC() {
     });
   });
 
-  // Install ML dependencies (numpy, scipy) needed by the local classifier
+  // Install ML dependencies (numpy, scipy, scikit-learn) needed by the local classifier
   ipcMain.handle('install-ml-deps', async () => {
     const pipCmds = process.platform === 'win32'
-      ? [['pip', 'install', 'numpy', 'scipy'], ['python', '-m', 'pip', 'install', 'numpy', 'scipy']]
-      : [['pip3', 'install', 'numpy', 'scipy'], ['python3', '-m', 'pip', 'install', 'numpy', 'scipy']];
+      ? [['pip', 'install', 'numpy', 'scipy', 'scikit-learn'], ['python', '-m', 'pip', 'install', 'numpy', 'scipy', 'scikit-learn']]
+      : [['pip3', 'install', 'numpy', 'scipy', 'scikit-learn'], ['python3', '-m', 'pip', 'install', 'numpy', 'scipy', 'scikit-learn']];
     for (const args of pipCmds) {
       try {
         // Resolve command to full path on macOS
