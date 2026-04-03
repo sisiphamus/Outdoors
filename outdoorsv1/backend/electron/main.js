@@ -885,20 +885,26 @@ function setupIPC() {
   ipcMain.handle('install-uvx', async () => {
     return new Promise((resolve) => {
       // Try pip first, then pip3, then python -m pip
+      // Resolve to full paths on macOS where shell: true uses /bin/sh with minimal PATH
       const commands = [
-        { cmd: 'pip', args: ['install', 'uv'] },
         { cmd: 'pip3', args: ['install', 'uv'] },
-        { cmd: 'python', args: ['-m', 'pip', 'install', 'uv'] },
+        { cmd: 'pip', args: ['install', 'uv'] },
         { cmd: 'python3', args: ['-m', 'pip', 'install', 'uv'] },
+        { cmd: 'python', args: ['-m', 'pip', 'install', 'uv'] },
       ];
 
       let tried = 0;
       function tryNext() {
         if (tried >= commands.length) {
-          resolve({ ok: false, error: 'Could not install uv. Please run "pip install uv" manually.' });
+          resolve({ ok: false, error: 'Could not install uv. Please run "pip3 install uv" manually.' });
           return;
         }
-        const { cmd, args } = commands[tried++];
+        let { cmd, args } = commands[tried++];
+        // Resolve to full path on macOS/Linux
+        if (process.platform !== 'win32') {
+          const resolved = platform.findCommand(cmd);
+          if (resolved) cmd = resolved;
+        }
         const proc = spawn(cmd, args, { shell: true, env: process.env, windowsHide: true });
         let output = '';
         proc.stdout?.on('data', (d) => { output += d.toString(); });
