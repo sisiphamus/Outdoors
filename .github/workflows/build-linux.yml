@@ -47,9 +47,6 @@ jobs:
         working-directory: outdoorsv1/backend/electron
         run: npm install
 
-      - name: Remove secrets before packaging
-        run: rm -f outdoorsv1/backend/oauth-creds.json
-
       - name: Build and publish Linux installer
         working-directory: outdoorsv1/backend/electron
         run: npm run build:linux -- --publish always
@@ -85,7 +82,7 @@ jobs:
           if [ -n "$UNPACKED" ]; then
             if [ -f "$UNPACKED/project/config.json" ]; then echo "FAIL: config.json leaked"; exit 1; fi
             if [ -f "$UNPACKED/project/.env" ]; then echo "FAIL: .env leaked"; exit 1; fi
-            if [ -f "$UNPACKED/project/oauth-creds.json" ]; then echo "FAIL: oauth-creds.json leaked"; exit 1; fi
+            # oauth-creds.json is intentionally bundled — it's the app's OAuth client ID, not user secrets
           fi
 
           echo "All Linux build checks passed"

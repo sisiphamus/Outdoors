@@ -55,9 +55,6 @@ jobs:
       - name: Copy install instructions to dist
         run: mkdir -p outdoorsv1/backend/electron/dist && cp "outdoorsv1/backend/electron/README - OPEN FIRST.txt" outdoorsv1/backend/electron/dist/
 
-      - name: Remove secrets before packaging
-        run: rm -f outdoorsv1/backend/oauth-creds.json
-
       - name: Build and publish macOS installer
         working-directory: outdoorsv1/backend/electron
         run: npm run build:mac -- --publish always

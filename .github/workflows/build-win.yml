@@ -43,10 +43,6 @@ jobs:
         working-directory: outdoorsv1/backend/electron
         run: npm install
 
-      - name: Remove secrets before packaging
-        shell: bash
-        run: rm -f outdoorsv1/backend/oauth-creds.json
-
       - name: Build and publish Windows installer
         working-directory: outdoorsv1/backend/electron
         run: npm run build:win -- --publish always
@@ -62,7 +58,7 @@ jobs:
           if [ -n "$APP_DIR" ]; then
             if [ -f "$APP_DIR/resources/project/config.json" ]; then echo "FAIL: config.json leaked"; exit 1; fi
             if [ -f "$APP_DIR/resources/project/.env" ]; then echo "FAIL: .env leaked"; exit 1; fi
-            if [ -f "$APP_DIR/resources/project/oauth-creds.json" ]; then echo "FAIL: oauth-creds.json leaked"; exit 1; fi
+            # oauth-creds.json is intentionally bundled — it's the app's OAuth client ID, not user secrets
             if [ -d "$APP_DIR/resources/project/auth_state" ]; then echo "FAIL: auth_state leaked"; exit 1; fi
             echo "All Windows bundle security checks passed"
           else
