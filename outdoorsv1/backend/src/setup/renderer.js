@@ -51,13 +51,12 @@ function nextPage() {
 
 const REFERRAL_API = 'https://outdoors-referral.outdoors-rice.workers.dev';
 
-// Skip key entry if user already has a valid key
+// Skip key entry — referral system temporarily disabled
 (async () => {
-  if (isElectron && window.electronAPI.getDownloadKey) {
-    const existingKey = await window.electronAPI.getDownloadKey();
-    if (existingKey) {
-      goToPage(1); // Skip to welcome
-    }
+  if (isElectron) {
+    // Auto-set a key so future launches also skip
+    window.electronAPI.saveDownloadKey?.('OPEN-BETA').catch(() => {});
+    goToPage(1); // Skip to welcome
   }
 })();
 

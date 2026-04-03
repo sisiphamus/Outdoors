@@ -884,27 +884,31 @@ function setupIPC() {
   // Install uvx (via pip install uv)
   ipcMain.handle('install-uvx', async () => {
     return new Promise((resolve) => {
-      // Try pip first, then pip3, then python -m pip
-      // Resolve to full paths on macOS where shell: true uses /bin/sh with minimal PATH
-      const commands = [
-        { cmd: 'pip3', args: ['install', 'uv'] },
+      // On macOS/Linux, try the official uv installer first (doesn't need pip),
+      // then brew, then fall back to pip
+      const IS_UNIX = process.platform !== 'win32';
+      const commands = IS_UNIX ? [
+        // Official uv installer — works without pip
+        { cmd: '/bin/sh', args: ['-c', 'curl -LsSf https://astral.sh/uv/install.sh | sh'] },
+        // Homebrew
+        { cmd: platform.findCommand('brew') || 'brew', args: ['install', 'uv'] },
+        // pip fallbacks
+        { cmd: platform.findCommand('pip3') || 'pip3', args: ['install', 'uv'] },
+        { cmd: platform.findCommand('python3') || 'python3', args: ['-m', 'pip', 'install', 'uv'] },
+      ] : [
         { cmd: 'pip', args: ['install', 'uv'] },
-        { cmd: 'python3', args: ['-m', 'pip', 'install', 'uv'] },
+        { cmd: 'pip3', args: ['install', 'uv'] },
         { cmd: 'python', args: ['-m', 'pip', 'install', 'uv'] },
+        { cmd: 'python3', args: ['-m', 'pip', 'install', 'uv'] },
       ];
 
       let tried = 0;
       function tryNext() {
         if (tried >= commands.length) {
-          resolve({ ok: false, error: 'Could not install uv. Please run "pip3 install uv" manually.' });
+          resolve({ ok: false, error: 'Could not install uv. Please run "curl -LsSf https://astral.sh/uv/install.sh | sh" manually.' });
           return;
         }
-        let { cmd, args } = commands[tried++];
-        // Resolve to full path on macOS/Linux
-        if (process.platform !== 'win32') {
-          const resolved = platform.findCommand(cmd);
-          if (resolved) cmd = resolved;
-        }
+        const { cmd, args } = commands[tried++];
         const proc = spawn(cmd, args, { shell: true, env: process.env, windowsHide: true });
         let output = '';
         proc.stdout?.on('data', (d) => { output += d.toString(); });
@@ -912,7 +916,13 @@ function setupIPC() {
         proc.on('error', () => tryNext());
         proc.on('close', (code) => {
           if (code === 0) {
-            // Cache the path after successful install
+            // Refresh PATH to pick up newly installed uvx
+            if (IS_UNIX) {
+              const uvxBin = path.join(process.env.HOME || '', '.local', 'bin');
+              if (!process.env.PATH.includes(uvxBin)) {
+                process.env.PATH = uvxBin + ':' + process.env.PATH;
+              }
+            }
             resolvedUvxCmd = findUvxPath();
             resolve({ ok: true });
           } else {
