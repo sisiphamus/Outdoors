@@ -1,6 +1,6 @@
 import * as _baileys from '@whiskeysockets/baileys';
-// Handle both default export (<=6.7.16 where default=makeWASocket) and named export (newer)
-const makeWASocket = _baileys.default || _baileys.makeWASocket;
+// Handle both default export (<=6.7.16 where default=makeWASocket fn) and named export (newer where default=object)
+const makeWASocket = typeof _baileys.default === 'function' ? _baileys.default : (_baileys.default?.makeWASocket || _baileys.makeWASocket);
 const { useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore, fetchLatestWaWebVersion, Browsers } = _baileys;
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
