@@ -1041,13 +1041,24 @@ function setupIPC() {
 
       // Capture stdout/stderr so we can extract the auth URL on macOS
       // (codex login may print the URL instead of opening browser)
-      const loginProc = spawn(cmd, ['login'], {
-        shell: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: true,
-        env: process.env,
-      });
+      let loginProc;
+      try {
+        loginProc = spawn(cmd, ['login'], {
+          shell: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          detached: true,
+          env: process.env,
+        });
+      } catch (spawnErr) {
+        console.log('[codex-auth] Failed to spawn codex login:', spawnErr.message);
+        resolve({ ok: false, output: 'Could not start codex login: ' + spawnErr.message });
+        return;
+      }
       loginProc.unref();
+
+      // Prevent EPIPE crashes — pipes break if codex isn't installed or dies immediately
+      loginProc.stdout?.on('error', () => {});
+      loginProc.stderr?.on('error', () => {});
 
       // Watch stdout/stderr for auth URLs and open them in the system browser
       const onOutput = (data) => {
