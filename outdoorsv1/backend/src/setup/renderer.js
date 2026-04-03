@@ -397,6 +397,8 @@ async function handleDetectChrome() {
     }
 
     detectedExePath = result.exePath;
+    window._profileMap = {};
+    result.profiles.forEach(p => { window._profileMap[p.directory] = p.email || p.name || p.directory; });
 
     if (result.profiles.length <= 1) {
       const selectedProfile = result.profiles.length === 1 ? result.profiles[0].directory : 'Default';
@@ -442,7 +444,8 @@ async function handleProfileSelected(selectedProfile) {
       window.electronAPI.regenerateMcpConfig?.().catch(() => {});
       showConnectSection('connect-success');
       const emailEl = document.getElementById('connect-email');
-      if (emailEl) emailEl.textContent = '(Chrome ready, Google skipped)';
+      const profileLabel = window._profileMap?.[selectedProfile] || selectedProfile;
+      if (emailEl) emailEl.textContent = `(${profileLabel})`;
       await delay(1000);
       nextPage();
       return;
