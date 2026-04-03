@@ -10,7 +10,7 @@ config.json
 auth_state/
 .env
 *.env
-oauth-creds.json
+# oauth-creds.json is intentionally committed — it's the app's OAuth client ID, not user secrets
 examplelog.md
 
 # Logs and temporary files
