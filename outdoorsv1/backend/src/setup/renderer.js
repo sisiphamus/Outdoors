@@ -439,6 +439,8 @@ async function handleProfileSelected(selectedProfile) {
     // If no Google OAuth creds, skip service selection and go to next page
     if (window._skipGoogleAuth) {
       connectDone = true;
+      // Still write MCP config so Chrome tools are registered
+      window.electronAPI.regenerateMcpConfig?.().catch(() => {});
       showConnectSection('connect-success');
       const emailEl = document.getElementById('connect-email');
       if (emailEl) emailEl.textContent = '(Chrome ready, Google skipped)';
