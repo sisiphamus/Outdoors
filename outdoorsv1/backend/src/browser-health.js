@@ -168,15 +168,33 @@ function openBrowser(executablePath, cdpPort, userDataDir, profileDir, firstRun 
       `--disable-external-intent-requests`,
       `--disable-popup-blocking`,
       `--autoplay-policy=no-user-gesture-required`,
-      // Note: headless mode removed — caused CDP failures on some machines.
-      // Chrome is launched minimized instead (see WindowStyle Minimized below).
       ...(firstRun ? [`https://accounts.google.com/`] : []),
     ];
 
     if (IS_WIN) {
       const argStr = chromeArgs.join("','");
-      const script = `Start-Process '${executablePath}' -ArgumentList '${argStr}'`;
+      const script = `Start-Process '${executablePath}' -ArgumentList '${argStr}' -WindowStyle Minimized`;
       execFile('powershell.exe', ['-NoProfile', '-Command', script], { timeout: 5000, windowsHide: true }, () => {});
+      // Minimize Chrome so it doesn't steal focus — push to bottom of alt-tab order
+      if (!firstRun) {
+        setTimeout(() => {
+          const minScript = `
+            Add-Type -Name Win -Namespace Native -Member '
+              [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+              [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+            '
+            $HWND_BOTTOM = [IntPtr]1
+            $SWP_NOMOVE = 0x0002
+            $SWP_NOSIZE = 0x0001
+            $SWP_NOACTIVATE = 0x0010
+            Get-Process chrome -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object {
+              [Native.Win]::ShowWindow($_.MainWindowHandle, 6)
+              [Native.Win]::SetWindowPos($_.MainWindowHandle, $HWND_BOTTOM, 0, 0, 0, 0, $SWP_NOMOVE -bor $SWP_NOSIZE -bor $SWP_NOACTIVATE)
+            }
+          `;
+          execFile('powershell.exe', ['-NoProfile', '-Command', minScript], { timeout: 5000, windowsHide: true }, () => {});
+        }, 3000);
+      }
     } else {
       const proc = spawn(executablePath, chromeArgs, { detached: true, stdio: 'ignore' });
       proc.on('error', (err) => console.warn(`  [BrowserHealth] spawn error: ${err.message}`));
