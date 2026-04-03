@@ -807,14 +807,21 @@ function setupIPC() {
       proc.stderr.on('data', (d) => { output += d.toString(); });
       proc.on('close', (code) => {
         // After install, find the codex command path
-        let codexPath = 'codex';
-        try {
-          const whichCmd = process.platform === 'win32' ? 'where codex' : 'which codex';
-          const which = execSync(whichCmd, { encoding: 'utf-8', shell: true }).trim();
-          if (which) codexPath = which.split('\n')[0].trim();
-        } catch {}
+        let codexPath = platform.getCodexCmdPath();
+        if (!codexPath || codexPath === 'codex') {
+          // Fallback: check npm global bin directly (where/which may fail in Electron)
+          if (process.platform === 'win32') {
+            const npmGlobal = path.join(process.env.APPDATA || '', 'npm', 'codex.cmd');
+            if (fs.existsSync(npmGlobal)) codexPath = npmGlobal;
+          } else {
+            const candidates = ['/usr/local/bin/codex', '/opt/homebrew/bin/codex',
+              path.join(process.env.HOME || '', '.npm-global', 'bin', 'codex')];
+            for (const c of candidates) { if (fs.existsSync(c)) { codexPath = c; break; } }
+          }
+        }
+        if (!codexPath) codexPath = 'codex';
 
-        // Write to config
+        // Write to config so the backend always finds it
         try {
           let cfg = {};
           if (fs.existsSync(CONFIG_PATH)) {
@@ -832,43 +839,53 @@ function setupIPC() {
 
   // Check if Codex CLI is installed
   ipcMain.handle('check-codex-installed', async () => {
+    // Try the resolved command first
     try {
       const cmd = getCodexCmd();
       const version = execSync(`"${cmd}" --version`, { encoding: 'utf-8', shell: true, timeout: 10000, windowsHide: true }).trim();
       resolvedCodexCmd = cmd;
+      // Save to config so the backend can find it too
+      try {
+        let cfg = {}; if (fs.existsSync(CONFIG_PATH)) cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+        if (cfg.codexCommand !== cmd) { cfg.codexCommand = cmd; fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2)); }
+      } catch {}
       return { installed: true, version };
-    } catch {
-      // On macOS, npm global bin may not be in PATH — check common locations
-      if (process.platform !== 'win32') {
-        const candidates = [
-          '/usr/local/bin/codex',
-          '/opt/homebrew/bin/codex',
-          path.join(process.env.HOME || '', '.npm-global', 'bin', 'codex'),
-          path.join(process.env.HOME || '', '.nvm', 'versions', 'node'),
-        ];
-        for (const c of candidates) {
-          try {
-            if (c.includes('.nvm')) {
-              // nvm: find latest node version's bin
-              const versions = fs.readdirSync(c).sort().reverse();
-              if (versions.length > 0) {
-                const nvmCodex = path.join(c, versions[0], 'bin', 'codex');
-                if (fs.existsSync(nvmCodex)) {
-                  const v = execSync(`"${nvmCodex}" --version`, { encoding: 'utf-8', shell: true, timeout: 10000 }).trim();
-                  resolvedCodexCmd = nvmCodex;
-                  return { installed: true, version: v };
-                }
-              }
-            } else if (fs.existsSync(c)) {
-              const v = execSync(`"${c}" --version`, { encoding: 'utf-8', shell: true, timeout: 10000 }).trim();
-              resolvedCodexCmd = c;
-              return { installed: true, version: v };
-            }
-          } catch {}
+    } catch {}
+
+    // Fallback: check common install locations on all platforms
+    const candidates = process.platform === 'win32' ? [
+      path.join(process.env.APPDATA || '', 'npm', 'codex.cmd'),
+      path.join(process.env.LOCALAPPDATA || '', 'npm', 'codex.cmd'),
+    ] : [
+      '/usr/local/bin/codex',
+      '/opt/homebrew/bin/codex',
+      path.join(process.env.HOME || '', '.npm-global', 'bin', 'codex'),
+    ];
+    // Also check nvm on macOS/Linux
+    if (process.platform !== 'win32') {
+      try {
+        const nvmDir = path.join(process.env.HOME || '', '.nvm', 'versions', 'node');
+        if (fs.existsSync(nvmDir)) {
+          const versions = fs.readdirSync(nvmDir).sort().reverse();
+          if (versions.length > 0) candidates.push(path.join(nvmDir, versions[0], 'bin', 'codex'));
         }
-      }
-      return { installed: false };
+      } catch {}
     }
+    for (const c of candidates) {
+      try {
+        if (fs.existsSync(c)) {
+          const v = execSync(`"${c}" --version`, { encoding: 'utf-8', shell: true, timeout: 10000, windowsHide: true }).trim();
+          resolvedCodexCmd = c;
+          // Save to config
+          try {
+            let cfg = {}; if (fs.existsSync(CONFIG_PATH)) cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+            cfg.codexCommand = c; fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+          } catch {}
+          return { installed: true, version: v };
+        }
+      } catch {}
+    }
+    return { installed: false };
   });
 
   // Check if uvx is installed
