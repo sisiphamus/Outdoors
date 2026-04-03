@@ -31,11 +31,11 @@ extraResources:
       # Dependencies & build artifacts
       - "!node_modules/**"
       - "!electron/**"
-      # Auth & config — NEVER bundle secrets
+      # Auth & config — don't bundle user-specific secrets
       - "!auth_state/**"
       - "!config.json"
       - "!.env"
-      - "!oauth-creds.json"
+      # oauth-creds.json IS bundled — it's the app's OAuth client ID, not user secrets
       - "!.codex.json"
       # Conversation data
       - "!bot/logs/**"
