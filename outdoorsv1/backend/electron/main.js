@@ -13,6 +13,10 @@ const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const { spawn, execSync, execFile } = require('child_process');
+
+// Prevent EPIPE crashes on macOS when launched from Finder (no terminal = broken stdout/stderr)
+if (process.stdout) process.stdout.on('error', () => {});
+if (process.stderr) process.stderr.on('error', () => {});
 const platform = require('./platform');
 
 // ── Fix macOS PATH ──────────────────────────────────────────────────────────

@@ -366,13 +366,17 @@ async function runConnectPage() {
     return;
   }
 
-  // Check if oauth-creds.json exists
+  // Check if oauth-creds.json exists — still set up Chrome even without it
   const credsCheck = await window.electronAPI.checkGoogleCreds();
   if (!credsCheck.hasCreds) {
-    showConnectSection('connect-no-creds');
+    // No Google OAuth creds, but still detect Chrome for browser automation
+    showConnectSection('connect-start');
+    // Flag so after Chrome setup we skip Google auth and go to next page
+    window._skipGoogleAuth = true;
     return;
   }
 
+  window._skipGoogleAuth = false;
   showConnectSection('connect-start');
 }
 
@@ -426,6 +430,17 @@ async function handleProfileSelected(selectedProfile) {
 
     // Store the selected profile for later
     window._selectedProfile = selectedProfile;
+
+    // If no Google OAuth creds, skip service selection and go to next page
+    if (window._skipGoogleAuth) {
+      connectDone = true;
+      showConnectSection('connect-success');
+      const emailEl = document.getElementById('connect-email');
+      if (emailEl) emailEl.textContent = '(Chrome ready, Google skipped)';
+      await delay(1000);
+      nextPage();
+      return;
+    }
 
     // Show service selection
     showConnectSection('connect-services');
