@@ -61,6 +61,7 @@ mac:
     - zip
   icon: ../src/setup/icon.png
   category: public.app-category.utilities
+  artifactName: Outdoors.${ext}
 
 dmg:
   title: Outdoors
@@ -77,6 +78,7 @@ win:
     - target: nsis
       arch: [x64]
   icon: ../src/setup/icon.ico
+  artifactName: Outdoors-Setup.${ext}
 
 nsis:
   oneClick: false
