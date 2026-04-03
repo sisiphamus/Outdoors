@@ -209,7 +209,7 @@ function openBrowser(executablePath, cdpPort, userDataDir, profileDir, firstRun 
       if (await isCdpReachable(cdpPort)) {
         clearInterval(interval);
         resolve();
-      } else if (attempts >= 24) {
+      } else if (attempts >= 60) {
         clearInterval(interval);
         reject(new Error(`CDP did not become reachable on port ${cdpPort} after launch`));
       }
