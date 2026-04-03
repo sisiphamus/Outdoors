@@ -672,8 +672,13 @@ function setupIPC() {
       else if (isCommandAvailable('pacman')) linuxPkgMgr = 'pacman';
     }
 
-    // Node.js
-    if (!isCommandAvailable('node')) {
+    // Node.js — must be v20+ (chrome-devtools-mcp requires it)
+    let nodeVersion = 0;
+    try {
+      const nv = execSync('node --version', { encoding: 'utf-8', shell: true, timeout: 5000, windowsHide: true }).trim();
+      nodeVersion = parseInt(nv.replace('v', ''), 10) || 0;
+    } catch {}
+    if (!isCommandAvailable('node') || nodeVersion < 20) {
       if (hasWinget) {
         const r = await wingetInstall('OpenJS.NodeJS.LTS', 'Node.js');
         results.node = r.ok ? 'installed' : 'failed';
