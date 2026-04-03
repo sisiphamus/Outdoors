@@ -1212,6 +1212,15 @@ function setupIPC() {
       return { ok: false, error: 'Invalid profile name' };
     }
     try {
+      // Kill Chrome so we can copy profile files (they're locked while Chrome runs)
+      // and so the next Chrome launch uses our CDP flag instead of joining an existing instance
+      if (platform.IS_WIN) {
+        try { execSync('taskkill /IM chrome.exe /F /T', { timeout: 5000, windowsHide: true, stdio: 'ignore' }); } catch {}
+      } else {
+        try { execSync('pkill -f "Google Chrome"', { timeout: 5000, stdio: 'ignore' }); } catch {}
+      }
+      await new Promise(r => setTimeout(r, 2000));
+
       const userDataDir = platform.getChromeUserDataDir();
       const automationDir = platform.getAutomationProfileDir();
       const srcDir = path.join(userDataDir, selectedProfile);
