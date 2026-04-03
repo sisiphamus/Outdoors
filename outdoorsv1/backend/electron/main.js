@@ -2707,8 +2707,10 @@ function writeMcpConfig(browserKey, browser) {
 
   // Register MCP servers with Codex CLI (codex mcp add) so they're available globally.
   // Codex reads from ~/.codex/config.toml, NOT from .codex.json project files.
-  const codexCmd = platform.getCodexCmdPath();
-  for (const [name, server] of Object.entries(botMcpConfig.mcpServers)) {
+  // Merge both configs: .codex.json (has google_workspace) + botMcpConfig (has browser tools)
+  const codexCmd = platform.getCodexCmdPath() || getCodexCmd();
+  const allMcpServers = { ...config.mcpServers, ...botMcpConfig.mcpServers };
+  for (const [name, server] of Object.entries(allMcpServers)) {
     try {
       const cmdArgs = [server.command, ...(server.args || [])];
       // Resolve bare commands to full paths for macOS compatibility
