@@ -3050,15 +3050,11 @@ app.whenReady().then(async () => {
     console.log(`[update] New version available: ${info.version}`);
   });
   autoUpdater.on('update-downloaded', (info) => {
-    console.log(`[update] Update downloaded: ${info.version}. Restarting to install...`);
-    // Notify the user briefly, then quit and install
+    console.log(`[update] Update downloaded: ${info.version}. Will install on next quit.`);
+    // Don't force quit — just notify the user. The update installs on next natural quit.
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('update-ready', { version: info.version });
     }
-    // Give 3 seconds for the notification to show, then restart
-    setTimeout(() => {
-      autoUpdater.quitAndInstall(false, true); // isSilent=false, isForceRunAfter=true
-    }, 3000);
   });
   autoUpdater.on('error', (err) => {
     console.log('[update] Auto-update error:', err.message);
