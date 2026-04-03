@@ -1001,15 +1001,32 @@ function setupIPC() {
   ipcMain.handle('start-codex-auth', async () => {
     if (authPollTimer) { clearInterval(authPollTimer); authPollTimer = null; }
     return new Promise((resolve) => {
-      // Spawn codex login directly (no terminal needed — it opens browser itself)
       const cmd = getCodexCmd();
+      console.log('[codex-auth] Spawning:', cmd, 'login');
+
+      // Capture stdout/stderr so we can extract the auth URL on macOS
+      // (codex login may print the URL instead of opening browser)
       const loginProc = spawn(cmd, ['login'], {
         shell: true,
-        stdio: 'ignore',
+        stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
         env: process.env,
       });
       loginProc.unref();
+
+      // Watch stdout/stderr for auth URLs and open them in the system browser
+      const onOutput = (data) => {
+        const text = data.toString();
+        console.log('[codex-auth]', text.trim());
+        // Look for auth URLs that codex login prints
+        const urlMatch = text.match(/https:\/\/[^\s"]+auth[^\s"]*/i) || text.match(/https:\/\/chat\.openai\.com[^\s"]*/i);
+        if (urlMatch) {
+          console.log('[codex-auth] Opening auth URL in browser:', urlMatch[0]);
+          shell.openExternal(urlMatch[0]).catch(() => {});
+        }
+      };
+      if (loginProc.stdout) loginProc.stdout.on('data', onOutput);
+      if (loginProc.stderr) loginProc.stderr.on('data', onOutput);
       loginProc.on('error', (err) => console.log('[codex-auth] Login spawn error:', err.message));
 
       // Poll auth status every 3s until auth.json appears or timeout
