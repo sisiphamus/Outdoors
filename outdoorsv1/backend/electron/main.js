@@ -1448,12 +1448,34 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
           const pages = JSON.parse(data);
           for (const page of pages) {
             if (page.url && page.url.includes('localhost:8000')) {
-              http.get(`http://localhost:9222/json/close/${page.id}`, { timeout: 3000 }, () => {});
+              // Try closing, then navigate to about:blank as fallback
+              http.get(`http://localhost:9222/json/close/${page.id}`, { timeout: 3000 }, () => {})
+                .on('error', () => {
+                  http.get(`http://localhost:9222/json/navigate/${page.id}?about:blank`, { timeout: 3000 }, () => {})
+                    .on('error', () => {});
+                });
             }
           }
         } catch {}
       });
     }).on('error', () => {});
+    // Retry after a short delay — on macOS CDP may take a moment to be ready
+    setTimeout(() => {
+      http.get('http://localhost:9222/json/list', { timeout: 3000 }, (res) => {
+        let data = '';
+        res.on('data', (d) => { data += d; });
+        res.on('end', () => {
+          try {
+            const pages = JSON.parse(data);
+            for (const page of pages) {
+              if (page.url && page.url.includes('localhost:8000')) {
+                http.get(`http://localhost:9222/json/close/${page.id}`, { timeout: 3000 }, () => {}).on('error', () => {});
+              }
+            }
+          } catch {}
+        });
+      }).on('error', () => {});
+    }, 2000);
   }
 
   // Step 5: Close automation Chrome (all tabs) via CDP

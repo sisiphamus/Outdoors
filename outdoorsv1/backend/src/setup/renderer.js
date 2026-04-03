@@ -657,6 +657,9 @@ function connectWaSocket(backendUrl) {
 
   waSocket.on('connect', () => {
     setWaStartingText('Connected to backend. Generating QR code...');
+    setTimeout(() => {
+      if (!waConnected) setWaStartingText('Generating QR code... this may take a minute.');
+    }, 5000);
   });
 
   waSocket.on('connect_error', () => {
