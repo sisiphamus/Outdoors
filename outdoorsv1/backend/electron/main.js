@@ -788,7 +788,13 @@ function setupIPC() {
   // Install Codex CLI
   ipcMain.handle('install-codex-cli', async () => {
     return new Promise((resolve) => {
-      const proc = spawn('npm', ['install', '-g', '@openai/codex'], {
+      // Resolve npm to full path — on macOS, Electron's /bin/sh may not find npm
+      let npmCmd = 'npm';
+      if (process.platform !== 'win32') {
+        const resolved = platform.findCommand('npm');
+        if (resolved) npmCmd = resolved;
+      }
+      const proc = spawn(npmCmd, ['install', '-g', '@openai/codex'], {
         shell: true,
         env: process.env,
       });
@@ -828,6 +834,35 @@ function setupIPC() {
       resolvedCodexCmd = cmd;
       return { installed: true, version };
     } catch {
+      // On macOS, npm global bin may not be in PATH — check common locations
+      if (process.platform !== 'win32') {
+        const candidates = [
+          '/usr/local/bin/codex',
+          '/opt/homebrew/bin/codex',
+          path.join(process.env.HOME || '', '.npm-global', 'bin', 'codex'),
+          path.join(process.env.HOME || '', '.nvm', 'versions', 'node'),
+        ];
+        for (const c of candidates) {
+          try {
+            if (c.includes('.nvm')) {
+              // nvm: find latest node version's bin
+              const versions = fs.readdirSync(c).sort().reverse();
+              if (versions.length > 0) {
+                const nvmCodex = path.join(c, versions[0], 'bin', 'codex');
+                if (fs.existsSync(nvmCodex)) {
+                  const v = execSync(`"${nvmCodex}" --version`, { encoding: 'utf-8', shell: true, timeout: 10000 }).trim();
+                  resolvedCodexCmd = nvmCodex;
+                  return { installed: true, version: v };
+                }
+              }
+            } else if (fs.existsSync(c)) {
+              const v = execSync(`"${c}" --version`, { encoding: 'utf-8', shell: true, timeout: 10000 }).trim();
+              resolvedCodexCmd = c;
+              return { installed: true, version: v };
+            }
+          } catch {}
+        }
+      }
       return { installed: false };
     }
   });
