@@ -168,8 +168,8 @@ function openBrowser(executablePath, cdpPort, userDataDir, profileDir, firstRun 
       `--disable-external-intent-requests`,
       `--disable-popup-blocking`,
       `--autoplay-policy=no-user-gesture-required`,
-      // Run headless only if the profile already exists (headless can't create a new profile)
-      ...(!firstRun && existsSync(join(userDataDir, profileDir, 'Preferences')) ? ['--headless=new'] : []),
+      // Note: headless mode removed — caused CDP failures on some machines.
+      // Chrome is launched minimized instead (see WindowStyle Minimized below).
       ...(firstRun ? [`https://accounts.google.com/`] : []),
     ];
 
