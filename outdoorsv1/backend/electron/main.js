@@ -934,6 +934,29 @@ function setupIPC() {
     });
   });
 
+  // Install ML dependencies (numpy, scipy) needed by the local classifier
+  ipcMain.handle('install-ml-deps', async () => {
+    const pipCmds = process.platform === 'win32'
+      ? [['pip', 'install', 'numpy', 'scipy'], ['python', '-m', 'pip', 'install', 'numpy', 'scipy']]
+      : [['pip3', 'install', 'numpy', 'scipy'], ['python3', '-m', 'pip', 'install', 'numpy', 'scipy']];
+    for (const args of pipCmds) {
+      try {
+        // Resolve command to full path on macOS
+        let cmd = args[0];
+        if (process.platform !== 'win32') {
+          const resolved = platform.findCommand(cmd);
+          if (resolved) cmd = resolved;
+        }
+        execSync(`"${cmd}" ${args.slice(1).join(' ')}`, {
+          encoding: 'utf-8', shell: true, timeout: 120000, windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        return { ok: true };
+      } catch {}
+    }
+    return { ok: false, error: 'Could not install numpy/scipy' };
+  });
+
   // Install whisper.cpp and base model in background (for voice message transcription)
   ipcMain.handle('install-whisper', async () => {
     const IS_WIN = process.platform === 'win32';

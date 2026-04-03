@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkUvxInstalled: () => ipcRenderer.invoke('check-uvx-installed'),
   installUvx: () => ipcRenderer.invoke('install-uvx'),
   precacheWorkspaceMcp: () => ipcRenderer.invoke('precache-workspace-mcp'),
+  installMlDeps: () => ipcRenderer.invoke('install-ml-deps'),
   installWhisper: () => ipcRenderer.invoke('install-whisper'),
 
   // Codex authentication

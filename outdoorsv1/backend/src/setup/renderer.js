@@ -230,6 +230,11 @@ async function runInstallPage() {
   // Pre-download workspace-mcp so the auth step doesn't have to wait
   await window.electronAPI.precacheWorkspaceMcp();
 
+  // Install ML dependencies (numpy, scipy) for the local classifier
+  if (window.electronAPI.installMlDeps) {
+    await window.electronAPI.installMlDeps().catch(() => {});
+  }
+
   // Download whisper.cpp + model in background (for voice message transcription)
   window.electronAPI.installWhisper().catch(() => {});
 
