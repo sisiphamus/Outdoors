@@ -35,6 +35,8 @@ const SUCCESS_PATTERNS = [
   /^(?:task )?(?:finished|succeeded)\.?$/i,
   /^(?:sent|delivered|created|updated|deleted|saved|installed)\.?$/i,
   /^(?:email|message) sent\.?$/i,
+  // Greetings and conversational replies are valid short responses
+  /^(?:hey|hi|hello|yo|sup|what'?s up|howdy|hola)/i,
 ];
 
 const FALSE_POSITIVE_PATTERNS = [
@@ -48,14 +50,16 @@ function detectFailure(response) {
   if (!response) return true;
   const trimmed = response.trim();
   if (!trimmed) return true;
-  // Check for false positives first — these look like failures but aren't
+  // Check for false positives first (these look like failures but aren't)
   if (FALSE_POSITIVE_PATTERNS.some(p => p.test(response))) return false;
-  // Long responses (>500 chars) with detailed content are likely successful completions
+  // Long responses are likely successful
   if (trimmed.length > 500) return false;
   // Short responses that match known success patterns are NOT failures
-  if (trimmed.length < 20 && SUCCESS_PATTERNS.some(p => p.test(trimmed))) return false;
+  if (SUCCESS_PATTERNS.some(p => p.test(trimmed))) return false;
   // Truly empty/meaningless responses are failures
   if (trimmed.length < 3) return true;
+  // Only flag as failure if it actually matches a failure pattern
+  // Short responses without failure patterns are fine (greetings, confirmations, etc.)
   return FAILURE_PATTERNS.some(p => p.test(response));
 }
 
