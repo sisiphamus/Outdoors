@@ -1166,6 +1166,12 @@ function setupIPC() {
               clearInterval(authPollTimer);
               authPollTimer = null;
               console.log('[codex-auth] Auth file found at:', authPath);
+              // Bring Outdoors window to front
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                if (mainWindow.isMinimized()) mainWindow.restore();
+                mainWindow.focus();
+                mainWindow.moveTop();
+              }
               resolve({ ok: true, output: 'Authenticated.' });
               return;
             }
@@ -1872,6 +1878,9 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
                 // Close the localhost:8000 Chrome tab so user doesn't see the ugly success page
                 closeAuthTab();
                 if (mainWindow && !mainWindow.isDestroyed()) {
+                  if (mainWindow.isMinimized()) mainWindow.restore();
+                  mainWindow.focus();
+                  mainWindow.moveTop();
                   mainWindow.webContents.send('google-auth-complete', { ok: true, email: selectedEmail });
                 }
                 return;
@@ -1893,6 +1902,9 @@ On startup, Outdoors checks if CDP is reachable on port 9222. If not, it auto-la
                     try { mcpProc.kill(); } catch {}
                     closeAuthTab();
                     if (mainWindow && !mainWindow.isDestroyed()) {
+                      if (mainWindow.isMinimized()) mainWindow.restore();
+                      mainWindow.focus();
+                      mainWindow.moveTop();
                       mainWindow.webContents.send('google-auth-complete', { ok: true, email: reAuthEmail });
                     }
                     return;
