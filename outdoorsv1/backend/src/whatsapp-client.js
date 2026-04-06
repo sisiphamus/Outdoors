@@ -668,6 +668,11 @@ async function startWhatsApp() {
 
           // If user is in a referral flow, process their reply
           if (refState) {
+            // Send "searching" feedback if we're about to do a contact lookup
+            if (refState.stage === 'name') {
+              const searching = await sendWithRetry(jid, { text: formatOutdoorsResponse('Looking up contacts...') });
+              if (searching?.key?.id) { addBotSentId(searching.key.id); storeMessage(searching.key.id, searching.message); }
+            }
             const { executeCodexPrompt } = await import('./codex-bridge.js');
             const replyFn = async (m) => {
               const s = await sendWithRetry(jid, { text: formatOutdoorsResponse(m) });
