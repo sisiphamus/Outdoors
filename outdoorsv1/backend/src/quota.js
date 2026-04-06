@@ -199,13 +199,37 @@ export async function processReferralReply(jid, text, executePrompt, replyFn, ki
         const bounced = (result.response || '').toUpperCase().includes('BOUNCED');
         config.pendingReferrals = (config.pendingReferrals || []).filter(e => e !== email);
         if (bounced) {
-          config.referrals = (config.referrals || []).filter(e => e !== email);
-          if (config.referralBonusDate === today()) {
-            config.referralBonus = Math.max(0, (config.referralBonus || 0) - REFERRAL_BONUS);
+          // Try looking up the correct email via Google Contacts
+          let foundEmail = null;
+          try {
+            const lookupPrompt = `Search Google Contacts for "${friendName} ${friendLast}" using search_contacts with user_google_email="${config.googleEmail}". Find their @rice.edu email. Return ONLY the email address, nothing else. If not found, return "NOT_FOUND".`;
+            const lookupResult = await executePrompt(lookupPrompt, { processKey: 'system:refer-lookup', onProgress: () => {}, timeout: 60000 });
+            const lookupResp = (lookupResult.response || '').trim();
+            if (lookupResp.includes('@rice.edu') && !lookupResp.includes('NOT_FOUND')) {
+              foundEmail = lookupResp.match(/[\w.]+@rice\.edu/)?.[0]?.toLowerCase();
+            }
+          } catch {}
+
+          if (foundEmail && foundEmail !== email && !isAlreadyReferred(foundEmail) && !isSelfEmail(foundEmail)) {
+            // Found correct email, resend to it
+            config.referrals = (config.referrals || []).filter(e => e !== email);
+            config.referrals.push(foundEmail);
+            saveConfig(config);
+            // Resend email to correct address
+            const resendBody = emailBody.replace(email, foundEmail);
+            const resendPrompt = `Send an email to ${foundEmail} with subject "You're Invited to Outdoors" and body:\n\n${resendBody}\n\nUse send_gmail_message with user_google_email="${config.googleEmail}". Send it now.`;
+            executePrompt(resendPrompt, { processKey: 'system:refer-resend', onProgress: () => {} }).catch(() => {});
+            replyFn(`${email} bounced, but I found ${foundEmail} in your contacts. Resending the invite there instead!`);
+          } else {
+            // No contact found, revoke
+            config.referrals = (config.referrals || []).filter(e => e !== email);
+            if (config.referralBonusDate === today()) {
+              config.referralBonus = Math.max(0, (config.referralBonus || 0) - REFERRAL_BONUS);
+            }
+            saveConfig(config);
+            if (killProcessFn) try { killProcessFn(); } catch {}
+            replyFn(`That email (${email}) bounced${foundEmail ? '' : ' and I couldn\'t find them in your contacts'}. The referral has been revoked. Try again with the correct email.`);
           }
-          saveConfig(config);
-          if (killProcessFn) try { killProcessFn(); } catch {}
-          replyFn(`That email (${email}) bounced. The referral has been revoked. Try again with the correct email.`);
         } else {
           saveConfig(config);
         }
