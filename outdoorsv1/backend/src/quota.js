@@ -87,8 +87,8 @@ function isSelfEmail(email) {
 
 // Start the referral flow for a JID
 export function startReferralFlow(jid, senderName) {
-  referralState.set(jid, { stage: 'name', senderName });
-  return { ok: true, prompt: 'Who would you like to invite? Tell me their name and I\'ll look them up.' };
+  referralState.set(jid, { stage: 'manual', senderName });
+  return { ok: true, prompt: 'What\'s their @rice.edu email? (e.g. js42@rice.edu)' };
 }
 
 // Get current referral state for a JID
