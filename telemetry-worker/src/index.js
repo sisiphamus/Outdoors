@@ -2,7 +2,8 @@
 // POST /v1/report — ingest telemetry
 // GET /dashboard — password-protected usage dashboard
 
-const DASHBOARD_PASSWORD = 'outdoors-admin-2026'; // Change this
+// Dashboard password stored as Cloudflare secret (env.DASHBOARD_PASSWORD)
+// Set it with: npx wrangler secret put DASHBOARD_PASSWORD
 
 export default {
   async fetch(request, env) {
@@ -46,10 +47,31 @@ export default {
       }
     }
 
+    // Per-message log
+    if (request.method === 'POST' && url.pathname === '/v1/message') {
+      try {
+        const data = await request.json();
+        await env.DB.prepare(
+          `INSERT INTO messages (timestamp, duration_ms, platform, cost_usd, tokens, status)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).bind(
+          data.timestamp || new Date().toISOString(),
+          data.durationMs || 0,
+          data.platform || 'unknown',
+          data.costUsd || 0,
+          data.tokens || 0,
+          data.status || 'unknown',
+        ).run();
+        return new Response('ok', { headers: { 'Access-Control-Allow-Origin': '*' } });
+      } catch (err) {
+        return new Response('error: ' + err.message, { status: 500 });
+      }
+    }
+
     // Dashboard — password protected
     if (url.pathname === '/dashboard') {
       const pw = url.searchParams.get('pw');
-      if (pw !== DASHBOARD_PASSWORD) {
+      if (!env.DASHBOARD_PASSWORD || pw !== env.DASHBOARD_PASSWORD) {
         return new Response('Unauthorized. Add ?pw=your-password to the URL.', { status: 401 });
       }
 
@@ -78,7 +100,11 @@ export default {
           'SELECT * FROM reports ORDER BY id DESC LIMIT 50'
         ).all();
 
-        return new Response(renderDashboard(totals, daily.results, recent.results), {
+        const messages = await env.DB.prepare(
+          'SELECT * FROM messages ORDER BY id DESC LIMIT 100'
+        ).all().catch(() => ({ results: [] }));
+
+        return new Response(renderDashboard(totals, daily.results, recent.results, messages.results), {
           headers: { 'Content-Type': 'text/html' },
         });
       } catch (err) {
@@ -90,7 +116,7 @@ export default {
   },
 };
 
-function renderDashboard(totals, daily, recent) {
+function renderDashboard(totals, daily, recent, messages) {
   const t = totals || {};
   return `<!DOCTYPE html>
 <html><head>
@@ -157,8 +183,21 @@ function renderDashboard(totals, daily, recent) {
   </tr>`).join('')}
 </table>
 
+<h2>Recent Messages (last 100)</h2>
+<table>
+  <tr><th>Time</th><th>Duration</th><th>Platform</th><th>Cost</th><th>Tokens</th><th>Status</th></tr>
+  ${(messages || []).map(m => `<tr>
+    <td>${m.timestamp || m.received_at}</td>
+    <td>${m.duration_ms ? (m.duration_ms / 1000).toFixed(1) + 's' : '?'}</td>
+    <td>${m.platform}</td><td>$${(m.cost_usd || 0).toFixed(3)}</td>
+    <td>${formatTokens(m.tokens || 0)}</td><td>${m.status}</td>
+  </tr>`).join('')}
+</table>
+
 </body></html>`;
 }
+
+function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 function formatTokens(n) {
   if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';

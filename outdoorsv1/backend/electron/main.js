@@ -1086,26 +1086,24 @@ function setupIPC() {
     });
   });
 
-  // Check Codex auth status
+  // Check Codex auth status — checks multiple paths for cross-platform compatibility
   ipcMain.handle('check-codex-auth', async () => {
-    const cmd = getCodexCmd();
-    return new Promise((resolve) => {
-      // Codex stores auth at ~/.codex/auth.json — check if it exists and is valid
-      // A quick way: run 'codex exec --ephemeral --json "test"' and see if it succeeds
-      // But faster: check if ~/.codex/auth.json exists
-      const authPath = path.join(process.env.HOME || process.env.USERPROFILE || '', '.codex', 'auth.json');
+    const home = process.env.HOME || process.env.USERPROFILE || '';
+    const authPaths = [
+      path.join(home, '.codex', 'auth.json'),
+      path.join(process.env.APPDATA || '', '.codex', 'auth.json'),
+      path.join(process.env.LOCALAPPDATA || '', '.codex', 'auth.json'),
+      path.join(home, '.config', 'codex', 'auth.json'),
+    ].filter(p => p && !p.startsWith(path.sep + '.codex'));
+    for (const authPath of authPaths) {
       try {
         if (fs.existsSync(authPath)) {
           const auth = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
-          // auth.json exists with token data — consider authenticated
-          resolve({ authenticated: !!auth, output: 'Auth file found.' });
-        } else {
-          resolve({ authenticated: false, output: 'No auth file found.' });
+          if (auth) return { authenticated: true, output: 'Auth file found at ' + authPath };
         }
-      } catch {
-        resolve({ authenticated: false, output: 'Auth check failed.' });
-      }
-    });
+      } catch {}
+    }
+    return { authenticated: false, output: 'No auth file found.' };
   });
 
   // Start Codex auth — spawns 'codex login' which opens browser for ChatGPT OAuth

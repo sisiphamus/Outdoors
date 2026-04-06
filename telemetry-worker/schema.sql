@@ -15,6 +15,18 @@ CREATE TABLE IF NOT EXISTS reports (
   cache_tokens INTEGER
 );
 
+-- Per-message log — anonymous usage metrics only, no personal content
+CREATE TABLE IF NOT EXISTS messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  received_at TEXT NOT NULL DEFAULT (datetime('now')),
+  timestamp TEXT,
+  duration_ms INTEGER,
+  platform TEXT,
+  cost_usd REAL,
+  tokens INTEGER,
+  status TEXT
+);
+
 -- Daily rollup view for quick dashboard queries
 CREATE VIEW IF NOT EXISTS daily_summary AS
 SELECT

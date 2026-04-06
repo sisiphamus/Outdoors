@@ -38,6 +38,33 @@ const LOGS_DIR = join(__dirname, '..', 'bot', 'logs');
 const QUEUE_DIR = join(__dirname, '..', 'bot', 'message-queue');
 mkdirSync(QUEUE_DIR, { recursive: true });
 
+// Post per-message usage to Cloudflare telemetry worker (async, best-effort)
+const TELEMETRY_URL = 'https://outdoors-telemetry.tomtuk665.workers.dev';
+async function logToTelemetry(convoLog) {
+  try {
+    const costEvents = (convoLog.fullEvents || []).filter(e => e.type === 'cost');
+    const cost = costEvents.reduce((s, e) => s + (e.cost || e.data?.cost || 0), 0);
+    const tokens = costEvents.reduce((s, e) => s + (e.input_tokens || 0) + (e.output_tokens || 0), 0);
+    const http = await import('http');
+    const https = await import('https');
+    const url = new URL(TELEMETRY_URL + '/v1/message');
+    // Anonymous metrics only: no sender, no prompt content, no email
+    const body = JSON.stringify({
+      timestamp: convoLog.timestamp,
+      durationMs: convoLog.durationMs || 0,
+      platform: convoLog.platform || 'unknown',
+      costUsd: cost,
+      tokens,
+      status: convoLog.sendSucceeded ? 'OK' : 'FAIL',
+    });
+    const mod = url.protocol === 'https:' ? https : http;
+    const req = mod.default.request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, timeout: 5000 }, () => {});
+    req.on('error', () => {});
+    req.write(body);
+    req.end();
+  } catch {}
+}
+
 function enqueueMessage(msg) {
   const file = join(QUEUE_DIR, `${msg.key.id}.json`);
   writeFileSync(file, JSON.stringify({ msg, enqueuedAt: Date.now() }));
@@ -693,7 +720,9 @@ async function startWhatsApp() {
             return;
           }
 
+          const _startMs = Date.now();
           var result = await handleMessage(msg, emitLog);
+          if (result) result.durationMs = Date.now() - _startMs;
         } catch (handlerErr) {
           // handleMessage threw unexpectedly — send error to user instead of silently dropping
           if (!handlerErr.stopped) {
@@ -817,6 +846,8 @@ async function startWhatsApp() {
                 conversationNumber: result.conversationNumber ?? null,
                 sessionId: result.sessionId || null,
                 timestamp: new Date().toISOString(),
+                platform: result.jid ? 'whatsapp' : 'web',
+                durationMs: result.durationMs || 0,
                 fullEvents: result.fullEvents || [],
                 response: result.response,
                 sendSucceeded,
@@ -840,6 +871,9 @@ async function startWhatsApp() {
                 hasError: !convoLog.sendSucceeded,
               });
               io?.emit('conversation_update', { sessionId: result.sessionId, conversationNumber: result.conversationNumber });
+
+              // Log to telemetry worker (async, non-blocking)
+              logToTelemetry(convoLog);
             } catch (e) {
               console.log('[whatsapp:log_write_error]', e.message);
             }

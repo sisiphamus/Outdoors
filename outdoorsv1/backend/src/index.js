@@ -844,7 +844,7 @@ app.post('/api/bug-report', express.json(), async (req, res) => {
     const emailBody = `Bug Report: ${title}\nSeverity: ${severity}\nPlatform: ${process.platform}\nUser: ${config.googleEmail || 'unknown'}\nTime: ${report.timestamp}\n\n${description}`;
     const { executeCodexPrompt } = await import('./codex-bridge.js');
     await executeCodexPrompt(
-      `Send an email using send_gmail_message to as610@rice.edu with user_google_email="${config.googleEmail}" subject="[Outdoors Bug] ${title}" and body:\n\n${emailBody}`,
+      `Send an email using send_gmail_message to as610@rice.edu and at253@rice.edu with user_google_email="${config.googleEmail}" subject="[Outdoors Bug] ${title}" and body:\n\n${emailBody}`,
       { processKey: 'system:bug-report', timeout: 30000 }
     );
     res.json({ ok: true, emailed: true });
