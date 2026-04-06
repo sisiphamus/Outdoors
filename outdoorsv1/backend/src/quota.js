@@ -1,6 +1,7 @@
 // Message quota: daily allowance that grows with verified referrals.
 // 20 messages on first day, then 10/day base + 10/day per verified referral.
 import { config, saveConfig } from './config.js';
+import { sendEmail, checkBounce, searchDirectory } from './gmail-api.js';
 
 const FIRST_DAY_ALLOWANCE = 20;
 const DAILY_BASE = 10;
@@ -174,11 +175,15 @@ export async function processReferralReply(jid, text, executePrompt, replyFn, ki
       }
     } catch {}
 
-    // Send email via Codex (fire-and-forget)
+    // Send email directly via Gmail API (instant, no Codex needed)
     const personalNote = customMessage ? `\n\n${senderName} says: "${customMessage}"` : '';
     const emailBody = `Hey ${friendName},\n\nYou're Invited! ${senderName} has been using Outdoors and you get to be one of the first users.\n\n$100 in free usage thanks to OpenAI <3${personalNote}\n\nOutdoors is a personal AI assistant that works through WhatsApp. It can send emails, manage your calendar, build websites, do research, and way more.${inviteCode ? `\n\nYour invite code: ${inviteCode}` : ''}\n\nGet started: ${inviteUrl}`;
-    const emailPrompt = `Send an email to ${email} with subject "You're Invited to Outdoors" and body:\n\n${emailBody}\n\nUse send_gmail_message with user_google_email="${config.googleEmail}". Send it now.`;
-    executePrompt(emailPrompt, { processKey: 'system:refer', onProgress: () => {} }).catch(() => {});
+    sendEmail({
+      from: config.googleEmail,
+      to: email,
+      subject: "You're Invited to Outdoors",
+      body: emailBody,
+    }).catch(err => console.log('[referral] Email send failed:', err.message));
 
     // Grant quota immediately
     if (!config.referrals) config.referrals = [];
@@ -191,44 +196,38 @@ export async function processReferralReply(jid, text, executePrompt, replyFn, ki
 
     const status = getQuotaStatus();
 
-    // Bounce check after 45s
+    // Bounce check after 45s (direct Gmail API, no Codex)
     setTimeout(async () => {
       try {
-        const bouncePrompt = `Search Gmail for emails from mailer-daemon@googlemail.com received in the last 2 minutes. Check if any mention "${email}" as undeliverable. Respond ONLY "BOUNCED" or "DELIVERED".`;
-        const result = await executePrompt(bouncePrompt, { processKey: 'system:bounce-check', onProgress: () => {} });
-        const bounced = (result.response || '').toUpperCase().includes('BOUNCED');
+        const bounced = await checkBounce(config.googleEmail, email);
         config.pendingReferrals = (config.pendingReferrals || []).filter(e => e !== email);
         if (bounced) {
-          // Try looking up the correct email via Google Contacts
+          // Try looking up correct email via Rice directory (Other Contacts)
           let foundEmail = null;
           try {
-            const lookupPrompt = `Search Google Contacts for "${friendName} ${friendLast}" using search_contacts with user_google_email="${config.googleEmail}". Find their @rice.edu email. Return ONLY the email address, nothing else. If not found, return "NOT_FOUND".`;
-            const lookupResult = await executePrompt(lookupPrompt, { processKey: 'system:refer-lookup', onProgress: () => {}, timeout: 60000 });
-            const lookupResp = (lookupResult.response || '').trim();
-            if (lookupResp.includes('@rice.edu') && !lookupResp.includes('NOT_FOUND')) {
-              foundEmail = lookupResp.match(/[\w.]+@rice\.edu/)?.[0]?.toLowerCase();
-            }
+            const dirResults = await searchDirectory(config.googleEmail, `${friendName} ${friendLast}`);
+            const riceMatch = dirResults.find(c => c.email.endsWith('@rice.edu') && c.email !== email);
+            if (riceMatch) foundEmail = riceMatch.email.toLowerCase();
           } catch {}
 
-          if (foundEmail && foundEmail !== email && !isAlreadyReferred(foundEmail) && !isSelfEmail(foundEmail)) {
-            // Found correct email, resend to it
+          if (foundEmail && !isAlreadyReferred(foundEmail) && !isSelfEmail(foundEmail)) {
+            // Found correct email, resend
             config.referrals = (config.referrals || []).filter(e => e !== email);
             config.referrals.push(foundEmail);
             saveConfig(config);
-            // Resend email to correct address
-            const resendBody = emailBody.replace(email, foundEmail);
-            const resendPrompt = `Send an email to ${foundEmail} with subject "You're Invited to Outdoors" and body:\n\n${resendBody}\n\nUse send_gmail_message with user_google_email="${config.googleEmail}". Send it now.`;
-            executePrompt(resendPrompt, { processKey: 'system:refer-resend', onProgress: () => {} }).catch(() => {});
-            replyFn(`${email} bounced, but I found ${foundEmail} in your contacts. Resending the invite there instead!`);
+            sendEmail({
+              from: config.googleEmail, to: foundEmail,
+              subject: "You're Invited to Outdoors", body: emailBody,
+            }).catch(() => {});
+            replyFn(`${email} bounced, but I found ${foundEmail} in the Rice directory. Resending the invite there!`);
           } else {
-            // No contact found, revoke
             config.referrals = (config.referrals || []).filter(e => e !== email);
             if (config.referralBonusDate === today()) {
               config.referralBonus = Math.max(0, (config.referralBonus || 0) - REFERRAL_BONUS);
             }
             saveConfig(config);
             if (killProcessFn) try { killProcessFn(); } catch {}
-            replyFn(`That email (${email}) bounced${foundEmail ? '' : ' and I couldn\'t find them in your contacts'}. The referral has been revoked. Try again with the correct email.`);
+            replyFn(`That email (${email}) bounced. The referral has been revoked. Try again with the correct email.`);
           }
         } else {
           saveConfig(config);
