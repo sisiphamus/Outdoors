@@ -843,7 +843,7 @@ app.post('/api/bug-report', express.json(), async (req, res) => {
   try {
     const https = await import('https');
     const body = JSON.stringify(report);
-    const url = new URL('https://outdoors-telemetry.tomtuk665.workers.dev/v1/bug');
+    const url = new URL('https://outdoors-telemetry.towneradamm.workers.dev/v1/bug');
     const req = https.default.request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, timeout: 5000 }, () => {});
     req.on('error', () => {});
     req.write(body);
