@@ -68,6 +68,27 @@ export default {
       }
     }
 
+    // Bug report
+    if (request.method === 'POST' && url.pathname === '/v1/bug') {
+      try {
+        const data = await request.json();
+        await env.DB.prepare(
+          `INSERT INTO bug_reports (title, description, severity, platform, node_version, app_version)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).bind(
+          (data.title || '').slice(0, 200),
+          (data.description || '').slice(0, 5000),
+          data.severity || 'medium',
+          data.platform || 'unknown',
+          data.nodeVersion || '',
+          data.appVersion || '',
+        ).run();
+        return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+      } catch (err) {
+        return new Response(JSON.stringify({ ok: false, error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+      }
+    }
+
     // Dashboard — password protected
     if (url.pathname === '/dashboard') {
       const pw = url.searchParams.get('pw');
@@ -104,7 +125,11 @@ export default {
           'SELECT * FROM messages ORDER BY id DESC LIMIT 100'
         ).all().catch(() => ({ results: [] }));
 
-        return new Response(renderDashboard(totals, daily.results, recent.results, messages.results), {
+        const bugs = await env.DB.prepare(
+          'SELECT * FROM bug_reports ORDER BY id DESC LIMIT 50'
+        ).all().catch(() => ({ results: [] }));
+
+        return new Response(renderDashboard(totals, daily.results, recent.results, messages.results, bugs.results), {
           headers: { 'Content-Type': 'text/html' },
         });
       } catch (err) {
@@ -116,7 +141,7 @@ export default {
   },
 };
 
-function renderDashboard(totals, daily, recent, messages) {
+function renderDashboard(totals, daily, recent, messages, bugs) {
   const t = totals || {};
   return `<!DOCTYPE html>
 <html><head>
@@ -191,6 +216,15 @@ function renderDashboard(totals, daily, recent, messages) {
     <td>${m.duration_ms ? (m.duration_ms / 1000).toFixed(1) + 's' : '?'}</td>
     <td>${m.platform}</td><td>$${(m.cost_usd || 0).toFixed(3)}</td>
     <td>${formatTokens(m.tokens || 0)}</td><td>${m.status}</td>
+  </tr>`).join('')}
+</table>
+
+<h2>Bug Reports</h2>
+<table>
+  <tr><th>Time</th><th>Severity</th><th>Title</th><th>Description</th><th>Platform</th><th>Version</th></tr>
+  ${(bugs || []).map(b => `<tr>
+    <td>${b.received_at}</td><td>${esc(b.severity)}</td><td>${esc(b.title)}</td>
+    <td>${esc((b.description || '').slice(0, 200))}</td><td>${b.platform}</td><td>${b.app_version}</td>
   </tr>`).join('')}
 </table>
 

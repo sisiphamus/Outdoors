@@ -831,7 +831,7 @@ app.post('/api/bug-report', express.json(), async (req, res) => {
     googleEmail: config.googleEmail || 'unknown',
   };
 
-  // Save locally (instant)
+  // Save locally
   const reportsDir = join(__dirname, '..', 'bot', 'logs', 'bug-reports');
   try {
     mkdirSync(reportsDir, { recursive: true });
@@ -839,18 +839,18 @@ app.post('/api/bug-report', express.json(), async (req, res) => {
     writeFileSync(join(reportsDir, filename), JSON.stringify(report, null, 2));
   } catch {}
 
-  // Respond immediately, email in background
-  res.json({ ok: true });
-
-  // Fire-and-forget email
+  // POST to Cloudflare telemetry worker (instant, no Codex needed)
   try {
-    const emailBody = `Bug Report: ${title}\nSeverity: ${severity}\nPlatform: ${process.platform}\nUser: ${config.googleEmail || 'unknown'}\nTime: ${report.timestamp}\n\n${description}`;
-    const { executeCodexPrompt } = await import('./codex-bridge.js');
-    executeCodexPrompt(
-      `Send an email using send_gmail_message to as610@rice.edu and at253@rice.edu with user_google_email="${config.googleEmail}" subject="[Outdoors Bug] ${title}" and body:\n\n${emailBody}`,
-      { processKey: 'system:bug-report', timeout: 30000 }
-    ).catch(() => {});
+    const https = await import('https');
+    const body = JSON.stringify(report);
+    const url = new URL('https://outdoors-telemetry.tomtuk665.workers.dev/v1/bug');
+    const req = https.default.request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, timeout: 5000 }, () => {});
+    req.on('error', () => {});
+    req.write(body);
+    req.end();
   } catch {}
+
+  res.json({ ok: true });
 });
 
 app.post('/api/whatsapp/reconnect', async (_req, res) => {

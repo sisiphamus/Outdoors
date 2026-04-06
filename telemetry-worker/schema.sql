@@ -27,6 +27,18 @@ CREATE TABLE IF NOT EXISTS messages (
   status TEXT
 );
 
+-- Bug reports
+CREATE TABLE IF NOT EXISTS bug_reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  received_at TEXT NOT NULL DEFAULT (datetime('now')),
+  title TEXT,
+  description TEXT,
+  severity TEXT,
+  platform TEXT,
+  node_version TEXT,
+  app_version TEXT
+);
+
 -- Daily rollup view for quick dashboard queries
 CREATE VIEW IF NOT EXISTS daily_summary AS
 SELECT
