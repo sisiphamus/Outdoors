@@ -52,9 +52,6 @@ jobs:
         working-directory: outdoorsv1/backend/electron
         run: npm install
 
-      - name: Copy install instructions to dist
-        run: mkdir -p outdoorsv1/backend/electron/dist && cp "outdoorsv1/backend/electron/README - OPEN FIRST.txt" outdoorsv1/backend/electron/dist/
-
       - name: Build and publish macOS installer
         working-directory: outdoorsv1/backend/electron
         run: npm run build:mac -- --publish always
@@ -122,5 +119,4 @@ jobs:
           path: |
             outdoorsv1/backend/electron/dist/*.dmg
             outdoorsv1/backend/electron/dist/*.zip
-            outdoorsv1/backend/electron/dist/README - OPEN FIRST.txt
           retention-days: 30
