@@ -5,4 +5,4 @@ compatibility_date = "2024-01-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "outdoors-telemetry"
-database_id = "58ba46f8-6b3d-4326-b140-adca8144bc67"
+database_id = "709c543f-f20f-453d-8976-322df615c2ac"

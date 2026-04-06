@@ -2,7 +2,7 @@
 // Sends a periodic summary to the Outdoors telemetry endpoint.
 // No prompts, responses, tool inputs, file paths, or personal data are ever sent.
 
-const TELEMETRY_URL = 'https://outdoors-telemetry.tomtuk665.workers.dev/v1/report';
+const TELEMETRY_URL = 'https://outdoors-telemetry.towneradamm.workers.dev/v1/report';
 const REPORT_INTERVAL_MS = 60 * 60 * 1000; // every hour
 const SESSION_START = Date.now();
 

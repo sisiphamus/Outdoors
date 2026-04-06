@@ -39,7 +39,7 @@ const QUEUE_DIR = join(__dirname, '..', 'bot', 'message-queue');
 mkdirSync(QUEUE_DIR, { recursive: true });
 
 // Post per-message usage to Cloudflare telemetry worker (async, best-effort)
-const TELEMETRY_URL = 'https://outdoors-telemetry.tomtuk665.workers.dev';
+const TELEMETRY_URL = 'https://outdoors-telemetry.towneradamm.workers.dev';
 async function logToTelemetry(convoLog) {
   try {
     const costEvents = (convoLog.fullEvents || []).filter(e => e.type === 'cost');
