@@ -241,7 +241,7 @@ export async function processReferralReply(jid, text, executePrompt, replyFn, ki
 
     return {
       handled: true,
-      reply: `Invite being sent to ${friendName} ${friendLast}! Your daily limit is now ${status.dailyQuota} messages (${status.remaining} remaining today).`,
+      reply: `Invite being sent to ${friendName} ${friendLast}! Your daily limit is now ${status.dailyQuota} messages (${status.remaining} remaining today).\nChecking if all goes well in the background.`,
     };
   }
 
