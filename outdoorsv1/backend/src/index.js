@@ -27,7 +27,7 @@ import { ensureBrowserReady } from './browser-health.js';
 import { registerStartup } from './register-startup.js';
 import { startAutomationScheduler, reloadAutomations } from './automation-scheduler.js';
 import { recordTask } from './telemetry.js';
-import { hasQuota, incrementMessageCount, initReferral, sendReferral, getPendingReferralEmail, getQuotaStatus } from './quota.js';
+import { hasQuota, incrementMessageCount, getQuotaStatus } from './quota.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SHORT_TERM_DIR = join(__dirname, '..', 'bot', 'memory', 'short-term');
@@ -448,37 +448,37 @@ io.on('connection', async (socket) => {
       return;
     }
 
-    // Handle refer command
-    if (parsed.command === 'refer') {
-      // Get sender name from config (set during onboarding) or default
+    // Handle invite/refer command (web dashboard uses the same flow as WhatsApp)
+    if (parsed.command === 'refer' || /^(invite|refer)\b/i.test(parsed.body || '')) {
+      const { startReferralFlow, getReferralState, processReferralReply } = await import('./quota.js');
+      const webJid = 'web:' + socket.id;
       const senderName = config.googleEmail?.split('@')[0]?.replace(/[._]/g, ' ') || 'A friend';
-      const result = initReferral(parsed.body, senderName);
-      if (result.needsCustomization) {
-        socket.emit('chat_response', result.prompt);
-      } else {
-        socket.emit('chat_response', result.error);
+      if (!getReferralState(webJid)) {
+        const r = startReferralFlow(webJid, senderName);
+        socket.emit('chat_response', r.prompt);
       }
       return;
     }
 
-    // Check if user is replying to a pending referral customization
-    const pendingEmail = getPendingReferralEmail();
-    if (pendingEmail && parsed.command === 'message') {
-      const replyFn = (msg) => socket.emit('chat_response', msg);
-      const killFn = () => { /* kill any running task for this user */ };
-      const result = sendReferral(pendingEmail, parsed.body, executeCodexPrompt, replyFn, killFn);
-      if (result.ok) {
-        socket.emit('chat_response', `Invite sent! Your daily limit is now ${result.dailyQuota} messages (${result.remaining} remaining today). You can keep using Outdoors — I'll verify the email in the background.`);
-      } else {
-        socket.emit('chat_response', result.error);
+    // Check if web user is in a referral flow
+    {
+      const { getReferralState, processReferralReply } = await import('./quota.js');
+      const webJid = 'web:' + socket.id;
+      if (getReferralState(webJid) && parsed.command === 'message') {
+        const replyFn = (msg) => socket.emit('chat_response', msg);
+        const killFn = () => {};
+        const result = await processReferralReply(webJid, parsed.body, executeCodexPrompt, replyFn, killFn);
+        if (result?.handled) {
+          socket.emit('chat_response', result.reply);
+          return;
+        }
       }
-      return;
     }
 
-    // Quota check — block execution if daily limit reached
+    // Quota check
     if (parsed.command === 'message' && !hasQuota()) {
       const status = getQuotaStatus();
-      socket.emit('chat_response', `You've used your ${status.dailyQuota} messages for today! Share Outdoors with a friend to get +10 messages/day:\n\nrefer friend@rice.edu`);
+      socket.emit('chat_response', `You've used your ${status.dailyQuota} messages for today! Invite a friend to get +10 messages/day.\n\nReply *invite* to send someone an invite.`);
       return;
     }
 
