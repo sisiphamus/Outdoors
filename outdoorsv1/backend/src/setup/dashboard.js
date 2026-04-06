@@ -533,6 +533,7 @@ function setupSettings() {
   document.getElementById('btn-save-config').addEventListener('click', saveConfig);
   document.getElementById('btn-reconnect-wa')?.addEventListener('click', reconnectWhatsApp);
   document.getElementById('btn-save-memory').addEventListener('click', saveMemoryFile);
+  document.getElementById('btn-submit-bug')?.addEventListener('click', submitBugReport);
   document.getElementById('memory-content').addEventListener('input', () => {
     memoryDirty = true;
     document.getElementById('btn-save-memory').classList.remove('hidden');
@@ -755,6 +756,48 @@ async function reconnectWhatsApp() {
     btn.textContent = 'Error — try again';
     btn.disabled = false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Bug Reporting
+// ---------------------------------------------------------------------------
+
+async function submitBugReport() {
+  const title = document.getElementById('bug-title')?.value?.trim();
+  const description = document.getElementById('bug-description')?.value?.trim();
+  const severity = document.getElementById('bug-severity')?.value || 'medium';
+  const status = document.getElementById('bug-status');
+  const btn = document.getElementById('btn-submit-bug');
+
+  if (!title) { if (status) status.textContent = 'Please enter a title.'; return; }
+  if (!description) { if (status) status.textContent = 'Please describe the issue.'; return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  if (status) status.textContent = '';
+
+  try {
+    const backendUrl = await window.electronAPI.getBackendUrl();
+    const resp = await fetch(backendUrl + '/api/bug-report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description, severity }),
+    });
+    const result = await resp.json();
+
+    if (result.ok) {
+      if (status) status.textContent = 'Bug report submitted. Thank you!';
+      document.getElementById('bug-title').value = '';
+      document.getElementById('bug-description').value = '';
+    } else {
+      if (status) status.textContent = 'Saved locally. ' + (result.error || '');
+    }
+  } catch {
+    if (status) status.textContent = 'Could not reach backend — report saved locally next time.';
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Submit Bug Report';
 }
 
 // ---------------------------------------------------------------------------

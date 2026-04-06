@@ -563,11 +563,12 @@ function setupIPC() {
     } catch { return false; }
   }
 
-  // macOS: install a package via Homebrew
-  function brewInstall(formula, name) {
+  // macOS: install or upgrade a package via Homebrew
+  function brewInstall(formula, name, upgrade = false) {
     return new Promise((resolve) => {
-      console.log(`[deps] Installing ${name} via brew...`);
-      const proc = spawn('brew', ['install', formula], {
+      const action = upgrade ? 'upgrade' : 'install';
+      console.log(`[deps] ${upgrade ? 'Upgrading' : 'Installing'} ${name} via brew...`);
+      const proc = spawn('brew', [action, formula], {
         shell: true,
         env: process.env,
       });
@@ -684,10 +685,11 @@ function setupIPC() {
         results.node = r.ok ? 'installed' : 'failed';
         if (r.ok) refreshPath();
       } else if (IS_MAC) {
-        // Try Homebrew first, fall back to official .pkg
+        // Try Homebrew first (upgrade if old version exists), fall back to official .pkg
         let r;
         if (hasBrw) {
-          r = await brewInstall('node', 'Node.js');
+          const needsUpgrade = nodeVersion > 0 && nodeVersion < 20;
+          r = await brewInstall('node', 'Node.js', needsUpgrade);
         }
         if (!r?.ok) {
           r = await macInstallNodePkg();
@@ -866,6 +868,15 @@ function setupIPC() {
       '/opt/homebrew/bin/codex',
       path.join(process.env.HOME || '', '.npm-global', 'bin', 'codex'),
     ];
+    // Also check npm global prefix (works on all platforms)
+    try {
+      const npmPrefix = execSync('npm prefix -g', { encoding: 'utf-8', shell: true, timeout: 5000, windowsHide: true }).trim();
+      if (npmPrefix) {
+        const binDir = process.platform === 'win32' ? npmPrefix : path.join(npmPrefix, 'bin');
+        const codexBin = path.join(binDir, process.platform === 'win32' ? 'codex.cmd' : 'codex');
+        if (!candidates.includes(codexBin)) candidates.push(codexBin);
+      }
+    } catch {}
     // Also check nvm on macOS/Linux
     if (process.platform !== 'win32') {
       try {
@@ -1141,15 +1152,27 @@ function setupIPC() {
       loginProc.on('error', (err) => console.log('[codex-auth] Login spawn error:', err.message));
 
       // Poll auth status every 3s until auth.json appears or timeout
-      const authPath = path.join(process.env.HOME || process.env.USERPROFILE || '', '.codex', 'auth.json');
+      // Check multiple possible locations — Codex may store auth differently per platform
+      const home = process.env.HOME || process.env.USERPROFILE || '';
+      const authPaths = [
+        path.join(home, '.codex', 'auth.json'),
+        path.join(process.env.APPDATA || '', '.codex', 'auth.json'),
+        path.join(process.env.LOCALAPPDATA || '', '.codex', 'auth.json'),
+        path.join(home, '.config', 'codex', 'auth.json'),
+      ].filter(p => p && !p.startsWith(path.sep + '.codex')); // filter out empty-prefix paths
+      console.log('[codex-auth] Polling for auth at:', authPaths[0]);
       authPollTimer = setInterval(() => {
-        try {
-          if (fs.existsSync(authPath)) {
-            clearInterval(authPollTimer);
-            authPollTimer = null;
-            resolve({ ok: true, output: 'Authenticated.' });
-          }
-        } catch {}
+        for (const authPath of authPaths) {
+          try {
+            if (fs.existsSync(authPath)) {
+              clearInterval(authPollTimer);
+              authPollTimer = null;
+              console.log('[codex-auth] Auth file found at:', authPath);
+              resolve({ ok: true, output: 'Authenticated.' });
+              return;
+            }
+          } catch {}
+        }
       }, 3000);
 
       // Timeout after 3 minutes

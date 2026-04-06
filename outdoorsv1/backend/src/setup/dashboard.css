@@ -986,3 +986,10 @@ html, body {
 }
 .tool-name, .sender-name { color: var(--text); }
 .tool-count, .sender-count { color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+
+/* ── Support tab ─────────────────────────────────────────── */
+.support-form { padding: 8px 0; }
+.support-form .form-group { margin-bottom: 14px; }
+.support-form textarea { resize: vertical; min-height: 80px; }
+.support-form .form-actions { display: flex; align-items: center; gap: 12px; }
+#bug-status { font-size: 12px; color: var(--text-muted); }

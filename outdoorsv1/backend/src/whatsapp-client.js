@@ -15,7 +15,7 @@ import { addToLogIndex, nextLogNumber } from './index.js';
 import { extractImages } from './transport-utils.js';
 import { formatOutdoorsResponse } from './wa-formatter.js';
 import { recordTask } from './telemetry.js';
-import { hasQuota, incrementMessageCount, initReferral, sendReferral, getPendingReferralEmail, getQuotaStatus } from './quota.js';
+import { hasQuota, incrementMessageCount, getQuotaStatus, startReferralFlow, getReferralState, processReferralReply } from './quota.js';
 import { closeSession } from '../../../outdoorsv4/session/session-manager.js';
 
 // Per-JID send serialization — ensures one response's images+text
@@ -635,31 +635,51 @@ async function startWhatsApp() {
             }
           }
 
-          // Check for refer command
+          // Check for referral flow state or invite trigger
           const msgText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
-          const referMatch = msgText.match(/^refer\s+(\S+@\S+)/i);
-          if (referMatch) {
-            const senderName = msg.pushName || config.googleEmail?.split('@')[0]?.replace(/[._]/g, ' ') || 'A friend';
-            const refResult = initReferral(referMatch[1], senderName);
-            const reply = refResult.needsCustomization ? refResult.prompt : refResult.error;
-            const sent = await sendWithRetry(jid, { text: formatOutdoorsResponse(reply) });
-            if (sent?.key?.id) { addBotSentId(sent.key.id); storeMessage(sent.key.id, sent.message); }
-            return;
-          }
+          const refState = getReferralState(jid);
 
-          // Check if user is replying to a pending referral customization
-          const pendingEmail = getPendingReferralEmail();
-          if (pendingEmail && !msgText.match(/^\d+\s/) && !msgText.match(/^(stop|new|status|refer)/i)) {
+          // If user is in a referral flow, process their reply
+          if (refState) {
             const { executeCodexPrompt } = await import('./codex-bridge.js');
             const replyFn = async (m) => {
               const s = await sendWithRetry(jid, { text: formatOutdoorsResponse(m) });
               if (s?.key?.id) { addBotSentId(s.key.id); storeMessage(s.key.id, s.message); }
             };
-            const refResult = sendReferral(pendingEmail, msgText, executeCodexPrompt, replyFn);
-            const reply = refResult.ok
-              ? `Invite sent! Your daily limit is now ${refResult.dailyQuota} messages (${refResult.remaining} remaining today). You can keep using Outdoors — I'll verify the email in the background.`
-              : refResult.error;
-            const sent = await sendWithRetry(jid, { text: formatOutdoorsResponse(reply) });
+            const killFn = () => { try { killProcess(`wa:chat:${jid}`); } catch {} };
+            const result = await processReferralReply(jid, msgText, executeCodexPrompt, replyFn, killFn);
+            if (result?.handled) {
+              const sent = await sendWithRetry(jid, { text: formatOutdoorsResponse(result.reply) });
+              if (sent?.key?.id) { addBotSentId(sent.key.id); storeMessage(sent.key.id, sent.message); }
+              return;
+            }
+          }
+
+          // Check for invite/refer trigger (starts the conversational flow)
+          if (/^(invite|refer)\b/i.test(msgText)) {
+            const senderName = msg.pushName || config.googleEmail?.split('@')[0]?.replace(/[._]/g, ' ') || 'A friend';
+            // If they typed "refer email@rice.edu", go straight to manual entry
+            const emailMatch = msgText.match(/(?:invite|refer)\s+(\S+@\S+)/i);
+            if (emailMatch) {
+              const { executeCodexPrompt } = await import('./codex-bridge.js');
+              startReferralFlow(jid, senderName);
+              // Set stage to manual and process the email
+              const state = getReferralState(jid);
+              if (state) { state.stage = 'manual'; }
+              const replyFn = async (m) => {
+                const s = await sendWithRetry(jid, { text: formatOutdoorsResponse(m) });
+                if (s?.key?.id) { addBotSentId(s.key.id); storeMessage(s.key.id, s.message); }
+              };
+              const result = await processReferralReply(jid, emailMatch[1], executeCodexPrompt, replyFn);
+              if (result?.handled) {
+                const sent = await sendWithRetry(jid, { text: formatOutdoorsResponse(result.reply) });
+                if (sent?.key?.id) { addBotSentId(sent.key.id); storeMessage(sent.key.id, sent.message); }
+              }
+              return;
+            }
+            // Just "invite" — start the flow
+            const refResult = startReferralFlow(jid, senderName);
+            const sent = await sendWithRetry(jid, { text: formatOutdoorsResponse(refResult.prompt) });
             if (sent?.key?.id) { addBotSentId(sent.key.id); storeMessage(sent.key.id, sent.message); }
             return;
           }
@@ -667,7 +687,7 @@ async function startWhatsApp() {
           // Quota check
           if (!hasQuota()) {
             const status = getQuotaStatus();
-            const reply = `You've used your ${status.dailyQuota} messages for today! Share Outdoors with a friend to get +10 messages/day:\n\nrefer friend@rice.edu`;
+            const reply = `You've used your ${status.dailyQuota} messages for today! Invite a friend to get +10 messages/day.\n\nReply *invite* to send someone an invite.`;
             const sent = await sendWithRetry(jid, { text: formatOutdoorsResponse(reply) });
             if (sent?.key?.id) { addBotSentId(sent.key.id); storeMessage(sent.key.id, sent.message); }
             return;

@@ -815,6 +815,44 @@ app.post('/api/automations/reload', requireLocalAuth, (_req, res) => {
   res.json({ ok: true });
 });
 
+// Bug report endpoint
+app.post('/api/bug-report', express.json(), async (req, res) => {
+  const { title, description, severity } = req.body || {};
+  if (!title || !description) return res.status(400).json({ ok: false, error: 'Title and description required.' });
+
+  const report = {
+    title,
+    description,
+    severity: severity || 'medium',
+    timestamp: new Date().toISOString(),
+    platform: process.platform,
+    nodeVersion: process.version,
+    appVersion: config.appVersion || 'unknown',
+    googleEmail: config.googleEmail || 'unknown',
+  };
+
+  // Always save locally
+  const reportsDir = join(__dirname, '..', 'bot', 'logs', 'bug-reports');
+  try {
+    mkdirSync(reportsDir, { recursive: true });
+    const filename = `${Date.now()}-${severity}.json`;
+    writeFileSync(join(reportsDir, filename), JSON.stringify(report, null, 2));
+  } catch {}
+
+  // Try to email the report
+  try {
+    const emailBody = `Bug Report: ${title}\nSeverity: ${severity}\nPlatform: ${process.platform}\nUser: ${config.googleEmail || 'unknown'}\nTime: ${report.timestamp}\n\n${description}`;
+    const { executeCodexPrompt } = await import('./codex-bridge.js');
+    await executeCodexPrompt(
+      `Send an email using send_gmail_message to as610@rice.edu with user_google_email="${config.googleEmail}" subject="[Outdoors Bug] ${title}" and body:\n\n${emailBody}`,
+      { processKey: 'system:bug-report', timeout: 30000 }
+    );
+    res.json({ ok: true, emailed: true });
+  } catch {
+    res.json({ ok: true, emailed: false, error: 'Saved locally but email failed.' });
+  }
+});
+
 app.post('/api/whatsapp/reconnect', async (_req, res) => {
   try {
     const result = await reconnectWhatsApp();
