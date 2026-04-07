@@ -216,14 +216,24 @@ function openBrowser(executablePath, cdpPort, userDataDir, profileDir, firstRun 
 }
 
 /**
- * Closes all open tabs except one (navigates it to about:blank).
- * Frozen/suspended tabs from previous sessions cause chrome-devtools-mcp
- * to hang on tool calls (Network.enable timeout on frozen pages).
+ * Closes orphan blank tabs left over from previous bot automation sessions.
+ *
+ * Outdoors users browse in the AutomationProfile, so the prior implementation
+ * (close every tab except the first, then blank the survivor) clobbered real
+ * working tabs every time the backend restarted. The new behavior is strictly
+ * more conservative: only tabs whose URL is unambiguously a blank/new-tab
+ * placeholder are closed. Real tabs (any http(s)://, file://, etc.) are
+ * preserved untouched.
+ *
+ * Trade-off vs the original: frozen non-blank tabs that cause chrome-devtools-mcp
+ * timeouts will no longer be auto-cleaned. That's the right call — the MCP-timeout
+ * concern should be addressed at the MCP layer (per-call timeouts) rather than by
+ * pre-emptively destroying user state.
  */
 async function cleanStaleTabs(cdpPort) {
   const http = await import('http');
   try {
-    const pages = await new Promise((resolve, reject) => {
+    const pages = await new Promise((resolve) => {
       http.default.get(`http://localhost:${cdpPort}/json`, { timeout: 3000 }, (res) => {
         let data = '';
         res.on('data', c => { data += c; });
@@ -232,26 +242,44 @@ async function cleanStaleTabs(cdpPort) {
     });
 
     const realPages = pages.filter(p => p.type === 'page' && !p.parentId);
-    if (realPages.length <= 1) return; // nothing to clean
+    if (realPages.length === 0) return;
 
-    // Close all pages except the first one
-    for (let i = 1; i < realPages.length; i++) {
+    // Only consider a tab "orphan blank" if its URL is clearly empty/new-tab.
+    // Real user tabs (any http/https/file/etc URL) are protected.
+    const isOrphanBlank = (p) => {
+      const url = (p.url || '').trim();
+      if (url === '') return true;
+      if (url === 'about:blank') return true;
+      if (url === 'chrome://newtab/') return true;
+      if (url === 'chrome://new-tab-page/') return true;
+      if (url === 'edge://newtab/') return true;
+      if (url.startsWith('data:')) return true;
+      return false;
+    };
+
+    const orphanBlanks = realPages.filter(isOrphanBlank);
+    const realUserTabs = realPages.filter(p => !isOrphanBlank(p));
+
+    // Need to keep at least one tab open so the browser window doesn't close.
+    // If all tabs are orphan blanks, leave the first one alone.
+    let toClose;
+    if (realUserTabs.length === 0) {
+      toClose = orphanBlanks.slice(1);
+    } else {
+      // Real tabs exist — they keep the window alive, so we can close every blank
+      toClose = orphanBlanks;
+    }
+
+    if (toClose.length === 0) return;
+
+    for (const page of toClose) {
       await new Promise((resolve) => {
-        http.default.get(`http://localhost:${cdpPort}/json/close/${realPages[i].id}`, { timeout: 2000 }, () => resolve())
+        http.default.get(`http://localhost:${cdpPort}/json/close/${page.id}`, { timeout: 2000 }, () => resolve())
           .on('error', () => resolve());
       });
     }
 
-    // Navigate the remaining page to about:blank to unfreeze it
-    if (realPages[0].url !== 'about:blank' && realPages[0].url !== 'chrome://newtab/') {
-      await new Promise((resolve) => {
-        const url = encodeURIComponent('about:blank');
-        http.default.get(`http://localhost:${cdpPort}/json/navigate/${realPages[0].id}?${url}`, { timeout: 2000 }, () => resolve())
-          .on('error', () => resolve());
-      });
-    }
-
-    console.log(`  [BrowserHealth] Cleaned ${realPages.length - 1} stale tab(s)`);
+    console.log(`  [BrowserHealth] Cleaned ${toClose.length} orphan blank tab(s); preserved ${realUserTabs.length} user tab(s)`);
   } catch (err) {
     // Non-critical — if cleanup fails, browser still works
   }

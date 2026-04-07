@@ -437,7 +437,13 @@ async function startWhatsApp() {
   });
 
   sock.ev.on('messages.upsert', (upsert) => {
-    if (upsert.type !== 'notify') return;  // Only process real-time messages
+    // Accept real-time ('notify') and backlog/own-device-sync ('append').
+    // Linked-device pairings (bot paired to user's primary phone) deliver almost everything as
+    // 'append' — both server backlog drains after reconnect AND fromMe sync from the primary
+    // device. Reject 'prepend' (history backfill) so we don't re-answer ancient messages.
+    // Downstream dedup (botSentIds, seenTimestampKeys, processingIds, processedMsgIds) and the
+    // 5-minute staleness check in the on-disk queue drain prevent any duplicate processing.
+    if (upsert.type !== 'notify' && upsert.type !== 'append') return;
     const messages = upsert.messages || [];
     for (const msg of messages) {
       const msgId = msg.key.id;
@@ -460,7 +466,11 @@ async function startWhatsApp() {
         console.log(`[wa:dedup] Skipping already-processing message ${msgId}`);
         continue;
       }
-      processingIds.add(msgId);
+      // NOTE: do NOT add to processingIds yet. Stub messages and decrypt-failure
+      // messages would leak the msgId into processingIds permanently, which then
+      // blocks the real (decrypted) follow-up that Baileys delivers under the
+      // same msgId. processingIds.add() now happens just before enqueueMessage,
+      // so it only fires when we're actually committing to process.
 
       // Skip system/protocol messages (group created, participant added, etc.)
       // These legitimately have no .message body — they use messageStubType instead.
@@ -514,6 +524,10 @@ async function startWhatsApp() {
         continue;
       }
 
+      // Now safe to mark in-flight — every continue path above this point exits
+      // without committing the msgId. processingIds is cleaned up in the finally
+      // block of the async IIFE below.
+      processingIds.add(msgId);
       // Persist to queue before processing — survives crashes
       enqueueMessage(msg);
 
