@@ -11,7 +11,7 @@ import { Server } from 'socket.io';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import QRCode from 'qrcode';
-import { readdirSync, readFileSync, unlinkSync, mkdirSync, writeFileSync } from 'fs';
+import { readdirSync, readFileSync, unlinkSync, mkdirSync, writeFileSync, appendFileSync, existsSync, statSync, renameSync } from 'fs';
 import { randomBytes } from 'crypto';
 import { config, saveConfig, loadConfig } from './config.js';
 import { startWhatsApp, setSocketIO, getStatus, getLastQR, reconnectWhatsApp } from './whatsapp-client.js';
@@ -62,14 +62,86 @@ function requireLocalAuth(req, res, next) {
 
 // In-memory ring buffer — captures all log events so the devlog viewer
 // can replay history even if it wasn't open when events occurred.
+// Backed by a disk file (bot/chat-log.jsonl) so the chat feed survives
+// backend restarts, app close/reopen, and auto-updates.
 const LOG_BUFFER_MAX = 2000;
 const logBuffer = [];
-function emitLog(type, data) {
-  const entry = { type, data, timestamp: new Date().toISOString() };
+const CHAT_LOG_PATH = join(__dirname, '..', 'bot', 'chat-log.jsonl');
+const CHAT_LOG_MAX_BYTES = 10 * 1024 * 1024; // 10 MB before rotation
+
+// Load the tail of the persisted chat log into the ring buffer on startup so
+// the dashboard sees historical events immediately after a backend restart.
+function hydrateLogBufferFromDisk() {
+  try {
+    if (!existsSync(CHAT_LOG_PATH)) return;
+    const raw = readFileSync(CHAT_LOG_PATH, 'utf-8');
+    const lines = raw.split('\n').filter(l => l.trim().length > 0);
+    const recent = lines.slice(-LOG_BUFFER_MAX);
+    for (const line of recent) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry && typeof entry === 'object') logBuffer.push(entry);
+      } catch { /* skip malformed line */ }
+    }
+    if (logBuffer.length > 0) {
+      console.log(`[chat-log] Restored ${logBuffer.length} event(s) from ${CHAT_LOG_PATH}`);
+    }
+  } catch (err) {
+    console.warn(`[chat-log] Failed to hydrate ring buffer: ${err.message}`);
+  }
+}
+
+// Rotate the chat log file if it exceeds CHAT_LOG_MAX_BYTES. On rotation we
+// keep the most recent LOG_BUFFER_MAX entries (whatever is in memory) and
+// rewrite the file to that, dropping older history. Prevents unbounded growth.
+function maybeRotateChatLog() {
+  try {
+    if (!existsSync(CHAT_LOG_PATH)) return;
+    const size = statSync(CHAT_LOG_PATH).size;
+    if (size < CHAT_LOG_MAX_BYTES) return;
+    const tmp = CHAT_LOG_PATH + '.rot.' + randomBytes(4).toString('hex');
+    const content = logBuffer.map(e => JSON.stringify(e)).join('\n') + '\n';
+    writeFileSync(tmp, content);
+    renameSync(tmp, CHAT_LOG_PATH);
+    console.log(`[chat-log] Rotated (was ${size} bytes, kept ${logBuffer.length} recent entries)`);
+  } catch (err) {
+    console.warn(`[chat-log] Rotation failed: ${err.message}`);
+  }
+}
+
+let _chatLogWritesSinceRotationCheck = 0;
+// Shared helper: push an event to the in-memory ring buffer AND persist to
+// disk so the dashboard feed survives backend restarts. Used by every call
+// site that mutates logBuffer (emitLog, the setSocketIO callback, and the
+// process_activity listener — all near the bottom of this file).
+function pushBufferedEvent(entry) {
   logBuffer.push(entry);
   if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
+  try {
+    appendFileSync(CHAT_LOG_PATH, JSON.stringify(entry) + '\n');
+  } catch (err) {
+    // Rare: fresh-install race where the bot dir doesn't exist yet. Create
+    // and retry once. Otherwise swallow — the in-memory buffer still works
+    // and the dashboard still receives live events.
+    try {
+      mkdirSync(dirname(CHAT_LOG_PATH), { recursive: true });
+      appendFileSync(CHAT_LOG_PATH, JSON.stringify(entry) + '\n');
+    } catch { /* swallow */ }
+  }
+  if (++_chatLogWritesSinceRotationCheck >= 100) {
+    _chatLogWritesSinceRotationCheck = 0;
+    maybeRotateChatLog();
+  }
+}
+
+function emitLog(type, data) {
+  const entry = { type, data, timestamp: new Date().toISOString() };
+  pushBufferedEvent(entry);
   io.emit('log', entry);
 }
+
+// Hydrate before anything else emits
+hydrateLogBufferFromDisk();
 
 app.use(express.json());
 // API routes
@@ -764,14 +836,14 @@ io.on('connection', async (socket) => {
 });
 
 setSocketIO(io, (entry) => {
-  logBuffer.push(entry);
-  if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
+  // Callback given to whatsapp-client's emitLog so WA events land in the
+  // shared ring buffer AND get persisted to disk for post-restart replay.
+  pushBufferedEvent(entry);
 });
 setProcessChangeListener(() => io.emit('process_status', getActiveProcessSummary()));
 setProcessActivityListener((processKey, type, summary) => {
   const entry = { type: 'process_activity', data: { processKey, type: type, summary }, timestamp: new Date().toISOString() };
-  logBuffer.push(entry);
-  if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
+  pushBufferedEvent(entry);
   io.emit('process_activity', { processKey, type, summary });
 });
 
