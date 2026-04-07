@@ -97,28 +97,37 @@ export default {
       }
 
       try {
-        const daily = await env.DB.prepare(
-          'SELECT * FROM daily_summary LIMIT 90'
-        ).all();
-
+        // Aggregates sourced from `messages` (real-time) instead of `reports` (hourly batch)
+        // so the dashboard reflects activity within seconds.
         const totals = await env.DB.prepare(
           `SELECT
-            SUM(tasks) as total_tasks,
-            SUM(errors) as total_errors,
-            ROUND(SUM(cost_usd), 3) as total_cost,
-            SUM(wa_count) as wa_tasks,
-            SUM(web_count) as web_tasks,
-            SUM(tool_calls) as total_tools,
-            SUM(input_tokens) as total_input,
-            SUM(output_tokens) as total_output,
-            SUM(cache_tokens) as total_cache,
-            ROUND(AVG(avg_duration_ms)) as avg_response,
-            COUNT(*) as report_count
-          FROM reports`
+            COUNT(*)                                                AS total_tasks,
+            ROUND(SUM(cost_usd), 3)                                 AS total_cost,
+            ROUND(AVG(duration_ms))                                 AS avg_response,
+            SUM(CASE WHEN status = 'FAIL' THEN 1 ELSE 0 END)        AS total_errors,
+            SUM(CASE WHEN platform = 'whatsapp' THEN 1 ELSE 0 END)  AS wa_tasks,
+            SUM(CASE WHEN platform = 'web'      THEN 1 ELSE 0 END)  AS web_tasks,
+            SUM(tokens)                                             AS total_input,
+            0                                                       AS total_output,
+            0                                                       AS total_cache,
+            0                                                       AS total_tools,
+            COUNT(*)                                                AS report_count
+          FROM messages`
         ).first();
 
-        const recent = await env.DB.prepare(
-          'SELECT * FROM reports ORDER BY id DESC LIMIT 50'
+        const daily = await env.DB.prepare(
+          `SELECT
+            date(received_at)                                       AS day,
+            COUNT(*)                                                AS total_tasks,
+            ROUND(SUM(cost_usd), 3)                                 AS total_cost,
+            SUM(CASE WHEN status = 'FAIL' THEN 1 ELSE 0 END)        AS total_errors,
+            SUM(CASE WHEN platform = 'whatsapp' THEN 1 ELSE 0 END)  AS whatsapp_tasks,
+            SUM(CASE WHEN platform = 'web'      THEN 1 ELSE 0 END)  AS web_tasks,
+            ROUND(AVG(duration_ms))                                 AS avg_response_ms
+          FROM messages
+          GROUP BY day
+          ORDER BY day DESC
+          LIMIT 90`
         ).all();
 
         const messages = await env.DB.prepare(
@@ -129,7 +138,7 @@ export default {
           'SELECT * FROM bug_reports ORDER BY id DESC LIMIT 50'
         ).all().catch(() => ({ results: [] }));
 
-        return new Response(renderDashboard(totals, daily.results, recent.results, messages.results, bugs.results), {
+        return new Response(renderDashboard(totals, daily.results, messages.results, bugs.results), {
           headers: { 'Content-Type': 'text/html' },
         });
       } catch (err) {
@@ -141,7 +150,7 @@ export default {
   },
 };
 
-function renderDashboard(totals, daily, recent, messages, bugs) {
+function renderDashboard(totals, daily, messages, bugs) {
   const t = totals || {};
   return `<!DOCTYPE html>
 <html><head>
@@ -196,15 +205,6 @@ function renderDashboard(totals, daily, recent, messages, bugs) {
     <td>${d.day}</td><td>${d.total_tasks}</td><td>$${(d.total_cost || 0).toFixed(2)}</td>
     <td>${d.total_errors}</td><td>${d.whatsapp_tasks}</td><td>${d.web_tasks}</td>
     <td>${d.avg_response_ms ? Math.round(d.avg_response_ms / 1000) + 's' : '—'}</td>
-  </tr>`).join('')}
-</table>
-
-<h2>Recent Reports (last 50)</h2>
-<table>
-  <tr><th>Time</th><th>Tasks</th><th>Cost</th><th>Errors</th><th>Tools</th><th>Avg</th></tr>
-  ${(recent || []).map(r => `<tr>
-    <td>${r.received_at}</td><td>${r.tasks}</td><td>$${(r.cost_usd || 0).toFixed(3)}</td>
-    <td>${r.errors}</td><td>${r.tool_calls}</td><td>${r.avg_duration_ms ? Math.round(r.avg_duration_ms / 1000) + 's' : '—'}</td>
   </tr>`).join('')}
 </table>
 

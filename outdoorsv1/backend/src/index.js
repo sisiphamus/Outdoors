@@ -26,12 +26,23 @@ import { ensureBrowserReady } from './browser-health.js';
 
 import { registerStartup } from './register-startup.js';
 import { startAutomationScheduler, reloadAutomations } from './automation-scheduler.js';
-import { recordTask } from './telemetry.js';
+import { recordTask, postPerMessageLog } from './telemetry.js';
 import { hasQuota, incrementMessageCount, getQuotaStatus } from './quota.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SHORT_TERM_DIR = join(__dirname, '..', 'bot', 'memory', 'short-term');
 const LOGS_DIR = join(__dirname, '..', 'bot', 'logs');
+
+// Read app version from the workspace's .app-version file written by Electron
+// main.js (ensureWorkspace). Used as a fallback when OUTDOORS_APP_VERSION env
+// var isn't set (e.g. when launching the backend directly without Electron).
+function readAppVersionFile() {
+  try {
+    return readFileSync(join(__dirname, '..', '..', '..', '.app-version'), 'utf-8').trim();
+  } catch {
+    return null;
+  }
+}
 
 const app = express();
 const server = createServer(app);
@@ -734,6 +745,14 @@ io.on('connection', async (socket) => {
         cacheTokens: analytics.cacheTokens,
         hasError: !!convoLog.error,
       });
+      // Per-message log (mirrors WhatsApp path so web messages also appear in dashboard)
+      postPerMessageLog({
+        durationMs: convoLog.durationMs,
+        platform: 'web',
+        costUsd: analytics.cost,
+        tokens: (analytics.inputTokens || 0) + (analytics.outputTokens || 0),
+        status: convoLog.error ? 'FAIL' : 'OK',
+      });
     } catch {}
   });
 
@@ -827,7 +846,7 @@ app.post('/api/bug-report', express.json(), async (req, res) => {
     timestamp: new Date().toISOString(),
     platform: process.platform,
     nodeVersion: process.version,
-    appVersion: config.appVersion || 'unknown',
+    appVersion: process.env.OUTDOORS_APP_VERSION || config.appVersion || readAppVersionFile() || 'unknown',
     googleEmail: config.googleEmail || 'unknown',
   };
 

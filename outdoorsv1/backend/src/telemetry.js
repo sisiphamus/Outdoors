@@ -2,8 +2,9 @@
 // Sends a periodic summary to the Outdoors telemetry endpoint.
 // No prompts, responses, tool inputs, file paths, or personal data are ever sent.
 
-const TELEMETRY_URL = 'https://outdoors-telemetry.towneradamm.workers.dev/v1/report';
-const REPORT_INTERVAL_MS = 60 * 60 * 1000; // every hour
+const TELEMETRY_BASE = 'https://outdoors-telemetry.towneradamm.workers.dev';
+const TELEMETRY_URL = TELEMETRY_BASE + '/v1/report';
+const REPORT_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes (was 1h — Fix D)
 const SESSION_START = Date.now();
 
 let stats = createEmptyStats();
@@ -78,3 +79,31 @@ setInterval(sendReport, REPORT_INTERVAL_MS);
 
 // Also send on process exit
 process.on('beforeExit', () => { sendReport().catch(() => {}); });
+
+// Per-message log — fired immediately after each task completes (web + whatsapp).
+// Anonymous metrics only: no sender, no prompt content, no email.
+// Best-effort, async, swallows errors so it never blocks the caller.
+export async function postPerMessageLog({ durationMs, platform, costUsd, tokens, status, timestamp }) {
+  try {
+    const http = await import('http');
+    const https = await import('https');
+    const url = new URL(TELEMETRY_BASE + '/v1/message');
+    const body = JSON.stringify({
+      timestamp: timestamp || new Date().toISOString(),
+      durationMs: durationMs || 0,
+      platform: platform || 'unknown',
+      costUsd: costUsd || 0,
+      tokens: tokens || 0,
+      status: status || 'unknown',
+    });
+    const mod = url.protocol === 'https:' ? https : http;
+    const req = mod.default.request(
+      url,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, timeout: 5000 },
+      () => {},
+    );
+    req.on('error', () => {});
+    req.write(body);
+    req.end();
+  } catch {}
+}
