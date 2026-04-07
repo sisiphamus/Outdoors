@@ -97,8 +97,11 @@ export default {
       }
 
       try {
-        // Aggregates sourced from `messages` (real-time) instead of `reports` (hourly batch)
-        // so the dashboard reflects activity within seconds.
+        // Period selector — controls the chart and breakdown table.
+        // Cards stay all-time totals (lifetime view).
+        const period = parsePeriod(url.searchParams.get('period'));
+
+        // Lifetime totals for the summary cards.
         const totals = await env.DB.prepare(
           `SELECT
             COUNT(*)                                                AS total_tasks,
@@ -115,9 +118,23 @@ export default {
           FROM messages`
         ).first();
 
-        const daily = await env.DB.prepare(
+        // Period-windowed buckets for chart + breakdown.
+        // 24h → hourly buckets via strftime; daily periods → date() bucket.
+        const isHourly = period === '24h';
+        const bucketExpr = isHourly
+          ? "strftime('%Y-%m-%d %H:00', received_at)"
+          : "date(received_at)";
+        const whereClause =
+          period === '24h' ? "WHERE received_at >= datetime('now', '-24 hours')"
+          : period === '7d'  ? "WHERE received_at >= date('now', '-7 days')"
+          : period === '30d' ? "WHERE received_at >= date('now', '-30 days')"
+          : period === '90d' ? "WHERE received_at >= date('now', '-90 days')"
+          : ""; // 'all'
+        const limitClause = period === 'all' ? 'LIMIT 365' : '';
+
+        const bucketRows = await env.DB.prepare(
           `SELECT
-            date(received_at)                                       AS day,
+            ${bucketExpr}                                           AS bucket,
             COUNT(*)                                                AS total_tasks,
             ROUND(SUM(cost_usd), 3)                                 AS total_cost,
             SUM(CASE WHEN status = 'FAIL' THEN 1 ELSE 0 END)        AS total_errors,
@@ -125,10 +142,14 @@ export default {
             SUM(CASE WHEN platform = 'web'      THEN 1 ELSE 0 END)  AS web_tasks,
             ROUND(AVG(duration_ms))                                 AS avg_response_ms
           FROM messages
-          GROUP BY day
-          ORDER BY day DESC
-          LIMIT 90`
+          ${whereClause}
+          GROUP BY bucket
+          ORDER BY bucket
+          ${limitClause}`
         ).all();
+
+        // Pad missing buckets with zero rows so the chart has stable layout.
+        const buckets = padBuckets(bucketRows.results || [], period);
 
         const messages = await env.DB.prepare(
           'SELECT * FROM messages ORDER BY id DESC LIMIT 100'
@@ -138,7 +159,7 @@ export default {
           'SELECT * FROM bug_reports ORDER BY id DESC LIMIT 50'
         ).all().catch(() => ({ results: [] }));
 
-        return new Response(renderDashboard(totals, daily.results, messages.results, bugs.results), {
+        return new Response(renderDashboard(totals, buckets, messages.results, bugs.results, period, pw), {
           headers: { 'Content-Type': 'text/html' },
         });
       } catch (err) {
@@ -150,8 +171,19 @@ export default {
   },
 };
 
-function renderDashboard(totals, daily, messages, bugs) {
+function renderDashboard(totals, buckets, messages, bugs, period, pw) {
   const t = totals || {};
+  const isHourly = period === '24h';
+  const bucketLabel = isHourly ? 'Hour' : 'Date';
+  const periodTitle = {
+    '24h': 'Last 24 Hours (hourly)',
+    '7d':  'Last 7 Days',
+    '30d': 'Last 30 Days',
+    '90d': 'Last 90 Days',
+    'all': 'All Time',
+  }[period];
+  const periodLink = (p, label) =>
+    `<a class="period-link${p === period ? ' active' : ''}" href="?pw=${encodeURIComponent(pw)}&period=${p}">${label}</a>`;
   return `<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8">
@@ -169,11 +201,18 @@ function renderDashboard(totals, daily, messages, bugs) {
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th { text-align: left; padding: 8px; border-bottom: 1px solid #333; color: #666; font-weight: 500; }
   td { padding: 8px; border-bottom: 1px solid #1a1a1a; }
-  .chart { display: flex; align-items: flex-end; gap: 3px; height: 80px; margin-bottom: 24px; }
-  .bar { flex: 1; background: #4a9eff; border-radius: 2px 2px 0 0; min-width: 8px; position: relative; }
+  .chart { display: flex; align-items: flex-end; gap: 2px; height: 100px; margin-bottom: 16px; padding: 4px 0; border-bottom: 1px solid #1a1a1a; }
+  .bar { flex: 1; background: #4a9eff; border-radius: 2px 2px 0 0; min-width: 4px; min-height: 1px; position: relative; }
+  .bar.empty { background: #1a1a1a; }
   .bar:hover { opacity: 0.8; }
-  .bar-tip { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 10px; white-space: nowrap; display: none; }
+  .bar-tip { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 3px 8px; border-radius: 3px; font-size: 11px; white-space: nowrap; display: none; z-index: 10; pointer-events: none; }
   .bar:hover .bar-tip { display: block; }
+  .period-selector { display: flex; gap: 6px; margin: 8px 0 12px; flex-wrap: wrap; align-items: center; }
+  .period-selector .period-label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; margin-right: 4px; }
+  .period-link { padding: 4px 10px; border: 1px solid #333; border-radius: 4px; color: #888; text-decoration: none; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .period-link:hover { color: #fff; border-color: #555; }
+  .period-link.active { background: #4a9eff; border-color: #4a9eff; color: #fff; }
+  .chart-title { font-size: 11px; color: #555; margin-top: -8px; margin-bottom: 16px; text-align: center; font-variant-numeric: tabular-nums; }
 </style>
 </head><body>
 <h1>Outdoors Telemetry</h1>
@@ -189,22 +228,36 @@ function renderDashboard(totals, daily, messages, bugs) {
   <div class="card"><div class="card-value">${t.report_count || 0}</div><div class="card-label">Reports</div></div>
 </div>
 
-<h2>Daily Activity</h2>
-<div class="chart">
-  ${(daily || []).map(d => {
-    const max = Math.max(1, ...daily.map(x => x.total_tasks));
-    const pct = (d.total_tasks / max) * 100;
-    return `<div class="bar" style="height:${pct}%"><div class="bar-tip">${d.day}: ${d.total_tasks} tasks, $${(d.total_cost || 0).toFixed(2)}</div></div>`;
-  }).join('')}
+<h2>Activity</h2>
+<div class="period-selector">
+  <span class="period-label">Range:</span>
+  ${periodLink('24h', '24h')}
+  ${periodLink('7d',  '7d')}
+  ${periodLink('30d', '30d')}
+  ${periodLink('90d', '90d')}
+  ${periodLink('all', 'All')}
 </div>
+<div class="chart">
+  ${(() => {
+    const max = Math.max(1, ...buckets.map(x => x.total_tasks || 0));
+    return buckets.map(b => {
+      const tasks = b.total_tasks || 0;
+      const pct = (tasks / max) * 100;
+      const cls = tasks === 0 ? 'bar empty' : 'bar';
+      const tipDate = isHourly ? b.bucket : b.bucket;
+      return `<div class="${cls}" style="height:${Math.max(pct, 1)}%"><div class="bar-tip">${tipDate}: ${tasks} tasks, $${(b.total_cost || 0).toFixed(2)}</div></div>`;
+    }).join('');
+  })()}
+</div>
+<div class="chart-title">${periodTitle} \u00B7 ${buckets.length} ${isHourly ? 'hours' : 'days'}</div>
 
-<h2>Daily Breakdown</h2>
+<h2>Breakdown</h2>
 <table>
-  <tr><th>Date</th><th>Tasks</th><th>Cost</th><th>Errors</th><th>WA</th><th>Web</th><th>Avg Time</th></tr>
-  ${(daily || []).map(d => `<tr>
-    <td>${d.day}</td><td>${d.total_tasks}</td><td>$${(d.total_cost || 0).toFixed(2)}</td>
-    <td>${d.total_errors}</td><td>${d.whatsapp_tasks}</td><td>${d.web_tasks}</td>
-    <td>${d.avg_response_ms ? Math.round(d.avg_response_ms / 1000) + 's' : '—'}</td>
+  <tr><th>${bucketLabel}</th><th>Tasks</th><th>Cost</th><th>Errors</th><th>WA</th><th>Web</th><th>Avg Time</th></tr>
+  ${[...buckets].reverse().map(b => `<tr>
+    <td>${b.bucket}</td><td>${b.total_tasks || 0}</td><td>$${(b.total_cost || 0).toFixed(2)}</td>
+    <td>${b.total_errors || 0}</td><td>${b.whatsapp_tasks || 0}</td><td>${b.web_tasks || 0}</td>
+    <td>${b.avg_response_ms ? Math.round(b.avg_response_ms / 1000) + 's' : '—'}</td>
   </tr>`).join('')}
 </table>
 
@@ -238,3 +291,61 @@ function formatTokens(n) {
   if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
   return String(n);
 }
+
+// ── Period selector helpers ─────────────────────────────────────────────────
+// Whitelist of supported time periods. Anything else falls back to '30d'.
+const PERIODS = new Set(['24h', '7d', '30d', '90d', 'all']);
+function parsePeriod(raw) {
+  return PERIODS.has(raw) ? raw : '30d';
+}
+
+// Generate the full set of expected bucket labels for the given period and
+// merge in any rows from the DB so empty buckets show up as zeros. Times are
+// computed in UTC to match SQLite's date()/datetime('now') which also use UTC.
+function padBuckets(rows, period) {
+  // Index DB rows by their bucket label for O(1) lookup.
+  const byBucket = new Map();
+  for (const r of rows) byBucket.set(r.bucket, r);
+
+  // 'all' = whatever the DB returned, no padding (already a complete range
+  // by definition for that user). Just sort ascending so the chart reads
+  // left-to-right oldest → newest.
+  if (period === 'all') {
+    return [...rows].sort((a, b) => (a.bucket < b.bucket ? -1 : 1));
+  }
+
+  const expected = [];
+  const now = new Date();
+  if (period === '24h') {
+    // 24 hourly buckets ending at the current hour, oldest first.
+    const startMs = now.getTime() - 23 * 60 * 60 * 1000;
+    const start = new Date(startMs);
+    start.setUTCMinutes(0, 0, 0);
+    for (let i = 0; i < 24; i++) {
+      const d = new Date(start.getTime() + i * 60 * 60 * 1000);
+      const label = `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())} ${pad2(d.getUTCHours())}:00`;
+      expected.push(label);
+    }
+  } else {
+    // Daily buckets — N days ending today, oldest first.
+    const days = period === '7d' ? 7 : period === '30d' ? 30 : 90;
+    const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+      const label = `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+      expected.push(label);
+    }
+  }
+
+  return expected.map(label => byBucket.get(label) || {
+    bucket: label,
+    total_tasks: 0,
+    total_cost: 0,
+    total_errors: 0,
+    whatsapp_tasks: 0,
+    web_tasks: 0,
+    avg_response_ms: 0,
+  });
+}
+
+function pad2(n) { return String(n).padStart(2, '0'); }
