@@ -563,6 +563,15 @@ async function startWhatsApp() {
         continue;
       }
 
+      // Skip reaction-only messages. Reactions are not user prompts and should
+      // never enter the processing pipeline (which would run onboarding/refer/
+      // quota checks and potentially send spurious reply messages). The bot's
+      // own reactions echo back as fromMe=true append events; user manual
+      // reactions to bot messages arrive similarly. Either way, no action.
+      if (msg.message.reactionMessage && !msg.message.conversation && !msg.message.extendedTextMessage) {
+        continue;
+      }
+
       // Deduplicate — skip if we've already processed this message ID
       if (processedMsgIds.has(msgId)) {
         dequeueMessage(msgId); // clean up stale queue file if it exists
@@ -653,7 +662,10 @@ async function startWhatsApp() {
           reactInFlight = true;
           try {
             growIdx = (growIdx + 1) % growEmojis.length;
-            await msgSock.sendMessage(jid, { react: { key: msg.key, text: growEmojis[growIdx] } });
+            const reactSent = await msgSock.sendMessage(jid, { react: { key: msg.key, text: growEmojis[growIdx] } });
+            // Track the reaction's msgId so its echo doesn't re-enter the IIFE
+            // as a "new" fromMe group message and trigger quota/processing logic.
+            if (reactSent?.key?.id) addBotSentId(reactSent.key.id);
             reactFails = 0; // reset on success
           } catch (err) {
             reactFails++;
@@ -669,7 +681,9 @@ async function startWhatsApp() {
         try {
           try {
             if (connectionStatus === 'connected') {
-              await msgSock.sendMessage(jid, { react: { key: msg.key, text: '🌱' } });
+              const initialReactSent = await msgSock.sendMessage(jid, { react: { key: msg.key, text: '🌱' } });
+              // Track the reaction's msgId so its echo doesn't re-enter the IIFE
+              if (initialReactSent?.key?.id) addBotSentId(initialReactSent.key.id);
               console.log('[react] 🌱 sent');
             }
           } catch (reactErr) {
@@ -811,7 +825,11 @@ async function startWhatsApp() {
           dequeueMessage(msgId);
           if (connectionStatus === 'connected' && msgSock === sock) {
             msgSock.sendMessage(jid, { react: { key: msg.key, text: '' } })
-              .then(() => console.log('[react] removed'))
+              .then((removeSent) => {
+                // Track the remove-reaction's msgId so its echo doesn't re-enter the IIFE
+                if (removeSent?.key?.id) addBotSentId(removeSent.key.id);
+                console.log('[react] removed');
+              })
               .catch(e => console.log('[react] remove failed:', e.message));
           }
           processingIds.delete(msgId);
