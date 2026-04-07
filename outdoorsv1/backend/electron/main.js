@@ -371,8 +371,10 @@ function ensureWorkspace() {
       console.error('[workspace] WARNING: Bot data not found in workspace after restore. Keeping safe dir as backup:', safeDir);
     }
 
-    // Remove setup-done flag so wizard re-runs (npm install needed after wipe)
-    try { fs.unlinkSync(SETUP_DONE_FLAG); } catch {}
+    // Note: we deliberately KEEP the setup-done flag across updates so users
+    // don't have to re-run the onboarding wizard every release. node_modules
+    // got wiped along with the workspace — startBackend() detects that and
+    // runs `npm install` automatically before spawning the backend process.
   } else {
     // First run — fresh copy from bundle
     try {
@@ -2887,6 +2889,60 @@ function createDevLogWindow() {
 
 // ── Backend Process ─────────────────────────────────────────────────────────
 
+// Run `npm install` in BACKEND_DIR if node_modules is missing/incomplete.
+// Streams output to the dev log window so debugging is possible. Resolves
+// on success or rejects with an Error on any failure.
+function ensureBackendDeps() {
+  return new Promise((resolve, reject) => {
+    // Cheap probe: check for a known top-level dep so we don't trust an
+    // empty/stale node_modules directory.
+    const probe = path.join(BACKEND_DIR, 'node_modules', 'express', 'package.json');
+    if (fs.existsSync(probe)) return resolve();
+
+    console.log('[backend] node_modules missing — running npm install before startup');
+    if (devLogWindow && !devLogWindow.isDestroyed()) {
+      devLogWindow.webContents.send('devlog:stdout', '[backend] node_modules missing — running npm install...\n');
+    }
+
+    // Verify npm is on PATH before spawning so we surface a clear error.
+    try {
+      execSync('npm --version', { encoding: 'utf-8', shell: true, timeout: 10000, windowsHide: true });
+    } catch {
+      return reject(new Error('Node.js / npm not found in PATH. Install Node.js from https://nodejs.org and relaunch Outdoors.'));
+    }
+
+    const npm = spawn('npm', ['install', '--no-audit', '--no-fund', '--loglevel=error'], {
+      cwd: BACKEND_DIR,
+      shell: true,
+      env: { ...process.env, ELECTRON: '1' },
+      windowsHide: true,
+    });
+    let stderrTail = '';
+    npm.stdout.on('data', (d) => {
+      const text = d.toString();
+      if (devLogWindow && !devLogWindow.isDestroyed()) {
+        devLogWindow.webContents.send('devlog:stdout', text);
+      }
+    });
+    npm.stderr.on('data', (d) => {
+      const text = d.toString();
+      stderrTail = (stderrTail + text).slice(-2000);
+      if (devLogWindow && !devLogWindow.isDestroyed()) {
+        devLogWindow.webContents.send('devlog:stdout', text);
+      }
+    });
+    npm.on('close', (code) => {
+      if (code === 0 && fs.existsSync(probe)) {
+        console.log('[backend] npm install complete');
+        resolve();
+      } else {
+        reject(new Error(`npm install failed (exit ${code}): ${stderrTail.trim() || 'unknown error'}`));
+      }
+    });
+    npm.on('error', (err) => reject(new Error('Failed to spawn npm: ' + err.message)));
+  });
+}
+
 function startBackend() {
   backendStarting = true;
   return new Promise((resolve) => {
@@ -2915,6 +2971,10 @@ function startBackend() {
         }
       }
     } catch {}
+
+    // After a workspace wipe (auto-update), node_modules may be missing.
+    // Reinstall before spawning so the backend can start successfully.
+    ensureBackendDeps().then(() => {
 
     backendProcess = spawn('node', [indexJs], {
       cwd: BACKEND_DIR,
@@ -3001,6 +3061,16 @@ function startBackend() {
         resolve({ ok: false, error: 'Backend did not start within 30 seconds', timeout: true, stderr: stderrOutput });
       }
     }, 30000);
+
+    }).catch((depsErr) => {
+      // ensureBackendDeps failed (no network, npm missing, install crashed)
+      console.error('[backend] ensureBackendDeps failed:', depsErr.message);
+      if (devLogWindow && !devLogWindow.isDestroyed()) {
+        devLogWindow.webContents.send('devlog:stderr', '[backend] dependency install failed: ' + depsErr.message + '\n');
+      }
+      backendStarting = false;
+      resolve({ ok: false, error: 'Could not install backend dependencies: ' + depsErr.message });
+    });
   });
 }
 
