@@ -144,6 +144,67 @@ let io = null;
 let connectionStatus = 'disconnected';
 let lastQR = null;
 let reconnectAttempt = 0;
+// Group metadata cache + user devices cache shim — workaround for Baileys 6.7.x
+// LID handling in solo-self groups (bot paired as a linked device of the same
+// account that is the only group participant). In that scenario,
+// `getUSyncDevices` resolves participants to phone-JID format and the SKDM
+// gets encrypted to a phantom recipient that the user's primary phone doesn't
+// recognize as itself, causing "Waiting for this message" or silent drops.
+//
+// The shim is GUARDED — primeOwnDeviceCache only fires when the configured
+// group has exactly one participant whose LID base matches the bot's own LID
+// base. For users with multi-participant groups or separate-account bots, the
+// shim is a no-op and Baileys' default getUSyncDevices flow runs unchanged.
+let groupMetaCache = null;
+let groupMetaCachedAt = 0;
+const _udcStore = new Map();
+const userDevicesCacheShim = {
+  get: (key) => _udcStore.get(key),
+  set: (key, val) => { _udcStore.set(key, val); return true; },
+  del: (key) => { _udcStore.delete(key); return true; },
+  has: (key) => _udcStore.has(key),
+  flushAll: () => { _udcStore.clear(); },
+};
+async function ensureGroupMeta(targetJid) {
+  if (!targetJid || !sock) return null;
+  const age = Date.now() - groupMetaCachedAt;
+  if (groupMetaCache && groupMetaCache.id === targetJid && age < 5 * 60 * 1000) {
+    return groupMetaCache;
+  }
+  try {
+    const meta = await Promise.race([
+      sock.groupMetadata(targetJid),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('groupMetadata timeout 10s')), 10_000)),
+    ]);
+    groupMetaCache = meta;
+    groupMetaCachedAt = Date.now();
+    return meta;
+  } catch {
+    return null;
+  }
+}
+function getCachedGroupMeta(targetJid) {
+  return groupMetaCache && groupMetaCache.id === targetJid ? groupMetaCache : undefined;
+}
+async function maybePrimeOwnDeviceCache() {
+  // Strict guard: only activate the shim for the solo-self LID corner case.
+  if (!sock?.user?.lid || !config.outdoorsGroupJid) return;
+  const meta = await ensureGroupMeta(config.outdoorsGroupJid);
+  if (!meta || !Array.isArray(meta.participants) || meta.participants.length !== 1) return;
+  const myLidBase = sock.user.lid.split(':')[0].split('@')[0];
+  const onlyParticipant = meta.participants[0];
+  const partUser = (onlyParticipant.id || '').split('@')[0].split(':')[0];
+  if (partUser !== myLidBase) return;
+  // Solo-self LID confirmed. Pre-populate the cache so getUSyncDevices skips
+  // the server query and uses the LID-format device entry directly.
+  const me = sock.user.id;
+  const myDeviceId = parseInt(me.split(':')[1]?.split('@')[0] || '0', 10);
+  const phoneUser = me.split(':')[0];
+  const entries = myDeviceId !== 0 ? [{ user: myLidBase, device: 0 }] : [];
+  _udcStore.set(myLidBase, entries);
+  _udcStore.set(phoneUser, entries.map(e => ({ user: phoneUser, device: e.device })));
+  console.log(`  [WhatsApp] Solo-self LID detected — primed userDevicesCache for ${myLidBase}`);
+}
 let manualReconnecting = false; // prevents close handler from auto-reconnecting during manual reconnect
 const MAX_RECONNECT_ATTEMPTS = 10;
 let healthCheckTimer = null;
@@ -250,6 +311,12 @@ async function startWhatsApp() {
     keepAliveIntervalMs: 45_000,
     retryRequestDelayMs: 500,
     connectTimeoutMs: 30_000,
+    // Provide a Map-backed userDevicesCache. For most users this is just a
+    // normal cache. For solo-self LID groups it's pre-populated by
+    // maybePrimeOwnDeviceCache() on connect to bypass Baileys' phantom-JID
+    // resolution. See the shim definition near the top of this file.
+    userDevicesCache: userDevicesCacheShim,
+    cachedGroupMetadata: async (jid) => getCachedGroupMeta(jid),
     getMessage: async (key) => {
       const stored = messageStore.get(key.id);
       return stored || undefined;
@@ -320,6 +387,8 @@ async function startWhatsApp() {
 
     if (connection === 'open') {
       connectionStatus = 'connected';
+      // Fire-and-forget the solo-self LID device cache prime (no-op for normal setups)
+      maybePrimeOwnDeviceCache().catch(() => {});
       // Partially reduce backoff immediately; fully reset only after 60s of stable connection.
       // Prevents thrashing when the connection is flaky (connects then drops within seconds).
       reconnectAttempt = Math.max(0, reconnectAttempt - 2);
@@ -460,7 +529,11 @@ async function startWhatsApp() {
         console.log(`[wa:dedup-ts] Skipping duplicate ${msgId} (ts=${ts})`);
         continue;
       }
-      addSeenTsKey(tsKey);
+      // NOTE: do NOT add to seenTimestampKeys yet. Stub messages share the same
+      // (jid, timestamp) as the decrypted follow-up Baileys delivers later, so
+      // adding here would silently drop the real message. addSeenTsKey() now
+      // happens just before enqueueMessage along with processingIds.add() —
+      // see Bug A's fix for the same pattern.
 
       if (processingIds.has(msgId)) {
         console.log(`[wa:dedup] Skipping already-processing message ${msgId}`);
@@ -525,8 +598,9 @@ async function startWhatsApp() {
       }
 
       // Now safe to mark in-flight — every continue path above this point exits
-      // without committing the msgId. processingIds is cleaned up in the finally
-      // block of the async IIFE below.
+      // without committing either dedup set. processingIds is cleaned up in the
+      // finally block; seenTimestampKeys is bounded by addSeenTsKey's eviction.
+      addSeenTsKey(tsKey);
       processingIds.add(msgId);
       // Persist to queue before processing — survives crashes
       enqueueMessage(msg);
