@@ -49,14 +49,24 @@ function nextPage() {
 // Page 0: Invite Key Entry
 // ---------------------------------------------------------------------------
 
-const REFERRAL_API = 'https://outdoors-referral.outdoors-rice.workers.dev';
+const REFERRAL_API = 'https://outdoors-referral.towneradamm.workers.dev';
 
-// Skip key entry — referral system temporarily disabled
+// If this install already has a saved downloadKey (existing users past
+// initial setup, or users who previously entered a code), skip straight
+// to the welcome page. Otherwise show the invite code entry page and
+// require the user to enter a code before proceeding.
 (async () => {
-  if (isElectron) {
-    // Auto-set a key so future launches also skip
-    window.electronAPI.saveDownloadKey?.('OPEN-BETA').catch(() => {});
-    goToPage(1); // Skip to welcome
+  if (!isElectron) return;
+  try {
+    const existing = await (window.electronAPI.checkExistingSetup?.() || Promise.resolve(null));
+    if (existing && existing.downloadKey) {
+      // Valid saved key — skip invite entry
+      goToPage(1);
+    }
+    // else: stay on page 0, let the user enter a code via #btn-activate-key
+  } catch {
+    // If the check fails, err on the side of showing the invite page so the
+    // user isn't locked out of entering a code.
   }
 })();
 

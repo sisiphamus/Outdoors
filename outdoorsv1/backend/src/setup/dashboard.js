@@ -8,7 +8,7 @@ let socket = null;
 let currentMemoryFile = null;
 let memoryDirty = false;
 
-const REFERRAL_API = 'https://outdoors-referral.outdoors-rice.workers.dev';
+const REFERRAL_API = 'https://outdoors-referral.towneradamm.workers.dev';
 
 // Invite share button
 document.getElementById('btn-share-invite')?.addEventListener('click', async () => {

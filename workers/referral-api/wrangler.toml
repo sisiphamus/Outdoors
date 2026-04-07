@@ -4,8 +4,7 @@ compatibility_date = "2024-01-01"
 
 [vars]
 ADMIN_SECRET = "outdoors-admin-2026"
-SITE_URL = "https://tryoutdoors-rice.pages.dev"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "94831bce1e1645b79cb4cd13ce118cb8"
+id = "2ad55b808de14dc892417d31c3555478"

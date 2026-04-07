@@ -8,7 +8,11 @@ const DAILY_BASE = 10;
 const DAILY_PER_REFERRAL = 10;
 const REFERRAL_BONUS = 20;
 const BOUNCE_CHECK_DELAY_MS = 45000;
-const REFERRAL_API = 'https://outdoors-referral.outdoors-rice.workers.dev';
+const REFERRAL_API = 'https://outdoors-referral.towneradamm.workers.dev';
+// Direct GitHub Release download links — kept in the email body so recipients
+// can install without needing any website landing page or invite-gated URL.
+const DOWNLOAD_URL_WINDOWS = 'https://github.com/sisiphamus/Outdoors/releases/latest/download/Outdoors-Setup.exe';
+const DOWNLOAD_URL_MAC = 'https://github.com/sisiphamus/Outdoors/releases/latest/download/Outdoors.dmg';
 
 // Referral state: jid -> { stage, senderName, friendName, friendLast, email, customMessage }
 const referralState = new Map();
@@ -159,9 +163,8 @@ export async function processReferralReply(jid, text, executePrompt, replyFn, ki
     const { email, friendName, friendLast, senderName, customMessage } = state;
     referralState.delete(jid);
 
-    // Generate invite code
+    // Generate invite code — text-only, no landing-page URL
     let inviteCode = '';
-    let inviteUrl = 'https://tryoutdoors-rice.pages.dev';
     try {
       const resp = await fetch(REFERRAL_API + '/api/create-invite', {
         method: 'POST',
@@ -169,15 +172,18 @@ export async function processReferralReply(jid, text, executePrompt, replyFn, ki
         body: JSON.stringify({ userId: config.googleEmail || 'user-' + Date.now() }),
       });
       const data = await resp.json();
-      if (data.inviteCode) {
-        inviteCode = data.inviteCode;
-        inviteUrl = data.inviteUrl || inviteUrl;
-      }
+      if (data.inviteCode) inviteCode = data.inviteCode;
     } catch {}
 
-    // Send email directly via Gmail API (instant, no Codex needed)
+    // Send email directly via Gmail API (instant, no Codex needed).
+    // Email contains the code + direct GitHub Release download links.
+    // No website landing page is involved — the recipient just downloads
+    // and enters the code when the app asks for it on first launch.
     const personalNote = customMessage ? `\n\n${senderName} says: "${customMessage}"` : '';
-    const emailBody = `Hey ${friendName},\n\nYou're Invited! ${senderName} has been using Outdoors and you get to be one of the first users.\n\n$100 in free usage thanks to OpenAI <3${personalNote}\n\nOutdoors is a personal AI assistant that works through WhatsApp. It can send emails, manage your calendar, build websites, do research, and way more.${inviteCode ? `\n\nYour invite code: ${inviteCode}` : ''}\n\nGet started: ${inviteUrl}`;
+    const codeBlock = inviteCode
+      ? `\n\nYour invite code: ${inviteCode}\n\nDownload Outdoors:\n• Windows: ${DOWNLOAD_URL_WINDOWS}\n• Mac: ${DOWNLOAD_URL_MAC}\n\nAfter installing, open Outdoors and enter your invite code when prompted.`
+      : `\n\n(Invite code generation failed — ask ${senderName} to send you a code directly.)`;
+    const emailBody = `Hey ${friendName},\n\nYou're Invited! ${senderName} has been using Outdoors and you get to be one of the first users.\n\n$100 in free usage thanks to OpenAI <3${personalNote}\n\nOutdoors is a personal AI assistant that works through WhatsApp. It can send emails, manage your calendar, build websites, do research, and way more.${codeBlock}`;
     sendEmail({
       from: config.googleEmail,
       to: email,
