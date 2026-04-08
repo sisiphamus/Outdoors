@@ -14,14 +14,13 @@
   position: fixed;
   top: 0;
   left: 0;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   pointer-events: none;
   z-index: 99999;
-  color: var(--accent);
   will-change: transform;
   transition: opacity var(--dur-fast) var(--ease-settle);
-  mix-blend-mode: multiply;
+  image-rendering: pixelated;
 }
 
 body.of-cursor-on {
@@ -49,11 +48,12 @@ body.of-cursor-on [contenteditable="true"] {
   cursor: text;
 }
 
-/* The cursor fades out when the window loses focus — small touch */
+/* Pixel cursors should NOT have a smooth drop-shadow — keeps the
+   chunky silhouette sharp. Small hard offset shadow only. */
 .of-cursor svg {
   display: block;
-  transition: transform var(--dur-fast) var(--ease-spring);
-  filter: drop-shadow(0 2px 4px var(--shadow-tint-2));
+  shape-rendering: crispEdges;
+  filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.35));
 }
 
 /* ── Parallax grain attachment ─────────────────────────────

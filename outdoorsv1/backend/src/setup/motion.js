@@ -15,60 +15,44 @@
   const lerp = (a, b, t) => a + (b - a) * t;
 
   // ── 1. Custom cursor ─────────────────────────────────────
-  // A small leaf-glyph that trails the real cursor with a slight
-  // easing lag. Scales up on hoverable elements. Bursts on click.
-  // The system cursor is hidden globally via CSS (body.of-cursor).
+  // A pixelated Windows-style NW-pointing arrow. Drawn with
+  // shape-rendering="crispEdges" so diagonal edges stay blocky,
+  // not antialiased. The hotspot is the top-left tip of the arrow
+  // (not the SVG center) — offset is 2px so the tip sits on the
+  // real pointer position.
   //
-  // Bail on reduced motion — default cursor is preserved.
+  // No hover scaling, no click scaling — pixel cursors shouldn't
+  // smoothly deform. Only a subtle pointer-lag via lerp.
   function initCustomCursor() {
     if (reducedMotion) return;
 
     const cursor = document.createElement('div');
     cursor.className = 'of-cursor';
+    // Pixel-art arrow — each "pixel" is 1 SVG unit, arrow is drawn
+    // as chunky polygons. Outline then fill. shape-rendering kills
+    // the diagonal smoothing so stair-steps are visible.
     cursor.innerHTML = `
-      <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M10 2 C 12 6, 16 8, 18 10 C 16 12, 12 14, 10 18 C 8 14, 4 12, 2 10 C 4 8, 8 6, 10 2 Z"
-              fill="currentColor" opacity="0.82"/>
-        <path d="M10 2 L 10 18" stroke="rgba(0,0,0,0.2)" stroke-width="0.6" fill="none"/>
+      <svg width="22" height="22" viewBox="0 0 22 22" shape-rendering="crispEdges" aria-hidden="true">
+        <!-- Black outline, 1px chunky -->
+        <path d="M2 1 L2 17 L6 13 L8 19 L11 18 L9 12 L14 12 Z" fill="#111111"/>
+        <!-- White fill, inset by 1px -->
+        <path d="M3 3 L3 14 L6 11 L8 17 L10 16.4 L8 11 L12 11 Z" fill="#F5EFE0"/>
       </svg>
     `;
     document.body.appendChild(cursor);
     document.body.classList.add('of-cursor-on');
 
-    let tx = window.innerWidth / 2;
-    let ty = window.innerHeight / 2;
-    let cx = tx;
-    let cy = ty;
-    let scale = 1;
-    let targetScale = 1;
-
+    // 1:1 pointer tracking — no interpolation, no rAF loop.
+    // The cursor transform updates directly on every pointermove
+    // so the arrow tip is locked to the real OS pointer position.
     window.addEventListener('pointermove', (e) => {
-      tx = e.clientX;
-      ty = e.clientY;
-
-      // Scale up over interactive elements
-      const el = e.target;
-      const hoverable = el && el.closest && el.closest(
-        'button, a, [role="button"], input, textarea, .memory-file, .automation-card, .feed-entry, .invite-btn, .tab, .dot, .of-hoverable'
-      );
-      targetScale = hoverable ? 1.6 : 1;
+      // Hotspot at the arrow tip (SVG coord ~2,1).
+      cursor.style.transform = `translate(${e.clientX - 2}px, ${e.clientY - 1}px)`;
     });
-
-    window.addEventListener('pointerdown', () => { targetScale = 0.7; });
-    window.addEventListener('pointerup',   () => { targetScale = 1.1; });
 
     // Hide on window blur, show on focus
     window.addEventListener('blur',  () => cursor.style.opacity = '0');
     window.addEventListener('focus', () => cursor.style.opacity = '1');
-
-    function raf() {
-      cx = lerp(cx, tx, 0.22);
-      cy = lerp(cy, ty, 0.22);
-      scale = lerp(scale, targetScale, 0.18);
-      cursor.style.transform = `translate(${cx - 10}px, ${cy - 10}px) scale(${scale})`;
-      requestAnimationFrame(raf);
-    }
-    raf();
   }
 
   // ── 2. Parallax grain ────────────────────────────────────

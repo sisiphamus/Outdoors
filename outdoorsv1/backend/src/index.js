@@ -709,6 +709,8 @@ io.on('connection', async (socket) => {
       incrementMessageCount();
       const { images: responseImages, cleanText: responseCleanText } = extractImages(response);
       socket.emit('chat_response', { response: responseCleanText, sessionId: currentSessionId, images: responseImages, messageId });
+      // Persist the assistant's reply to the chat log so it survives restarts
+      emitLog('sent', { to: 'web', sender: 'web', response: responseCleanText, responseLength: responseCleanText.length, processKey, conversation: parsed.number });
       io.emit('conversation_update', { sessionId, conversationNumber: parsed.number });
     } catch (err) {
       if (err.stopped) {
@@ -776,6 +778,7 @@ io.on('connection', async (socket) => {
           convoLog.fullEvents = fullEvents;
           const { images: retryImages, cleanText: retryCleanText } = extractImages(response);
           socket.emit('chat_response', { response: retryCleanText, sessionId: currentSessionId, images: retryImages, messageId });
+          emitLog('sent', { to: 'web', sender: 'web', response: retryCleanText, responseLength: retryCleanText.length, processKey, conversation: parsed.number });
         } catch (retryErr) {
           convoLog.error = retryErr.message;
           socket.emit('chat_error', { error: retryErr.message, messageId });

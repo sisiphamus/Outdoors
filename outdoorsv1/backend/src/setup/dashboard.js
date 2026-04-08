@@ -99,11 +99,16 @@ function connectSocket(backendUrl) {
   // Primary event stream: `log` captures ALL activity (WhatsApp + web)
   socket.on('log', (entry) => handleLogEntry(entry));
 
-  // Replay buffered history on connect
+  // Replay buffered history on connect. Render ALL entries the backend
+  // sent (up to LOG_BUFFER_MAX = 2000) so old logs survive app restarts.
   socket.on('log_history', (entries) => {
     if (Array.isArray(entries) && entries.length > 0) {
       if (entries.some(e => e.type === 'incoming')) clearWelcome();
-      entries.slice(-50).forEach(entry => handleLogEntry(entry, true));
+      entries.forEach(entry => handleLogEntry(entry, true));
+      // After hydration, scroll to bottom (latest) and update the top button state.
+      const feed = document.getElementById('feed');
+      if (feed) feed.scrollTop = feed.scrollHeight;
+      updateJumpTopBtn();
     }
   });
 
@@ -159,6 +164,29 @@ document.getElementById('chat-input')?.addEventListener('keydown', (e) => {
     sendChatMessage();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Jump-to-top button — shows when the feed is scrolled away from the top,
+// scrolls back to the oldest hydrated log entry when clicked.
+// ---------------------------------------------------------------------------
+
+function updateJumpTopBtn() {
+  const feed = document.getElementById('feed');
+  const btn = document.getElementById('btn-jump-top');
+  if (!feed || !btn) return;
+  if (feed.scrollTop > 120) {
+    btn.classList.remove('hidden');
+  } else {
+    btn.classList.add('hidden');
+  }
+}
+
+document.getElementById('btn-jump-top')?.addEventListener('click', () => {
+  const feed = document.getElementById('feed');
+  if (feed) feed.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+document.getElementById('feed')?.addEventListener('scroll', updateJumpTopBtn, { passive: true });
 
 // ---------------------------------------------------------------------------
 // Log Entry Handler
@@ -235,8 +263,15 @@ function handleLogEntry(entry, isHistory) {
     case 'incoming': {
       const sender = d.sender || 'unknown';
       const prompt = d.prompt || '';
-      // Skip for web messages — sendChatMessage() already added the user bubble
-      if (sender === 'web') break;
+      // Skip for live web messages — sendChatMessage() already added the bubble.
+      // On history replay, render the user's previous sent messages as user bubbles
+      // so the feed is complete after a restart.
+      if (sender === 'web') {
+        // On history replay, render the user's previous sent messages
+        // as user bubbles so the feed is complete after a restart.
+        if (isHistory) addFeedIncoming(ts, 'you', prompt, cl);
+        break;
+      }
       addFeedIncoming(ts, sender, prompt, cl);
       break;
     }
@@ -276,8 +311,12 @@ function handleLogEntry(entry, isHistory) {
       break;
     case 'sent': {
       const to = d.to || '';
-      // Skip for web messages — chat_response already displays the response
-      if (to === 'web' || d.sender === 'web') break;
+      // Live web messages are already displayed by the chat_response handler.
+      // On history replay, render the persisted assistant reply so it survives restarts.
+      if (to === 'web' || d.sender === 'web') {
+        if (isHistory && d.response) addAssistantMessage(d.response);
+        break;
+      }
       addFeedSent(ts, to, d.responseLength || 0, d.response || '', cl);
       break;
     }
@@ -533,6 +572,7 @@ function setupSettings() {
   document.getElementById('btn-save-config').addEventListener('click', saveConfig);
   document.getElementById('btn-reconnect-wa')?.addEventListener('click', reconnectWhatsApp);
   document.getElementById('btn-save-memory').addEventListener('click', saveMemoryFile);
+  document.getElementById('btn-toggle-preview')?.addEventListener('click', toggleMemoryPreview);
   document.getElementById('btn-submit-bug')?.addEventListener('click', submitBugReport);
   document.getElementById('memory-content').addEventListener('input', () => {
     memoryDirty = true;
@@ -650,20 +690,200 @@ async function openMemoryFile(relativePath, btnEl) {
   document.querySelectorAll('.memory-file').forEach(f => f.classList.remove('active'));
   if (btnEl) btnEl.classList.add('active');
   const textarea = document.getElementById('memory-content');
+  const preview = document.getElementById('memory-preview');
   const filename = document.getElementById('memory-filename');
   const saveBtn = document.getElementById('btn-save-memory');
+  const toggleBtn = document.getElementById('btn-toggle-preview');
   filename.textContent = relativePath;
   textarea.value = 'Loading...';
   textarea.disabled = true;
+  textarea.classList.remove('hidden');
+  preview.classList.add('hidden');
   saveBtn.classList.add('hidden');
+  toggleBtn.classList.add('hidden');
   memoryDirty = false;
   try {
-    textarea.value = await window.electronAPI.readMemoryFile(relativePath);
+    const content = await window.electronAPI.readMemoryFile(relativePath);
+    textarea.value = content;
     textarea.disabled = false;
     currentMemoryFile = relativePath;
+    // For .md files, default to rendered preview mode with a toggle
+    if (/\.md$/i.test(relativePath)) {
+      toggleBtn.classList.remove('hidden');
+      showMemoryPreview();
+    }
   } catch (err) {
     textarea.value = 'Error: ' + (err.message || 'Could not load file');
   }
+}
+
+function showMemoryPreview() {
+  const textarea = document.getElementById('memory-content');
+  const preview = document.getElementById('memory-preview');
+  const toggleBtn = document.getElementById('btn-toggle-preview');
+  preview.innerHTML = renderMarkdown(textarea.value);
+  textarea.classList.add('hidden');
+  preview.classList.remove('hidden');
+  toggleBtn.textContent = 'Edit';
+}
+
+function showMemoryEdit() {
+  const textarea = document.getElementById('memory-content');
+  const preview = document.getElementById('memory-preview');
+  const toggleBtn = document.getElementById('btn-toggle-preview');
+  textarea.classList.remove('hidden');
+  preview.classList.add('hidden');
+  toggleBtn.textContent = 'Preview';
+}
+
+function toggleMemoryPreview() {
+  const preview = document.getElementById('memory-preview');
+  if (preview.classList.contains('hidden')) {
+    showMemoryPreview();
+  } else {
+    showMemoryEdit();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Inline Markdown Renderer
+// ---------------------------------------------------------------------------
+// Minimal renderer — headings, bold/italic, inline code, fenced code,
+// lists, blockquotes, hr, links, paragraphs. No HTML passthrough.
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function renderInline(text) {
+  let s = escapeHtml(text);
+  // Inline code first (protect from other replacements)
+  const codes = [];
+  s = s.replace(/`([^`\n]+)`/g, (_m, c) => {
+    codes.push(c);
+    return `\x00CODE${codes.length - 1}\x00`;
+  });
+  // Links [text](url)
+  s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, t, u) => {
+    const safeUrl = /^(https?:|mailto:|#)/.test(u) ? u : '#';
+    return `<a href="${safeUrl}" target="_blank" rel="noreferrer">${t}</a>`;
+  });
+  // Bold **x** or __x__
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+  // Italic *x* or _x_
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  s = s.replace(/(^|[^_])_([^_\n]+)_/g, '$1<em>$2</em>');
+  // Restore inline code
+  s = s.replace(/\x00CODE(\d+)\x00/g, (_m, i) => `<code>${escapeHtml(codes[+i])}</code>`);
+  return s;
+}
+
+function renderMarkdown(src) {
+  if (!src) return '';
+  const lines = src.replace(/\r\n/g, '\n').split('\n');
+  const out = [];
+  let i = 0;
+  let inList = null; // 'ul' | 'ol' | null
+
+  const closeList = () => {
+    if (inList) { out.push(`</${inList}>`); inList = null; }
+  };
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fenced code block
+    const fence = line.match(/^```(\w*)\s*$/);
+    if (fence) {
+      closeList();
+      const lang = fence[1] || '';
+      const buf = [];
+      i++;
+      while (i < lines.length && !/^```\s*$/.test(lines[i])) {
+        buf.push(escapeHtml(lines[i]));
+        i++;
+      }
+      i++; // skip closing fence
+      out.push(`<pre class="md-code"${lang ? ` data-lang="${lang}"` : ''}><code>${buf.join('\n')}</code></pre>`);
+      continue;
+    }
+
+    // ATX heading
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      closeList();
+      const level = h[1].length;
+      out.push(`<h${level}>${renderInline(h[2])}</h${level}>`);
+      i++;
+      continue;
+    }
+
+    // Horizontal rule
+    if (/^\s*---+\s*$/.test(line) || /^\s*\*\*\*+\s*$/.test(line)) {
+      closeList();
+      out.push('<hr/>');
+      i++;
+      continue;
+    }
+
+    // Blockquote (single-line, consecutive)
+    if (/^>\s?/.test(line)) {
+      closeList();
+      const buf = [];
+      while (i < lines.length && /^>\s?/.test(lines[i])) {
+        buf.push(renderInline(lines[i].replace(/^>\s?/, '')));
+        i++;
+      }
+      out.push(`<blockquote>${buf.join('<br/>')}</blockquote>`);
+      continue;
+    }
+
+    // Unordered list
+    const ul = line.match(/^\s*[-*]\s+(.*)$/);
+    if (ul) {
+      if (inList !== 'ul') { closeList(); out.push('<ul>'); inList = 'ul'; }
+      out.push(`<li>${renderInline(ul[1])}</li>`);
+      i++;
+      continue;
+    }
+
+    // Ordered list
+    const ol = line.match(/^\s*\d+\.\s+(.*)$/);
+    if (ol) {
+      if (inList !== 'ol') { closeList(); out.push('<ol>'); inList = 'ol'; }
+      out.push(`<li>${renderInline(ol[1])}</li>`);
+      i++;
+      continue;
+    }
+
+    // Blank line — break any running list/paragraph
+    if (/^\s*$/.test(line)) {
+      closeList();
+      i++;
+      continue;
+    }
+
+    // Paragraph — collect consecutive non-blank non-special lines
+    closeList();
+    const para = [];
+    while (
+      i < lines.length &&
+      !/^\s*$/.test(lines[i]) &&
+      !/^#{1,6}\s+/.test(lines[i]) &&
+      !/^```/.test(lines[i]) &&
+      !/^\s*[-*]\s+/.test(lines[i]) &&
+      !/^\s*\d+\.\s+/.test(lines[i]) &&
+      !/^>\s?/.test(lines[i]) &&
+      !/^\s*---+\s*$/.test(lines[i])
+    ) {
+      para.push(renderInline(lines[i]));
+      i++;
+    }
+    if (para.length) out.push(`<p>${para.join(' ')}</p>`);
+  }
+  closeList();
+  return out.join('\n');
 }
 
 async function saveMemoryFile() {

@@ -56,6 +56,10 @@
 
   <!-- Main content -->
   <div class="main-content">
+    <button class="jump-top-btn hidden" id="btn-jump-top" title="Scroll to oldest logs">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10V2M2 6l4-4 4 4"/></svg>
+      <span>Top</span>
+    </button>
     <div class="feed" id="feed">
       <div class="feed-welcome" id="feed-welcome">
         <p class="feed-welcome-title">Outdoors is running</p>
@@ -94,9 +98,13 @@
             <div class="memory-edit-area">
               <div class="memory-edit-header">
                 <span class="memory-filename" id="memory-filename">Select a file</span>
-                <button class="btn-save hidden" id="btn-save-memory">Save</button>
+                <div class="memory-edit-actions">
+                  <button class="btn-toggle-preview hidden" id="btn-toggle-preview">Edit</button>
+                  <button class="btn-save hidden" id="btn-save-memory">Save</button>
+                </div>
               </div>
               <textarea class="memory-textarea" id="memory-content" placeholder="Select a file from the tree to edit..." disabled></textarea>
+              <div class="memory-preview hidden" id="memory-preview"></div>
             </div>
           </div>
         </div>
