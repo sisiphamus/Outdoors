@@ -184,13 +184,33 @@ async function runInstallPage() {
   // Step 0: Install system dependencies (Node, Git, Python) if missing
   setInstallItemState('install-system-deps', 'active');
   setInstallStatus('Checking system tools...');
+
+  // Stream progress from the main process so users see what's happening
+  // during multi-minute installs (Homebrew / Command Line Tools).
+  if (window.electronAPI.onSetupProgress) {
+    window.electronAPI.onSetupProgress((data) => {
+      if (data && data.message) setInstallStatus(data.message);
+    });
+  }
+
   const sysDeps = await window.electronAPI.installSystemDeps();
 
   if (!sysDeps.ok) {
     setInstallItemState('install-system-deps', 'error');
     const missing = sysDeps.missing || [];
     const names = missing.map(d => ({ node: 'Node.js', git: 'Git', python: 'Python' }[d] || d));
-    setInstallStatus('Could not install: ' + names.join(', ') + '. Please install manually and restart Outdoors.');
+    // Surface the first actionable error so users can actually fix it
+    const errs = sysDeps.errors || {};
+    const firstError = missing.map(d => errs[d]).find(e => e && typeof e === 'string');
+    let statusMsg = 'Could not install: ' + names.join(', ') + '.';
+    if (firstError) {
+      const snippet = firstError.slice(-220).replace(/\s+/g, ' ').trim();
+      statusMsg += ' Reason: ' + snippet;
+    }
+    if (sysDeps.logPath) {
+      statusMsg += ' (Full log: ' + sysDeps.logPath + ')';
+    }
+    setInstallStatus(statusMsg);
     return;
   }
 

@@ -557,74 +557,205 @@ function setupIPC() {
     }
   }
 
-  // macOS: check if Homebrew is available
-  function hasBrew() {
+  // ── macOS install helpers ─────────────────────────────────────────────────
+  // Stream progress updates to the setup window so users see what's happening
+  // during multi-minute installs (CLT, brew, .pkg downloads).
+  function sendSetupProgress(message) {
     try {
-      execSync('brew --version', { encoding: 'utf-8', shell: true, timeout: 5000, stdio: 'pipe' });
-      return true;
-    } catch { return false; }
+      console.log('[deps]', message);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('setup-progress', { message });
+      }
+    } catch {}
   }
 
-  // macOS: install or upgrade a package via Homebrew
-  function brewInstall(formula, name, upgrade = false) {
+  // Append every install step to a file users can share when reporting failures.
+  const INSTALL_LOG_PATH = path.join(app.getPath('userData'), 'install.log');
+  function logInstall(line) {
+    try {
+      fs.appendFileSync(INSTALL_LOG_PATH,
+        `[${new Date().toISOString()}] ${line}\n`);
+    } catch {}
+  }
+
+  // macOS: run a shell command with admin privileges via osascript.
+  // Pops a native GUI password prompt — works even when Electron has no tty
+  // (which is the case when launched from Finder). Returns { ok, output }.
+  function runAsAdmin(shellCmd, description) {
     return new Promise((resolve) => {
-      const action = upgrade ? 'upgrade' : 'install';
-      console.log(`[deps] ${upgrade ? 'Upgrading' : 'Installing'} ${name} via brew...`);
-      const proc = spawn('brew', [action, formula], {
-        shell: true,
-        env: process.env,
-      });
+      const escaped = shellCmd.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const script = `do shell script "${escaped}" with prompt "Outdoors needs your password to ${description || 'install dependencies'}" with administrator privileges`;
+      const proc = spawn('osascript', ['-e', script]);
       let output = '';
       proc.stdout?.on('data', (d) => { output += d.toString(); });
       proc.stderr?.on('data', (d) => { output += d.toString(); });
       proc.on('close', (code) => {
-        console.log(`[deps] ${name} brew install exited with code ${code}`);
+        logInstall(`runAsAdmin (${description}) exit ${code}: ${output.slice(0, 500)}`);
         resolve({ ok: code === 0, output });
       });
       proc.on('error', (err) => {
-        console.log(`[deps] ${name} brew install error:`, err.message);
+        logInstall(`runAsAdmin (${description}) error: ${err.message}`);
         resolve({ ok: false, output: err.message });
       });
     });
   }
 
-  // macOS: install Node.js via official .pkg installer (fallback when no Homebrew)
+  // macOS: locate the brew binary on disk. Checks well-known paths first
+  // (Apple Silicon /opt/homebrew, Intel /usr/local) before falling back to
+  // PATH-based lookup. Returns the absolute path or null.
+  function findBrewPath() {
+    const candidates = [
+      '/opt/homebrew/bin/brew',   // Apple Silicon
+      '/usr/local/bin/brew',      // Intel
+    ];
+    for (const p of candidates) {
+      try {
+        if (fs.existsSync(p)) return p;
+      } catch {}
+    }
+    // Final fallback: ask `which`
+    try {
+      const resolved = execSync('command -v brew', {
+        encoding: 'utf-8', shell: true, timeout: 5000, stdio: 'pipe',
+      }).trim();
+      if (resolved && fs.existsSync(resolved)) return resolved;
+    } catch {}
+    return null;
+  }
+
+  // macOS: is Homebrew installed and runnable?
+  function hasBrew() {
+    return findBrewPath() !== null;
+  }
+
+  // macOS: install or upgrade a package via Homebrew. Uses the absolute
+  // brew path (resolved via findBrewPath) so PATH quirks don't break it.
+  function brewInstall(formula, name, upgrade = false) {
+    return new Promise((resolve) => {
+      const action = upgrade ? 'upgrade' : 'install';
+      const brewPath = findBrewPath();
+      if (!brewPath) {
+        resolve({ ok: false, output: 'Homebrew not found' });
+        return;
+      }
+      sendSetupProgress(`${upgrade ? 'Upgrading' : 'Installing'} ${name} via Homebrew (this may take several minutes)...`);
+      logInstall(`brew ${action} ${formula} starting via ${brewPath}`);
+      const proc = spawn(brewPath, [action, formula], {
+        env: { ...process.env, HOMEBREW_NO_AUTO_UPDATE: '1', HOMEBREW_NO_INSTALL_CLEANUP: '1' },
+      });
+      let output = '';
+      proc.stdout?.on('data', (d) => {
+        const chunk = d.toString();
+        output += chunk;
+        // Stream interesting lines as progress
+        const lines = chunk.split('\n').filter(l => l.startsWith('==>'));
+        lines.forEach(l => sendSetupProgress(`${name}: ${l.replace('==>', '').trim()}`));
+      });
+      proc.stderr?.on('data', (d) => { output += d.toString(); });
+      proc.on('close', (code) => {
+        logInstall(`brew ${action} ${formula} exit ${code}: ${output.slice(-800)}`);
+        resolve({ ok: code === 0, output });
+      });
+      proc.on('error', (err) => {
+        logInstall(`brew ${action} ${formula} error: ${err.message}`);
+        resolve({ ok: false, output: err.message });
+      });
+    });
+  }
+
+  // macOS: is Xcode Command Line Tools installed? CLT provides /usr/bin/git
+  // and /usr/bin/python3 for free — our last-resort fallback when brew is
+  // unavailable and the user can't (or won't) install it.
+  function hasCLT() {
+    try {
+      const out = execSync('xcode-select -p', {
+        encoding: 'utf-8', timeout: 5000, stdio: 'pipe',
+      }).trim();
+      return out.length > 0 && fs.existsSync(out);
+    } catch { return false; }
+  }
+
+  // macOS: trigger Apple's Command Line Tools installer. `xcode-select --install`
+  // pops a native modal dialog asking the user to confirm install. The dialog
+  // is modal to the OS, not the app, so users can click through without tty.
+  // After triggering, we poll hasCLT() for up to 15 minutes while the user
+  // waits through the CLT download.
+  function installCLT() {
+    return new Promise((resolve) => {
+      sendSetupProgress('Triggering Apple Command Line Tools installer...');
+      logInstall('xcode-select --install triggered');
+      try {
+        execSync('xcode-select --install', { stdio: 'pipe', timeout: 10000 });
+      } catch (err) {
+        // Exit code 1 = already installed OR dialog already showing — both OK
+        const msg = (err.stderr || err.message || '').toString();
+        if (/already installed/i.test(msg)) {
+          logInstall('xcode-select: already installed');
+          resolve({ ok: hasCLT(), output: 'already installed' });
+          return;
+        }
+        logInstall(`xcode-select stderr: ${msg}`);
+      }
+
+      sendSetupProgress('Apple Command Line Tools is installing. A system dialog has appeared — click Install, then wait for download (5–15 minutes).');
+
+      // Poll every 10 seconds for up to 15 minutes
+      const deadline = Date.now() + 15 * 60 * 1000;
+      let ticks = 0;
+      const tick = () => {
+        if (hasCLT()) {
+          sendSetupProgress('Apple Command Line Tools installed.');
+          logInstall('CLT install detected as complete');
+          resolve({ ok: true, output: 'CLT installed' });
+          return;
+        }
+        if (Date.now() > deadline) {
+          sendSetupProgress('Apple Command Line Tools install timed out after 15 minutes.');
+          logInstall('CLT install timeout');
+          resolve({ ok: false, output: 'CLT install timed out — please finish it from the System dialog and restart Outdoors' });
+          return;
+        }
+        ticks++;
+        if (ticks % 6 === 0) {
+          const mins = Math.floor((Date.now() - (deadline - 15 * 60 * 1000)) / 60000);
+          sendSetupProgress(`Waiting for Command Line Tools install (${mins} min elapsed)...`);
+        }
+        setTimeout(tick, 10000);
+      };
+      setTimeout(tick, 10000);
+    });
+  }
+
+  // macOS: install Node.js via the official .pkg installer.
+  // Uses runAsAdmin (osascript GUI password prompt) instead of spawn('sudo')
+  // because Finder-launched Electron has no tty and sudo hangs forever.
   function macInstallNodePkg() {
     return new Promise((resolve) => {
-      console.log('[deps] Installing Node.js via official macOS .pkg...');
+      sendSetupProgress('Downloading Node.js installer from nodejs.org...');
       const tmpPkg = path.join(app.getPath('temp'), 'node-lts.pkg');
       const pkgUrl = 'https://nodejs.org/dist/v22.16.0/node-v22.16.0.pkg';
+      logInstall(`Node .pkg download: ${pkgUrl}`);
 
-      // Download the .pkg
       const curl = spawn('curl', ['-L', '-o', tmpPkg, pkgUrl], { timeout: 300000 });
       let dlOutput = '';
       curl.stderr?.on('data', (d) => { dlOutput += d.toString(); });
-      curl.on('close', (dlCode) => {
+      curl.on('close', async (dlCode) => {
         if (dlCode !== 0) {
-          console.log('[deps] Node.js .pkg download failed:', dlOutput);
-          resolve({ ok: false, output: 'Download failed' });
+          logInstall(`Node .pkg download failed (exit ${dlCode}): ${dlOutput.slice(-400)}`);
+          resolve({ ok: false, output: 'Download failed: ' + dlOutput.slice(-400) });
           return;
         }
-
-        // Install the .pkg (requires admin — will prompt for password via macOS GUI)
-        const installer = spawn('sudo', ['installer', '-pkg', tmpPkg, '-target', '/'], {
-          stdio: ['inherit', 'pipe', 'pipe'],
-        });
-        let instOutput = '';
-        installer.stdout?.on('data', (d) => { instOutput += d.toString(); });
-        installer.stderr?.on('data', (d) => { instOutput += d.toString(); });
-        installer.on('close', (instCode) => {
-          // Clean up
-          try { fs.unlinkSync(tmpPkg); } catch {}
-          console.log(`[deps] Node.js .pkg install exited with code ${instCode}`);
-          resolve({ ok: instCode === 0, output: instOutput });
-        });
-        installer.on('error', (err) => {
-          try { fs.unlinkSync(tmpPkg); } catch {}
-          resolve({ ok: false, output: err.message });
-        });
+        sendSetupProgress('Installing Node.js (enter your password when prompted)...');
+        const r = await runAsAdmin(
+          `/usr/sbin/installer -pkg "${tmpPkg}" -target /`,
+          'install Node.js'
+        );
+        try { fs.unlinkSync(tmpPkg); } catch {}
+        logInstall(`Node .pkg install ok=${r.ok}: ${r.output.slice(-400)}`);
+        resolve(r);
       });
       curl.on('error', (err) => {
+        logInstall(`Node curl error: ${err.message}`);
         resolve({ ok: false, output: err.message });
       });
     });
@@ -657,6 +788,16 @@ function setupIPC() {
     const IS_MAC = process.platform === 'darwin';
     const IS_LINUX = !IS_WIN && !IS_MAC;
     const results = { node: 'skip', git: 'skip', python: 'skip' };
+    const errors = { node: null, git: null, python: null };
+
+    // Per-install log file — users can send this to diagnose failures
+    try { fs.writeFileSync(INSTALL_LOG_PATH, `=== Outdoors install log (${new Date().toISOString()}) ===\n`); } catch {}
+    logInstall(`Platform: ${process.platform} (${process.arch})`);
+
+    // Refresh PATH on macOS right before checking package managers.
+    // Electron launched from Finder loses dev tool paths; fixMacPath()
+    // prepends /opt/homebrew/bin and reads the user's login shell PATH.
+    if (IS_MAC) fixMacPath();
 
     // Check package manager availability
     let hasWinget = false;
@@ -669,6 +810,8 @@ function setupIPC() {
       } catch {}
     } else if (IS_MAC) {
       hasBrw = hasBrew();
+      logInstall(`Homebrew detected: ${hasBrw} (${findBrewPath() || 'not found'})`);
+      logInstall(`Command Line Tools detected: ${hasCLT()}`);
     } else if (IS_LINUX) {
       if (isCommandAvailable('apt')) linuxPkgMgr = 'apt';
       else if (isCommandAvailable('dnf')) linuxPkgMgr = 'dnf';
@@ -685,6 +828,7 @@ function setupIPC() {
       if (hasWinget) {
         const r = await wingetInstall('OpenJS.NodeJS.LTS', 'Node.js');
         results.node = r.ok ? 'installed' : 'failed';
+        if (!r.ok) errors.node = r.output;
         if (r.ok) refreshPath();
       } else if (IS_MAC) {
         // Try Homebrew first (upgrade if old version exists), fall back to official .pkg
@@ -694,9 +838,11 @@ function setupIPC() {
           r = await brewInstall('node', 'Node.js', needsUpgrade);
         }
         if (!r?.ok) {
+          sendSetupProgress('Homebrew Node install unavailable — falling back to official .pkg installer.');
           r = await macInstallNodePkg();
         }
         results.node = r.ok ? 'installed' : 'failed';
+        if (!r.ok) errors.node = r.output;
         if (r.ok) refreshPath();
       } else if (IS_LINUX && linuxPkgMgr) {
         let r;
@@ -704,6 +850,7 @@ function setupIPC() {
         else if (linuxPkgMgr === 'dnf') r = await linuxInstall('dnf', ['install', '-y', 'nodejs', 'npm'], 'Node.js');
         else if (linuxPkgMgr === 'pacman') r = await linuxInstall('pacman', ['-S', '--noconfirm', 'nodejs', 'npm'], 'Node.js');
         results.node = r?.ok ? 'installed' : 'failed';
+        if (!r?.ok) errors.node = r?.output;
         if (r?.ok) refreshPath();
       } else {
         results.node = 'missing';
@@ -717,17 +864,41 @@ function setupIPC() {
       if (hasWinget) {
         const r = await wingetInstall('Git.Git', 'Git');
         results.git = r.ok ? 'installed' : 'failed';
+        if (!r.ok) errors.git = r.output;
         if (r.ok) refreshPath();
-      } else if (IS_MAC && hasBrw) {
-        const r = await brewInstall('git', 'Git');
-        results.git = r.ok ? 'installed' : 'failed';
-        if (r.ok) refreshPath();
+      } else if (IS_MAC) {
+        // macOS Git install chain:
+        //   1. Homebrew (if available)
+        //   2. Apple Command Line Tools (provides /usr/bin/git)
+        // CLT is Apple's official way to install git on macOS without Homebrew.
+        let r;
+        if (hasBrw) {
+          r = await brewInstall('git', 'Git');
+        }
+        if (!r?.ok) {
+          if (!hasCLT()) {
+            sendSetupProgress('Homebrew Git install unavailable — installing Apple Command Line Tools instead (provides Git + Python).');
+            const cltResult = await installCLT();
+            if (cltResult.ok && isCommandAvailable('git')) {
+              r = { ok: true, output: 'Installed via Command Line Tools' };
+            } else {
+              r = { ok: false, output: r?.output + '\n' + cltResult.output };
+            }
+          } else if (isCommandAvailable('git')) {
+            // CLT is installed but git wasn't found earlier — PATH issue
+            r = { ok: true, output: 'Found via Command Line Tools' };
+          }
+        }
+        results.git = r?.ok ? 'installed' : 'failed';
+        if (!r?.ok) errors.git = r?.output || 'Git install failed';
+        if (r?.ok) refreshPath();
       } else if (IS_LINUX && linuxPkgMgr) {
         let r;
         if (linuxPkgMgr === 'apt') r = await linuxInstall('apt', ['install', '-y', 'git'], 'Git');
         else if (linuxPkgMgr === 'dnf') r = await linuxInstall('dnf', ['install', '-y', 'git'], 'Git');
         else if (linuxPkgMgr === 'pacman') r = await linuxInstall('pacman', ['-S', '--noconfirm', 'git'], 'Git');
         results.git = r?.ok ? 'installed' : 'failed';
+        if (!r?.ok) errors.git = r?.output;
         if (r?.ok) refreshPath();
       } else {
         results.git = 'missing';
@@ -741,17 +912,40 @@ function setupIPC() {
       if (hasWinget) {
         const r = await wingetInstall('Python.Python.3.13', 'Python');
         results.python = r.ok ? 'installed' : 'failed';
+        if (!r.ok) errors.python = r.output;
         if (r.ok) refreshPath();
-      } else if (IS_MAC && hasBrw) {
-        const r = await brewInstall('python@3.13', 'Python');
-        results.python = r.ok ? 'installed' : 'failed';
-        if (r.ok) refreshPath();
+      } else if (IS_MAC) {
+        // macOS Python install chain:
+        //   1. Homebrew python@3.13 (if available)
+        //   2. Apple Command Line Tools (provides /usr/bin/python3)
+        // If the Git step already installed CLT, python3 is already available.
+        let r;
+        if (hasBrw) {
+          r = await brewInstall('python@3.13', 'Python');
+        }
+        if (!r?.ok) {
+          if (!hasCLT()) {
+            sendSetupProgress('Homebrew Python install unavailable — installing Apple Command Line Tools (provides Python 3).');
+            const cltResult = await installCLT();
+            if (cltResult.ok && (isCommandAvailable('python3') || isCommandAvailable('python'))) {
+              r = { ok: true, output: 'Installed via Command Line Tools' };
+            } else {
+              r = { ok: false, output: (r?.output || '') + '\n' + cltResult.output };
+            }
+          } else if (isCommandAvailable('python3') || isCommandAvailable('python')) {
+            r = { ok: true, output: 'Found via Command Line Tools' };
+          }
+        }
+        results.python = r?.ok ? 'installed' : 'failed';
+        if (!r?.ok) errors.python = r?.output || 'Python install failed';
+        if (r?.ok) refreshPath();
       } else if (IS_LINUX && linuxPkgMgr) {
         let r;
         if (linuxPkgMgr === 'apt') r = await linuxInstall('apt', ['install', '-y', 'python3', 'python3-pip'], 'Python');
         else if (linuxPkgMgr === 'dnf') r = await linuxInstall('dnf', ['install', '-y', 'python3', 'python3-pip'], 'Python');
         else if (linuxPkgMgr === 'pacman') r = await linuxInstall('pacman', ['-S', '--noconfirm', 'python', 'python-pip'], 'Python');
         results.python = r?.ok ? 'installed' : 'failed';
+        if (!r?.ok) errors.python = r?.output;
         if (r?.ok) refreshPath();
       } else {
         results.python = 'missing';
@@ -762,7 +956,11 @@ function setupIPC() {
 
     const allOk = Object.values(results).every(v => v === 'ok' || v === 'installed' || v === 'skip');
     const missing = Object.entries(results).filter(([, v]) => v === 'missing' || v === 'failed').map(([k]) => k);
-    return { ok: allOk, results, missing };
+    logInstall(`Final results: ${JSON.stringify(results)}`);
+    if (!allOk) {
+      logInstall(`Errors: ${JSON.stringify(errors)}`);
+    }
+    return { ok: allOk, results, missing, errors, logPath: INSTALL_LOG_PATH };
   });
 
   // Install Node dependencies in workspace

@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Dependency installation
   installSystemDeps: () => ipcRenderer.invoke('install-system-deps'),
+  onSetupProgress: (callback) => ipcRenderer.on('setup-progress', (_event, data) => callback(data)),
   installNodeDeps: () => ipcRenderer.invoke('install-node-deps'),
   installCodexCLI: () => ipcRenderer.invoke('install-codex-cli'),
   checkCodexInstalled: () => ipcRenderer.invoke('check-codex-installed'),
