@@ -238,13 +238,14 @@ async function runInstallPage() {
   const codexCheck = await window.electronAPI.checkCodexInstalled();
   if (codexCheck.installed) {
     setInstallItemState('install-codex-cli', 'done');
-    setInstallStatus('Codex CLI already installed.');
+    setInstallStatus('Codex CLI already installed (' + (codexCheck.version || '') + ').');
   } else {
     setInstallStatus('Installing Codex CLI (this may take a minute)...');
     const codexInstall = await window.electronAPI.installCodexCLI();
     setInstallItemState('install-codex-cli', codexInstall.ok ? 'done' : 'error');
     if (!codexInstall.ok) {
-      setInstallStatus('Codex CLI install failed. You can install it manually later.');
+      const hint = codexInstall.output ? ' (' + codexInstall.output.slice(-150).replace(/\s+/g, ' ').trim() + ')' : '';
+      setInstallStatus('Codex CLI install failed' + hint + '. You can install it manually: npm install -g @openai/codex');
     }
   }
 

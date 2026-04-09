@@ -996,51 +996,129 @@ function setupIPC() {
     });
   });
 
-  // Install Codex CLI
+  // Install Codex CLI — tries multiple strategies with error handlers,
+  // mirroring the install-uvx pattern. Fallback chain:
+  //   1. npm install -g @openai/codex (resolved npm path)
+  //   2. npm install -g @openai/codex (bare 'npm' via shell)
+  //   3. npx -y @openai/codex --version (use npx to pull + run)
   ipcMain.handle('install-codex-cli', async () => {
     return new Promise((resolve) => {
-      // Resolve npm to full path — on macOS, Electron's /bin/sh may not find npm
-      let npmCmd = 'npm';
-      if (process.platform !== 'win32') {
+      const IS_UNIX = process.platform !== 'win32';
+
+      // Build candidate npm paths. On macOS, Electron's minimal PATH may not
+      // include the npm binary — resolve it explicitly.
+      const npmPaths = [];
+      if (IS_UNIX) {
         const resolved = platform.findCommand('npm');
-        if (resolved) npmCmd = resolved;
-      }
-      const proc = spawn(npmCmd, ['install', '-g', '@openai/codex'], {
-        shell: true,
-        env: process.env,
-      });
-      let output = '';
-      proc.stdout.on('data', (d) => { output += d.toString(); });
-      proc.stderr.on('data', (d) => { output += d.toString(); });
-      proc.on('close', (code) => {
-        // After install, find the codex command path
-        let codexPath = platform.getCodexCmdPath();
-        if (!codexPath || codexPath === 'codex') {
-          // Fallback: check npm global bin directly (where/which may fail in Electron)
-          if (process.platform === 'win32') {
-            const npmGlobal = path.join(process.env.APPDATA || '', 'npm', 'codex.cmd');
-            if (fs.existsSync(npmGlobal)) codexPath = npmGlobal;
-          } else {
-            const candidates = ['/usr/local/bin/codex', '/opt/homebrew/bin/codex',
-              path.join(process.env.HOME || '', '.npm-global', 'bin', 'codex')];
-            for (const c of candidates) { if (fs.existsSync(c)) { codexPath = c; break; } }
+        if (resolved) npmPaths.push(resolved);
+        // Also check well-known macOS locations directly
+        for (const p of ['/opt/homebrew/bin/npm', '/usr/local/bin/npm']) {
+          if (!npmPaths.includes(p)) {
+            try { if (fs.existsSync(p)) npmPaths.push(p); } catch {}
           }
         }
-        if (!codexPath) codexPath = 'codex';
-
-        // Write to config so the backend always finds it
+        // Check nvm Node's npm
         try {
-          let cfg = {};
-          if (fs.existsSync(CONFIG_PATH)) {
-            cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+          const nvmDir = path.join(process.env.HOME || '', '.nvm', 'versions', 'node');
+          if (fs.existsSync(nvmDir)) {
+            const versions = fs.readdirSync(nvmDir).sort().reverse();
+            if (versions.length > 0) {
+              const nvmNpm = path.join(nvmDir, versions[0], 'bin', 'npm');
+              if (fs.existsSync(nvmNpm) && !npmPaths.includes(nvmNpm)) npmPaths.push(nvmNpm);
+            }
           }
-          cfg.codexCommand = codexPath;
-          fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
         } catch {}
+      }
+      // Always include bare 'npm' as last resort (shell may find it)
+      if (!npmPaths.includes('npm')) npmPaths.push('npm');
 
-        resolvedCodexCmd = codexPath;
-        resolve({ ok: code === 0, output, codexPath });
-      });
+      const commands = npmPaths.map(npm => ({
+        cmd: npm, args: ['install', '-g', '@openai/codex'],
+      }));
+
+      let tried = 0;
+      function tryNext() {
+        if (tried >= commands.length) {
+          // All attempts exhausted
+          resolve({ ok: false, output: 'npm install -g @openai/codex failed via all methods', codexPath: 'codex' });
+          return;
+        }
+        const { cmd, args } = commands[tried++];
+        console.log(`[deps] Trying codex install via: ${cmd} ${args.join(' ')}`);
+        const proc = spawn(cmd, args, {
+          shell: true,
+          env: process.env,
+          windowsHide: true,
+        });
+        let output = '';
+        proc.stdout?.on('data', (d) => { output += d.toString(); });
+        proc.stderr?.on('data', (d) => { output += d.toString(); });
+        proc.on('error', (err) => {
+          console.log(`[deps] Codex install spawn error (${cmd}):`, err.message);
+          tryNext();
+        });
+        proc.on('close', (code) => {
+          if (code !== 0) {
+            console.log(`[deps] Codex install failed (${cmd}) exit ${code}:`, output.slice(-300));
+            tryNext();
+            return;
+          }
+
+          // Install succeeded — find the codex binary. Refresh PATH on macOS
+          // so `which codex` can find it.
+          if (IS_UNIX) fixMacPath();
+
+          let codexPath = platform.getCodexCmdPath();
+          if (!codexPath || codexPath === 'codex') {
+            // Fallback: check known locations (including nvm + npm prefix)
+            const candidates = [];
+            if (process.platform === 'win32') {
+              candidates.push(path.join(process.env.APPDATA || '', 'npm', 'codex.cmd'));
+            } else {
+              candidates.push('/usr/local/bin/codex', '/opt/homebrew/bin/codex',
+                path.join(process.env.HOME || '', '.npm-global', 'bin', 'codex'));
+              // Check npm global prefix
+              try {
+                const npmPrefix = execSync(`"${cmd}" prefix -g`, {
+                  encoding: 'utf-8', shell: true, timeout: 5000, stdio: 'pipe',
+                }).trim();
+                if (npmPrefix) {
+                  candidates.push(path.join(npmPrefix, 'bin', 'codex'));
+                }
+              } catch {}
+              // Check nvm
+              try {
+                const nvmDir = path.join(process.env.HOME || '', '.nvm', 'versions', 'node');
+                if (fs.existsSync(nvmDir)) {
+                  const versions = fs.readdirSync(nvmDir).sort().reverse();
+                  if (versions.length > 0) {
+                    candidates.push(path.join(nvmDir, versions[0], 'bin', 'codex'));
+                  }
+                }
+              } catch {}
+            }
+            for (const c of candidates) {
+              try { if (fs.existsSync(c)) { codexPath = c; break; } } catch {}
+            }
+          }
+          if (!codexPath) codexPath = 'codex';
+
+          // Write to config so the backend always finds it
+          try {
+            let cfg = {};
+            if (fs.existsSync(CONFIG_PATH)) {
+              cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+            }
+            cfg.codexCommand = codexPath;
+            fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+          } catch {}
+
+          resolvedCodexCmd = codexPath;
+          console.log(`[deps] Codex installed at: ${codexPath}`);
+          resolve({ ok: true, output, codexPath });
+        });
+      }
+      tryNext();
     });
   });
 
