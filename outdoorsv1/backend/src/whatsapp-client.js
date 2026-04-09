@@ -996,13 +996,15 @@ async function reconnectWhatsApp() {
   lastQR = null;
   reconnectAttempt = 0;
 
-  // Wipe auth state to force fresh QR code
-  const authDir = join(__dirname, '..', config.authDir || 'auth_state');
+  // Wipe auth state to force fresh QR code.
+  // config.authDir is already absolute (set in config.js), so use it directly.
   try {
     const { rmSync } = await import('fs');
-    rmSync(authDir, { recursive: true, force: true });
-    console.log('[WhatsApp] Wiped auth state for reconnect');
-  } catch {}
+    rmSync(config.authDir, { recursive: true, force: true });
+    console.log('[WhatsApp] Wiped auth state for reconnect:', config.authDir);
+  } catch (err) {
+    console.log('[WhatsApp] Failed to wipe auth state:', err.message);
+  }
 
   // Clear saved group JID so it searches for existing group on reconnect
   config.outdoorsGroupJid = '';
