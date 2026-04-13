@@ -327,13 +327,14 @@ function handleLogEntry(entry, isHistory) {
     }
     case 'connected':
       setStatus('connected', 'Connected');
+      window._waDisconnectShown = false;
       break;
     case 'disconnected':
-      // Don't spam the feed — only show if not already showing a recent disconnect
-      if (!window._lastWaDisconnect || Date.now() - window._lastWaDisconnect > 30000) {
+      // Show once, don't repeat until a successful reconnection clears the flag
+      if (!window._waDisconnectShown) {
         addFeedEntry('info', 'WhatsApp disconnected. Reconnecting...');
+        window._waDisconnectShown = true;
       }
-      window._lastWaDisconnect = Date.now();
       break;
     case 'qr':
       addFeedEntry('info', 'WhatsApp QR code generated');
