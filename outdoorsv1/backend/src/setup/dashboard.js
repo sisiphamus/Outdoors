@@ -327,7 +327,9 @@ function handleLogEntry(entry, isHistory) {
     }
     case 'connected':
       setStatus('connected', 'Connected');
-      window._waDisconnectShown = false;
+      // Only clear disconnect flag after stable connection (10s)
+      if (window._waDisconnectTimer) clearTimeout(window._waDisconnectTimer);
+      window._waDisconnectTimer = setTimeout(() => { window._waDisconnectShown = false; }, 10000);
       break;
     case 'disconnected':
       // Show once, don't repeat until a successful reconnection clears the flag
