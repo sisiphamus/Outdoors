@@ -244,17 +244,37 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
     // Always ensure browser is ready before Phase D — fast no-op if already running
     await ensureBrowserReady();
 
-    const phaseD = await runModel({
-      userPrompt: prompt,
-      systemPrompt: modelDPrompt(prompt, outputSpec, allMemoryContents),
-      model: null,
-      codexArgs: config.codexArgs,
-      onProgress: (type, data) => agg.forward('D', type, data),
-      processKey: processKey ? `${processKey}:D` : null,
-      timeout,
-      cwd: outputDir,
-      resumeSessionId,
-    });
+    let phaseD;
+    try {
+      phaseD = await runModel({
+        userPrompt: prompt,
+        systemPrompt: modelDPrompt(prompt, outputSpec, allMemoryContents),
+        model: null,
+        codexArgs: config.codexArgs,
+        onProgress: (type, data) => agg.forward('D', type, data),
+        processKey: processKey ? `${processKey}:D` : null,
+        timeout,
+        cwd: outputDir,
+        resumeSessionId,
+      });
+    } catch (modelErr) {
+      // If auth expired/missing, stop immediately — don't loop, don't retry.
+      // Return a clear status so the message handler can notify the user.
+      if (modelErr.authExpired || modelErr.authMissing) {
+        agg.phase('auth', modelErr.authExpired
+          ? 'Codex login expired — please re-authenticate in the Outdoors dashboard.'
+          : 'Codex login not found — please authenticate in the Outdoors dashboard.');
+        return {
+          status: 'auth_expired',
+          response: modelErr.authExpired
+            ? 'Your AI session has expired. Please open Outdoors on your computer and click Re-authenticate in the dashboard, or run "codex auth --login" in a terminal.'
+            : 'Codex is not authenticated. Please open the Outdoors app and complete the setup wizard.',
+          sessionId: null,
+          fullEvents: [],
+        };
+      }
+      throw modelErr; // re-throw non-auth errors
+    }
 
     // Track Claude's session ID back to our internal session
     if (sessionContext && phaseD.sessionId) {

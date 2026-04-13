@@ -511,6 +511,14 @@ export async function handleMessage(message, emitLog) {
       const response = formatQuestionsForText(execResult.questions);
       return { response, sender, prompt: parsed.body, jid, sessionId: execResult.sessionId, fullEvents: execResult.fullEvents, conversationNumber: parsed.number, internalSessionId: session.id };
     }
+
+    // Auth expired — Codex token needs to be refreshed. Tell the user
+    // clearly and don't waste time retrying with the same dead token.
+    if (execResult.status === 'auth_expired') {
+      emitLog?.('auth_expired', { sender, message: execResult.response });
+      return { response: execResult.response, sender, prompt: parsed.body, jid, conversationNumber: parsed.number, internalSessionId: session.id };
+    }
+
     let response = execResult.response;
 
     // If Codex process died without producing a response (e.g. mid-task quota switch),

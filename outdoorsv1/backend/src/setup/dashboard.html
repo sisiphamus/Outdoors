@@ -54,6 +54,12 @@
     </div>
   </div>
 
+  <!-- Auth warning banner — shown when Codex token is expired or expiring soon -->
+  <div class="auth-warning hidden" id="auth-warning">
+    <span class="auth-warning-text" id="auth-warning-text">Your AI login has expired.</span>
+    <button class="auth-warning-btn" id="btn-reauth">Re-authenticate</button>
+  </div>
+
   <!-- Main content -->
   <div class="main-content">
     <button class="jump-top-btn hidden" id="btn-jump-top" title="Scroll to oldest logs">

@@ -1522,13 +1522,46 @@ function initCodexAuthCheck() {
   if (!window.electronAPI?.onCodexAuthStatus) return;
 
   const overlay = document.getElementById('auth-overlay');
-  if (!overlay) return;
+  const warning = document.getElementById('auth-warning');
+  const warningText = document.getElementById('auth-warning-text');
+  const reauthBtn = document.getElementById('btn-reauth');
+
+  // Wire up re-auth button to start Codex login flow
+  if (reauthBtn && window.electronAPI.startCodexAuth) {
+    reauthBtn.addEventListener('click', async () => {
+      reauthBtn.textContent = 'Opening login...';
+      reauthBtn.disabled = true;
+      try {
+        await window.electronAPI.startCodexAuth();
+        // Auth complete — the status event will update the banner
+      } catch {}
+      reauthBtn.textContent = 'Re-authenticate';
+      reauthBtn.disabled = false;
+    });
+  }
 
   window.electronAPI.onCodexAuthStatus((data) => {
-    if (data.authenticated) {
-      overlay.classList.add('hidden');
-    } else {
-      overlay.classList.remove('hidden');
+    // Full auth overlay (from setup wizard — blocks the entire UI)
+    if (overlay) {
+      if (data.authenticated) {
+        overlay.classList.add('hidden');
+      } else {
+        overlay.classList.remove('hidden');
+      }
+    }
+
+    // Auth warning banner (non-blocking, shows above the feed)
+    if (warning && warningText) {
+      if (data.warning === 'expired') {
+        warningText.textContent = 'Your AI login has expired. Click to re-authenticate.';
+        warning.classList.remove('hidden');
+      } else if (data.warning === 'expiring_soon') {
+        const h = data.hoursLeft || '?';
+        warningText.textContent = `Your AI login expires in ${h} hours. Re-authenticate soon to avoid interruption.`;
+        warning.classList.remove('hidden');
+      } else {
+        warning.classList.add('hidden');
+      }
     }
   });
 }

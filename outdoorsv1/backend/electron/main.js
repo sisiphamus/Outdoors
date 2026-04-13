@@ -1364,8 +1364,15 @@ function setupIPC() {
     });
   });
 
-  // Check Codex auth status — checks multiple paths for cross-platform compatibility
+  // Check Codex auth status — parses the JWT to detect token expiry,
+  // not just file existence (which was the root cause of silent Model D failures).
   ipcMain.handle('check-codex-auth', async () => {
+    const result = checkCodexAuthExpiry();
+    return result;
+  });
+
+  // Shared helper: parse ~/.codex/auth.json JWT exp claim
+  function checkCodexAuthExpiry() {
     const home = process.env.HOME || process.env.USERPROFILE || '';
     const authPaths = [
       path.join(home, '.codex', 'auth.json'),
@@ -1373,16 +1380,55 @@ function setupIPC() {
       path.join(process.env.LOCALAPPDATA || '', '.codex', 'auth.json'),
       path.join(home, '.config', 'codex', 'auth.json'),
     ].filter(p => p && !p.startsWith(path.sep + '.codex'));
+
     for (const authPath of authPaths) {
       try {
-        if (fs.existsSync(authPath)) {
-          const auth = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
-          if (auth) return { authenticated: true, output: 'Auth file found at ' + authPath };
+        if (!fs.existsSync(authPath)) continue;
+        const auth = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
+        if (!auth) continue;
+
+        // API key mode — no expiry concern
+        if (auth.OPENAI_API_KEY) {
+          return { authenticated: true, output: 'API key found', warning: null };
         }
+
+        // ChatGPT auth mode — check JWT exp
+        const jwt = auth?.tokens?.id_token;
+        if (!jwt) continue;
+
+        try {
+          const payloadB64 = jwt.split('.')[1];
+          if (payloadB64) {
+            const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
+            if (payload.exp) {
+              const now = Date.now() / 1000;
+              const hoursLeft = (payload.exp - now) / 3600;
+              if (hoursLeft <= 0) {
+                return {
+                  authenticated: false,
+                  output: `Token expired ${Math.round(-hoursLeft)} hours ago`,
+                  warning: 'expired',
+                  hoursLeft: Math.round(hoursLeft),
+                };
+              }
+              if (hoursLeft <= 48) {
+                return {
+                  authenticated: true,
+                  output: `Token expires in ${Math.round(hoursLeft)} hours`,
+                  warning: 'expiring_soon',
+                  hoursLeft: Math.round(hoursLeft),
+                };
+              }
+            }
+          }
+        } catch {}
+
+        // JWT parse failed but file exists — treat as authenticated
+        return { authenticated: true, output: 'Auth file found at ' + authPath, warning: null };
       } catch {}
     }
-    return { authenticated: false, output: 'No auth file found.' };
-  });
+    return { authenticated: false, output: 'No auth file found.', warning: null };
+  }
 
   // Start Codex auth — spawns 'codex login' which opens browser for ChatGPT OAuth
   ipcMain.handle('start-codex-auth', async () => {
@@ -3409,15 +3455,18 @@ function setupAutoLaunch() {
 // ── Dashboard Window ─────────────────────────────────────────────────────
 
 function checkCodexAuthAndNotify() {
-  const authPath = path.join(process.env.HOME || process.env.USERPROFILE || '', '.codex', 'auth.json');
   try {
-    const authed = fs.existsSync(authPath);
+    const result = checkCodexAuthExpiry();
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('codex-auth-status', { authenticated: authed });
+      mainWindow.webContents.send('codex-auth-status', {
+        authenticated: result.authenticated,
+        warning: result.warning || null,
+        hoursLeft: result.hoursLeft || null,
+      });
     }
   } catch {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('codex-auth-status', { authenticated: false });
+      mainWindow.webContents.send('codex-auth-status', { authenticated: false, warning: 'error' });
     }
   }
 }

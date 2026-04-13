@@ -2,8 +2,57 @@
 // Built from scratch using Node's child_process.spawn.
 
 import { spawn } from 'child_process';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
 import { config } from '../config.js';
 import { register, unregister, emitActivity } from '../util/process-registry.js';
+
+// ── Codex auth pre-flight check ──────────────────────────────────────────
+// The Codex CLI uses ChatGPT OAuth with a JWT stored in ~/.codex/auth.json.
+// The JWT expires after ~7 days. When expired, Codex silently returns no
+// response (no agent_message event, no error), causing Model D to fail with
+// empty output and the orchestrator to loop 3 times uselessly.
+//
+// This function decodes the JWT's exp claim (no crypto needed — just base64)
+// and returns whether auth is valid, expired, or missing entirely.
+
+function checkCodexAuthValidity() {
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  const candidates = [
+    join(home, '.codex', 'auth.json'),
+    join(process.env.APPDATA || '', '.codex', 'auth.json'),
+    join(home, '.config', 'codex', 'auth.json'),
+  ].filter(Boolean);
+
+  for (const p of candidates) {
+    try {
+      if (!existsSync(p)) continue;
+      const auth = JSON.parse(readFileSync(p, 'utf-8'));
+
+      // ChatGPT auth mode uses tokens.id_token; API key mode uses OPENAI_API_KEY
+      if (auth.OPENAI_API_KEY) return { valid: true, mode: 'api_key' };
+
+      const jwt = auth?.tokens?.id_token;
+      if (!jwt) continue;
+
+      // Decode JWT payload (middle segment) — no verification needed, just reading exp
+      const payloadB64 = jwt.split('.')[1];
+      if (!payloadB64) continue;
+      const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
+
+      if (!payload.exp) return { valid: true, mode: 'chatgpt', noExp: true };
+
+      const now = Date.now() / 1000;
+      const hoursLeft = (payload.exp - now) / 3600;
+
+      if (hoursLeft <= 0) {
+        return { valid: false, expired: true, hoursAgo: Math.round(-hoursLeft), expiresAt: payload.exp };
+      }
+      return { valid: true, mode: 'chatgpt', hoursLeft: Math.round(hoursLeft), expiresAt: payload.exp };
+    } catch {}
+  }
+  return { valid: false, missing: true };
+}
 
 const MODEL_MAP = {
   opus: 'gpt-5.4',
@@ -38,6 +87,9 @@ function cleanEnv() {
   return env;
 }
 
+// Exported so orchestrator and other callers can check auth without spawning
+export { checkCodexAuthValidity };
+
 export function runModel({
   userPrompt,
   systemPrompt,
@@ -52,6 +104,23 @@ export function runModel({
   resumeSessionId,
 }) {
   return new Promise((resolve, reject) => {
+    // Pre-flight: check if Codex auth token is valid before spawning.
+    // An expired token means Codex will start, read stdin, hit the API,
+    // get a 401, and exit silently with no agent_message — wasting time
+    // and causing the orchestrator to loop 3x with empty responses.
+    const authStatus = checkCodexAuthValidity();
+    if (!authStatus.valid) {
+      const err = new Error(
+        authStatus.expired
+          ? `Codex auth token expired ${authStatus.hoursAgo} hours ago. Please re-authenticate: run "codex auth --login" or click Re-authenticate in the Outdoors dashboard.`
+          : 'Codex auth not found. Please authenticate: run "codex auth --login" or complete setup in the Outdoors dashboard.'
+      );
+      err.authExpired = !!authStatus.expired;
+      err.authMissing = !!authStatus.missing;
+      reject(err);
+      return;
+    }
+
     const cmd = config.codexCommand || 'codex';
     const effectiveArgs = codexArgs || claudeArgs || config.codexArgs || ['exec'];
 
