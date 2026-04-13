@@ -1422,7 +1422,7 @@ function setupIPC() {
                   hoursLeft: Math.round(hoursLeft),
                 };
               }
-              if (hoursLeft <= 48) {
+              if (hoursLeft <= 6) {
                 return {
                   authenticated: true,
                   output: `Token expires in ${Math.round(hoursLeft)} hours`,
