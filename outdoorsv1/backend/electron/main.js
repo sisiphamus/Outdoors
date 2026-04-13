@@ -469,12 +469,23 @@ function setupIPC() {
     const nodeModulesExist = fs.existsSync(path.join(BACKEND_DIR, 'node_modules', '.package-lock.json'));
     const oauthCredsExist = fs.existsSync(path.join(BACKEND_DIR, 'oauth-creds.json'));
 
+    // Read the saved downloadKey from config.json so the renderer can
+    // auto-skip the invite code page for returning users.
+    let downloadKey = null;
+    try {
+      if (fs.existsSync(CONFIG_PATH)) {
+        const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+        downloadKey = cfg.downloadKey || null;
+      }
+    } catch {}
+
     return {
       automationProfile: automationProfileExists,
       googleCreds: googleCredsExist,
       codexAuth: codexAuthExists,
       nodeModules: nodeModulesExist,
       oauthCreds: oauthCredsExist,
+      downloadKey,
     };
   });
 
@@ -3563,7 +3574,12 @@ app.whenReady().then(async () => {
   setupIPC();
   createTray();
 
-  if (!setupDone || isFirstRun) {
+  // Only show the setup wizard on genuine first runs (no setup-done flag).
+  // On updates, ensureWorkspace() returns true but setup is already complete —
+  // node_modules are reinstalled by ensureBackendDeps() in startBackend().
+  // This prevents existing users from having to re-enter their invite code
+  // on every auto-update.
+  if (!setupDone) {
     createSetupWindow();
   } else {
     await startBackend();
