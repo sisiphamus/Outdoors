@@ -16,6 +16,11 @@ import { register, unregister, emitActivity } from '../util/process-registry.js'
 // This function decodes the JWT's exp claim (no crypto needed — just base64)
 // and returns whether auth is valid, expired, or missing entirely.
 
+// Check if Codex auth file exists with valid structure.
+// Does NOT check JWT expiry — Codex access tokens are short-lived (~1 hour)
+// and refreshed automatically by the Codex CLI using the refresh_token.
+// The refresh_token lasts ~7 days. When THAT expires, Codex outputs an auth
+// error at runtime which we catch from stderr (see proc.stderr handler below).
 function checkCodexAuthValidity() {
   const home = process.env.HOME || process.env.USERPROFILE || '';
   const candidates = [
@@ -28,27 +33,9 @@ function checkCodexAuthValidity() {
     try {
       if (!existsSync(p)) continue;
       const auth = JSON.parse(readFileSync(p, 'utf-8'));
-
-      // ChatGPT auth mode uses tokens.id_token; API key mode uses OPENAI_API_KEY
-      if (auth.OPENAI_API_KEY) return { valid: true, mode: 'api_key' };
-
-      const jwt = auth?.tokens?.id_token;
-      if (!jwt) continue;
-
-      // Decode JWT payload (middle segment) — no verification needed, just reading exp
-      const payloadB64 = jwt.split('.')[1];
-      if (!payloadB64) continue;
-      const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
-
-      if (!payload.exp) return { valid: true, mode: 'chatgpt', noExp: true };
-
-      const now = Date.now() / 1000;
-      const hoursLeft = (payload.exp - now) / 3600;
-
-      if (hoursLeft <= 0) {
-        return { valid: false, expired: true, hoursAgo: Math.round(-hoursLeft), expiresAt: payload.exp };
+      if (auth.OPENAI_API_KEY || auth.tokens || auth.auth_mode) {
+        return { valid: true };
       }
-      return { valid: true, mode: 'chatgpt', hoursLeft: Math.round(hoursLeft), expiresAt: payload.exp };
     } catch {}
   }
   return { valid: false, missing: true };
@@ -326,9 +313,13 @@ export function runModel({
       }
     });
 
+    let stderrBuffer = '';
     proc.stderr.on('data', (chunk) => {
       const text = chunk.toString().trim();
-      if (text) onProgress?.('stderr', { text, model: model || 'default' });
+      if (text) {
+        stderrBuffer += text + '\n';
+        onProgress?.('stderr', { text, model: model || 'default' });
+      }
     });
 
     proc.on('close', (code) => {
@@ -350,6 +341,21 @@ export function runModel({
 
       if (proc._stoppedByUser) {
         reject({ stopped: true, message: 'Process stopped by user' });
+        return;
+      }
+
+      // Detect auth/quota errors from Codex stderr (refresh token expired, rate limited, etc.)
+      const stderr = stderrBuffer.toLowerCase();
+      if (!response && (stderr.includes('unauthorized') || stderr.includes('401') || stderr.includes('auth') && stderr.includes('expired') || stderr.includes('login'))) {
+        const err = new Error('Codex authentication failed. Please re-authenticate: run "codex login" or click Re-authenticate in the dashboard.');
+        err.authExpired = true;
+        reject(err);
+        return;
+      }
+      if (!response && (stderr.includes('rate limit') || stderr.includes('429') || stderr.includes('quota') || stderr.includes('usage limit'))) {
+        const err = new Error('Codex usage limit reached. Your quota will reset soon.');
+        err.quotaExceeded = true;
+        reject(err);
         return;
       }
 

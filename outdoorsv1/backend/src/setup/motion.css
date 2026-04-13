@@ -5,57 +5,6 @@
    loops. Imported AFTER tokens.css, BEFORE component styles.
    ============================================================ */
 
-/* ── Custom cursor ─────────────────────────────────────────
-   When motion.js activates the custom cursor, body.of-cursor-on
-   is added and the system cursor is hidden. The leaf glyph is
-   positioned fixed and follows the pointer via JS transforms. */
-
-.of-cursor {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 22px;
-  height: 22px;
-  pointer-events: none;
-  z-index: 99999;
-  will-change: transform;
-  transition: opacity var(--dur-fast) var(--ease-settle);
-  image-rendering: pixelated;
-}
-
-body.of-cursor-on {
-  cursor: none;
-}
-
-body.of-cursor-on a,
-body.of-cursor-on button,
-body.of-cursor-on input,
-body.of-cursor-on textarea,
-body.of-cursor-on select,
-body.of-cursor-on [role="button"],
-body.of-cursor-on .of-hoverable {
-  cursor: none;
-}
-
-/* Text-entry fields keep the text cursor — it's too useful to lose */
-body.of-cursor-on input[type="text"],
-body.of-cursor-on input[type="email"],
-body.of-cursor-on input[type="password"],
-body.of-cursor-on input[type="search"],
-body.of-cursor-on input[type="number"],
-body.of-cursor-on textarea,
-body.of-cursor-on [contenteditable="true"] {
-  cursor: text;
-}
-
-/* Pixel cursors should NOT have a smooth drop-shadow — keeps the
-   chunky silhouette sharp. Small hard offset shadow only. */
-.of-cursor svg {
-  display: block;
-  shape-rendering: crispEdges;
-  filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.35));
-}
-
 /* ── Parallax grain attachment ─────────────────────────────
    The body::before grain layer (defined in tokens.css) gets its
    transform driven by motion.js setting --grain-x / --grain-y. */

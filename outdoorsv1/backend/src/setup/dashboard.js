@@ -329,7 +329,11 @@ function handleLogEntry(entry, isHistory) {
       setStatus('connected', 'Connected');
       break;
     case 'disconnected':
-      addFeedEntry('info', 'WhatsApp disconnected');
+      // Don't spam the feed — only show if not already showing a recent disconnect
+      if (!window._lastWaDisconnect || Date.now() - window._lastWaDisconnect > 30000) {
+        addFeedEntry('info', 'WhatsApp disconnected. Reconnecting...');
+      }
+      window._lastWaDisconnect = Date.now();
       break;
     case 'qr':
       addFeedEntry('info', 'WhatsApp QR code generated');

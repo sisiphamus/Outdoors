@@ -215,7 +215,6 @@
 
   // ── Init ─────────────────────────────────────────────────
   function init() {
-    initCustomCursor();
     initParallaxGrain();
     initKineticWordmark();
     initScrollReveals();

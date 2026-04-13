@@ -304,13 +304,14 @@ function ensureWorkspace() {
 
     // SAFETY CHECK: Refuse to wipe workspace if bot data is still inside
     // This prevents data loss if the move-to-safe-dir step above failed
-    const botMemoryStillHere = fs.existsSync(path.join(destBackend, 'bot', 'memory', 'skills'));
-    const botMemoryInSafe = fs.existsSync(path.join(safeDir, 'bot', 'memory'));
-    if (botMemoryStillHere && !botMemoryInSafe) {
-      console.error('[workspace] ABORT: Bot data is still in workspace and NOT in safe dir. Skipping wipe to prevent data loss.');
-      // Just update the version file and return without wiping
-      fs.writeFileSync(versionFile, currentVersion);
-      return false;
+    for (const dir of keepDirs) {
+      const stillHere = fs.existsSync(path.join(destBackend, dir));
+      const inSafe = fs.existsSync(path.join(safeDir, dir));
+      if (stillHere && !inSafe) {
+        console.error(`[workspace] ABORT: ${dir} is still in workspace and NOT in safe dir. Skipping wipe to prevent data loss.`);
+        fs.writeFileSync(versionFile, currentVersion);
+        return false;
+      }
     }
 
     // Wipe workspace (bot data has already been moved out)
@@ -441,6 +442,30 @@ function createSetupWindow() {
   mainWindow.on('close', () => {
     app.quit();
   });
+}
+
+// ── Codex Auth Check (global — used by both setupIPC and checkCodexAuthAndNotify) ──
+
+function checkCodexAuthExpiry() {
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  const authPaths = [
+    path.join(home, '.codex', 'auth.json'),
+    path.join(process.env.APPDATA || '', '.codex', 'auth.json'),
+    path.join(process.env.LOCALAPPDATA || '', '.codex', 'auth.json'),
+    path.join(home, '.config', 'codex', 'auth.json'),
+  ].filter(p => p && !p.startsWith(path.sep + '.codex'));
+
+  for (const authPath of authPaths) {
+    try {
+      if (!fs.existsSync(authPath)) continue;
+      const auth = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
+      if (!auth) continue;
+      if (auth.OPENAI_API_KEY || auth.tokens || auth.auth_mode) {
+        return { authenticated: true, output: 'Auth file found at ' + authPath, warning: null };
+      }
+    } catch {}
+  }
+  return { authenticated: false, output: 'No auth file found.', warning: null };
 }
 
 // ── IPC Handlers ────────────────────────────────────────────────────────────
@@ -1382,64 +1407,8 @@ function setupIPC() {
     return result;
   });
 
-  // Shared helper: parse ~/.codex/auth.json JWT exp claim
-  function checkCodexAuthExpiry() {
-    const home = process.env.HOME || process.env.USERPROFILE || '';
-    const authPaths = [
-      path.join(home, '.codex', 'auth.json'),
-      path.join(process.env.APPDATA || '', '.codex', 'auth.json'),
-      path.join(process.env.LOCALAPPDATA || '', '.codex', 'auth.json'),
-      path.join(home, '.config', 'codex', 'auth.json'),
-    ].filter(p => p && !p.startsWith(path.sep + '.codex'));
-
-    for (const authPath of authPaths) {
-      try {
-        if (!fs.existsSync(authPath)) continue;
-        const auth = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
-        if (!auth) continue;
-
-        // API key mode — no expiry concern
-        if (auth.OPENAI_API_KEY) {
-          return { authenticated: true, output: 'API key found', warning: null };
-        }
-
-        // ChatGPT auth mode — check JWT exp
-        const jwt = auth?.tokens?.id_token;
-        if (!jwt) continue;
-
-        try {
-          const payloadB64 = jwt.split('.')[1];
-          if (payloadB64) {
-            const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
-            if (payload.exp) {
-              const now = Date.now() / 1000;
-              const hoursLeft = (payload.exp - now) / 3600;
-              if (hoursLeft <= 0) {
-                return {
-                  authenticated: false,
-                  output: `Token expired ${Math.round(-hoursLeft)} hours ago`,
-                  warning: 'expired',
-                  hoursLeft: Math.round(hoursLeft),
-                };
-              }
-              if (hoursLeft <= 6) {
-                return {
-                  authenticated: true,
-                  output: `Token expires in ${Math.round(hoursLeft)} hours`,
-                  warning: 'expiring_soon',
-                  hoursLeft: Math.round(hoursLeft),
-                };
-              }
-            }
-          }
-        } catch {}
-
-        // JWT parse failed but file exists — treat as authenticated
-        return { authenticated: true, output: 'Auth file found at ' + authPath, warning: null };
-      } catch {}
-    }
-    return { authenticated: false, output: 'No auth file found.', warning: null };
-  }
+  // checkCodexAuthExpiry is now defined globally (above setupIPC)
+  // so both setupIPC handlers and checkCodexAuthAndNotify can use it.
 
   // Start Codex auth — spawns 'codex login' which opens browser for ChatGPT OAuth
   ipcMain.handle('start-codex-auth', async () => {
