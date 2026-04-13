@@ -82,8 +82,19 @@ document.getElementById('btn-activate-key')?.addEventListener('click', async () 
 
   if (status) { status.textContent = 'Checking...'; status.className = 'key-status'; }
 
+  // Admin/beta codes that work offline (no API needed)
+  const ADMIN_CODES = ['OUTDOORS-BETA', 'OPEN-BETA', 'ADMIN-DEV'];
+  if (ADMIN_CODES.includes(code.toUpperCase())) {
+    if (status) { status.textContent = 'Welcome to Outdoors!'; status.className = 'key-status success'; }
+    if (isElectron && window.electronAPI.saveDownloadKey) {
+      await window.electronAPI.saveDownloadKey(code.toUpperCase());
+    }
+    setTimeout(() => goToPage(1), 500);
+    return;
+  }
+
   try {
-    // Try claiming the invite code
+    // Try claiming the invite code via API
     const res = await fetch(REFERRAL_API + '/api/claim', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
