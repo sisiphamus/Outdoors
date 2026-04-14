@@ -420,11 +420,14 @@ body {
 }
 
 .feed-msg-assistant .msg-bubble pre {
-  background: #241D12;
-  color: #E8DFD0;
+  background: var(--bg-sunken, #F3EDE1);
+  color: var(--text);
+  border: 1px solid var(--border);
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
   overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
   margin: var(--space-2) 0;
   font-size: var(--text-sm);
   line-height: var(--leading-snug);

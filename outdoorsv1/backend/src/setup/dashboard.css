@@ -324,11 +324,14 @@ html, body {
 }
 
 .feed-msg-assistant .msg-bubble pre {
-  background: #2C2417;
-  color: #E8DFD4;
+  background: #F3EDE1;
+  color: var(--text);
+  border: 1px solid var(--border);
   padding: 8px 10px;
   border-radius: 6px;
   overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
   margin: 6px 0;
   font-size: 12px;
 }
