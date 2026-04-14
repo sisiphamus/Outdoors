@@ -14,7 +14,7 @@ import QRCode from 'qrcode';
 import { readdirSync, readFileSync, unlinkSync, mkdirSync, writeFileSync, appendFileSync, existsSync, statSync, renameSync } from 'fs';
 import { randomBytes } from 'crypto';
 import { config, saveConfig, loadConfig } from './config.js';
-import { startWhatsApp, setSocketIO, getStatus, getLastQR, reconnectWhatsApp } from './whatsapp-client.js';
+import { startWhatsApp, setSocketIO, getStatus, getLastQR, reconnectWhatsApp } from './messaging-client.js';
 
 import { execFile, execFileSync } from 'child_process';
 import { executeCodexPrompt, killProcess, codeAgentOptions, getActiveProcessSummary, setProcessChangeListener, setProcessActivityListener, clearClarificationState } from './codex-bridge.js';

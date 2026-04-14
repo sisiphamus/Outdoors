@@ -3455,9 +3455,8 @@ function createDashboardWindow() {
   if (mainWindow) {
     mainWindow.setResizable(true);
     mainWindow.setMaximizable(true);
-    mainWindow.setSize(940, 660);
-    mainWindow.center();
     mainWindow.loadFile(path.join(SETUP_DIR, 'dashboard.html'));
+    mainWindow.maximize();
     mainWindow.show();
     mainWindow.focus();
   } else {
@@ -3477,6 +3476,7 @@ function createDashboardWindow() {
       },
     });
     mainWindow.loadFile(path.join(SETUP_DIR, 'dashboard.html'));
+    mainWindow.maximize();
     mainWindow.on('close', () => {
       app.quit();
     });
@@ -3560,31 +3560,25 @@ app.on('window-all-closed', () => {
   app.quit();
 });
 
+// Fast-path shutdown: hide the window immediately so the user sees instant
+// close, then tear down the backend asynchronously in the background.
 app.on('before-quit', () => {
-  // Destroy tray so it doesn't keep the app alive
   if (tray) {
     try { tray.destroy(); } catch {}
     tray = null;
   }
 
-  if (backendProcess) {
-    const pid = backendProcess.pid;
-    try {
-      if (platform.IS_WIN) {
-        // Kill entire process tree (node backend + python ML workers + Codex CLI)
-        execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000, windowsHide: true, stdio: 'ignore' });
-      } else {
-        // Try process group kill first, then pkill children, then direct PID
-        try { process.kill(-pid, 'SIGTERM'); } catch {
-          try { execSync(`pkill -TERM -P ${pid}`, { timeout: 3000, stdio: 'ignore' }); } catch {}
-        }
-        try { process.kill(pid, 'SIGTERM'); } catch {}
-      }
-    } catch {}
-    backendProcess = null;
+  // Hide the window right away — user sees the app close instantly
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try { mainWindow.hide(); } catch {}
   }
 
-  // Safety net: kill anything still on the backend port so next launch is clean
+  // Snapshot the backend PID so the async cleanup below can still find it
+  // even after we null out backendProcess.
+  const pid = backendProcess ? backendProcess.pid : null;
+  backendProcess = null;
+
+  // Read port once synchronously (fs read is fast, no taskkill blocking)
   let port = 3847;
   try {
     if (fs.existsSync(CONFIG_PATH)) {
@@ -3592,6 +3586,21 @@ app.on('before-quit', () => {
       if (cfg.port) port = cfg.port;
     }
   } catch {}
-  try { platform.killPort(port); } catch {}
 
+  // Kick off backend teardown async — don't block the quit
+  setImmediate(() => {
+    if (pid) {
+      try {
+        if (platform.IS_WIN) {
+          execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000, windowsHide: true, stdio: 'ignore' });
+        } else {
+          try { process.kill(-pid, 'SIGTERM'); } catch {
+            try { execSync(`pkill -TERM -P ${pid}`, { timeout: 3000, stdio: 'ignore' }); } catch {}
+          }
+          try { process.kill(pid, 'SIGTERM'); } catch {}
+        }
+      } catch {}
+    }
+    try { platform.killPort(port); } catch {}
+  });
 });

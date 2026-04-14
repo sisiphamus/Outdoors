@@ -46,7 +46,6 @@ function getTodayCount() {
 }
 
 export function hasQuota() {
-  if (config.downloadKey === 'ADMIN-DEV') return true;
   return getTodayCount() < getDailyQuota();
 }
 

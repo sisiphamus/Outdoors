@@ -5,7 +5,7 @@
 
 const isElectron = !!(window.electronAPI);
 let currentPage = 0;
-const totalPages = 7; // Key entry, welcome, deps, auth, connect, telegram, done
+const totalPages = 6; // welcome, deps, auth, connect, telegram, done
 
 // Cached existing setup state — fetched once on load, used to skip configured pages
 let existingSetup = null;
@@ -34,11 +34,11 @@ function goToPage(index) {
   dots[currentPage].classList.remove('completed');
   dots[currentPage].classList.add('active');
 
-  // Trigger page-specific logic (page 0 = key entry, page 1 = welcome)
-  if (currentPage === 2) runInstallPage();
-  if (currentPage === 3) runAuthPage();
-  if (currentPage === 4) runConnectPage();
-  if (currentPage === 5) runTelegramPage();
+  // Trigger page-specific logic (page 0 = welcome)
+  if (currentPage === 1) runInstallPage();
+  if (currentPage === 2) runAuthPage();
+  if (currentPage === 3) runConnectPage();
+  if (currentPage === 4) runTelegramPage();
 }
 
 function nextPage() {
@@ -46,106 +46,14 @@ function nextPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Page 0: Invite Key Entry
-// ---------------------------------------------------------------------------
-
-const REFERRAL_API = 'https://outdoors-referral.towneradamm.workers.dev';
-
-// If this install already has a saved downloadKey (existing users past
-// initial setup, or users who previously entered a code), skip straight
-// to the welcome page. Otherwise show the invite code entry page and
-// require the user to enter a code before proceeding.
-(async () => {
-  if (!isElectron) return;
-  try {
-    const existing = await (window.electronAPI.checkExistingSetup?.() || Promise.resolve(null));
-    if (existing && existing.downloadKey) {
-      // Valid saved key — skip invite entry
-      goToPage(1);
-    }
-    // else: stay on page 0, let the user enter a code via #btn-activate-key
-  } catch {
-    // If the check fails, err on the side of showing the invite page so the
-    // user isn't locked out of entering a code.
-  }
-})();
-
-document.getElementById('btn-activate-key')?.addEventListener('click', async () => {
-  const input = document.getElementById('download-key-input');
-  const status = document.getElementById('key-status');
-  const code = (input?.value || '').trim();
-
-  if (!code) {
-    if (status) { status.textContent = 'Please enter your invite code.'; status.className = 'key-status'; }
-    return;
-  }
-
-  if (status) { status.textContent = 'Checking...'; status.className = 'key-status'; }
-
-  // Admin/beta codes that work offline (no API needed)
-  const ADMIN_CODES = ['OUTDOORS-BETA', 'OPEN-BETA', 'ADMIN-DEV'];
-  if (ADMIN_CODES.includes(code.toUpperCase())) {
-    if (status) { status.textContent = 'Welcome to Outdoors!'; status.className = 'key-status success'; }
-    if (isElectron && window.electronAPI.saveDownloadKey) {
-      await window.electronAPI.saveDownloadKey(code.toUpperCase());
-    }
-    setTimeout(() => goToPage(1), 500);
-    return;
-  }
-
-  try {
-    // Try claiming the invite code via API
-    const res = await fetch(REFERRAL_API + '/api/claim', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
-    });
-    const data = await res.json();
-
-    if (data.ok || data.key) {
-      if (status) { status.textContent = 'Welcome to Outdoors!'; status.className = 'key-status success'; }
-      if (isElectron && window.electronAPI.saveDownloadKey) {
-        await window.electronAPI.saveDownloadKey(code);
-      }
-      setTimeout(() => goToPage(1), 500);
-    } else if (data.error === 'Already used') {
-      // Code was already claimed — check if this is the same user re-entering their code
-      const res2 = await fetch(REFERRAL_API + '/api/validate-key', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: code }),
-      });
-      const data2 = await res2.json();
-      if (data2.valid) {
-        if (status) { status.textContent = 'Welcome back!'; status.className = 'key-status success'; }
-        if (isElectron && window.electronAPI.saveDownloadKey) {
-          await window.electronAPI.saveDownloadKey(code);
-        }
-        setTimeout(() => goToPage(1), 500);
-      } else {
-        if (status) { status.textContent = 'This code has already been used by someone else.'; status.className = 'key-status'; }
-      }
-    } else {
-      if (status) { status.textContent = data.error || 'Invalid code. Get one from someone using Outdoors.'; status.className = 'key-status'; }
-    }
-  } catch {
-    if (status) { status.textContent = 'Could not connect. Check your internet.'; status.className = 'key-status'; }
-  }
-});
-
-document.getElementById('download-key-input')?.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') document.getElementById('btn-activate-key')?.click();
-});
-
-// ---------------------------------------------------------------------------
-// Page 1: Welcome
+// Page 0: Welcome
 // ---------------------------------------------------------------------------
 
 document.getElementById('btn-begin')?.addEventListener('click', () => {
   if (isElectron) {
     nextPage();
   } else {
-    goToPage(4);
+    goToPage(3);
   }
 });
 

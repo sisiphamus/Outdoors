@@ -7,7 +7,7 @@
 
 import { loadConfig, saveConfig } from './config.js';
 import { createSession, closeSession } from '../../../outdoorsv4/session/session-manager.js';
-import { sendToOutdoorsGroup } from './whatsapp-client.js';
+import { sendToOutdoorsGroup } from './messaging-client.js';
 
 let deps = null;
 let checkInterval = null;

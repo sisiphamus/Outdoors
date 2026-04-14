@@ -219,10 +219,9 @@ html, body {
 }
 
 .feed-phase {
-  color: var(--text-muted);
+  color: var(--text);
   font-size: 11px;
   text-align: center;
-  opacity: 0.7;
 }
 
 .feed-tool {
@@ -243,7 +242,7 @@ html, body {
 .feed-tool-detail {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text);
   margin-left: 24px;
   margin-top: 1px;
   word-break: break-all;
@@ -271,7 +270,7 @@ html, body {
 }
 
 .feed-error { color: var(--error); font-weight: 500; }
-.feed-info { color: var(--text-muted); font-style: italic; }
+.feed-info { color: var(--text); font-style: italic; }
 
 .msg-meta {
   font-size: 10px;
@@ -292,7 +291,7 @@ html, body {
 }
 
 .feed-thinking-text {
-  color: var(--text-muted);
+  color: var(--text);
   font-size: 12px;
   font-style: italic;
 }
@@ -990,6 +989,19 @@ html, body {
 /* ── Support tab ─────────────────────────────────────────── */
 .support-form { padding: 8px 0; }
 .support-form .form-group { margin-bottom: 14px; }
+.support-form textarea,
+.support-form input,
+.support-form select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: 'Source Serif 4', serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--white);
+}
 .support-form textarea { resize: vertical; min-height: 80px; }
 .support-form .form-actions { display: flex; align-items: center; gap: 12px; }
 #bug-status { font-size: 12px; color: var(--text-muted); }

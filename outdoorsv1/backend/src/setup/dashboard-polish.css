@@ -320,6 +320,9 @@ body {
   margin-bottom: var(--space-2);
   font-size: var(--text-base);
   line-height: var(--leading-normal);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
 }
 
 /* Messages hug the feed container's edges directly — user bubbles
@@ -331,7 +334,8 @@ body {
   margin-left: 0;
   margin-right: auto;
   padding-left: var(--space-2);
-  opacity: 0.82;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Override feed-thinking's symmetric margin so it hugs the left edge too */
@@ -352,8 +356,7 @@ body {
   font-family: 'Source Serif 4', serif;
   font-style: italic;
   font-size: var(--text-sm);
-  color: var(--text-muted);
-  opacity: 0.85;
+  color: var(--text);
   padding: var(--space-1) 0;
 }
 
@@ -444,7 +447,7 @@ body {
 .feed-tool-detail {
   font-family: 'JetBrains Mono', monospace;
   font-size: var(--text-xs);
-  color: var(--text-muted);
+  color: var(--text);
   margin-left: var(--space-6);
   margin-top: var(--space-1);
   word-break: break-all;
@@ -462,7 +465,7 @@ body {
 }
 
 .feed-thinking-text {
-  color: var(--text-secondary);
+  color: var(--text);
   font-size: var(--text-sm);
   font-style: italic;
   font-family: 'Source Serif 4', serif;
@@ -727,7 +730,7 @@ body {
 /* ── Memory files / automation cards — hover lift ─── */
 
 .memory-file {
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-settle),
@@ -735,6 +738,7 @@ body {
               transform var(--dur-fast) var(--ease-settle);
   font-family: 'JetBrains Mono', monospace;
   font-size: var(--text-sm);
+  line-height: 1.3;
 }
 
 .memory-file:hover {

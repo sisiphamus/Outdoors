@@ -329,13 +329,19 @@ function handleLogEntry(entry, isHistory) {
       setStatus('connected', 'Connected');
       // Only clear disconnect flag after stable connection (10s)
       if (window._waDisconnectTimer) clearTimeout(window._waDisconnectTimer);
-      window._waDisconnectTimer = setTimeout(() => { window._waDisconnectShown = false; }, 10000);
+      window._waDisconnectTimer = setTimeout(() => {
+        window._waDisconnectShown = false;
+        window._waDisconnectEntry = null;
+      }, 10000);
       break;
     case 'disconnected':
-      // Show once, don't repeat until a successful reconnection clears the flag
+      // Show once; on repeat disconnects, just refresh the timestamp on the existing entry
       if (!window._waDisconnectShown) {
-        addFeedEntry('info', 'WhatsApp disconnected. Reconnecting...');
+        window._waDisconnectEntry = addFeedEntry('info', 'WhatsApp disconnected. Reconnecting...');
         window._waDisconnectShown = true;
+      } else if (window._waDisconnectEntry) {
+        const timeEl = window._waDisconnectEntry.querySelector('.feed-time');
+        if (timeEl) timeEl.textContent = now();
       }
       break;
     case 'qr':
@@ -417,6 +423,7 @@ function addFeedEntry(type, text) {
   else entry.innerHTML = '<span class="feed-time">' + time + '</span><span class="feed-text">' + esc(text) + '</span>';
   feed.appendChild(entry);
   feed.scrollTop = feed.scrollHeight;
+  return entry;
 }
 
 function addFeedEntryDev(type, text) {

@@ -354,6 +354,49 @@ function unregisterStartup(appName) {
   }
 }
 
+// ── iMessage Helpers (macOS only) ────────────────────────────────────────────
+
+/**
+ * Path to the iMessage SQLite database.
+ */
+function getIMessageDbPath() {
+  if (!IS_MAC) return null;
+  return path.join(process.env.HOME || '', 'Library', 'Messages', 'chat.db');
+}
+
+/**
+ * Check if Messages.app is signed in and the iMessage database exists.
+ */
+function isIMessageAvailable() {
+  if (!IS_MAC) return false;
+  const dbPath = getIMessageDbPath();
+  return dbPath && fs.existsSync(dbPath);
+}
+
+/**
+ * Check if the app has Full Disk Access (required to read chat.db on macOS 10.14+).
+ * Tests by attempting to read the first byte of chat.db.
+ */
+function hasFullDiskAccess() {
+  if (!IS_MAC) return false;
+  const dbPath = getIMessageDbPath();
+  if (!dbPath) return false;
+  try {
+    const fd = fs.openSync(dbPath, 'r');
+    fs.closeSync(fd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get the messaging transport type for the current platform.
+ */
+function getMessagingTransport() {
+  return IS_MAC ? 'imessage' : 'whatsapp';
+}
+
 module.exports = {
   IS_WIN,
   IS_MAC,
@@ -373,4 +416,8 @@ module.exports = {
   openTerminalWithCommand,
   registerStartup,
   unregisterStartup,
+  getIMessageDbPath,
+  isIMessageAvailable,
+  hasFullDiskAccess,
+  getMessagingTransport,
 };
