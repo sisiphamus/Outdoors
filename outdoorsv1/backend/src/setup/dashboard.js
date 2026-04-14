@@ -70,6 +70,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSettings();
   initOnboardingBar();
   initCodexAuthCheck();
+
+  try {
+    const version = await window.electronAPI.getAppVersion();
+    const el = document.getElementById('app-version');
+    if (el && version) el.textContent = 'v' + version;
+  } catch {}
 });
 
 // ---------------------------------------------------------------------------
