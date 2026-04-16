@@ -136,7 +136,9 @@ async function bumpGlobalCost(kv, deltaUsd) {
 }
 
 function computeCost(model, usage) {
-  const p = PRICING[model];
+  // Normalize model names: "claude-haiku-4-5-20251001" → "claude-haiku-4-5"
+  const base = model.replace(/-\d{8}$/, '');
+  const p = PRICING[base];
   if (!p) return 0; // unknown model — don't meter, but don't error either
   const input = (usage.input_tokens || 0) / 1_000_000 * p.input;
   const cacheRead = (usage.cache_read_input_tokens || 0) / 1_000_000 * p.cacheRead;
