@@ -1,4 +1,4 @@
-// Outdoors Telemetry Worker — receives anonymous usage stats, stores in D1.
+// Chiefton Telemetry Worker — receives anonymous usage stats, stores in D1.
 // POST /v1/report — ingest telemetry
 // GET /dashboard — password-protected usage dashboard
 
@@ -167,7 +167,7 @@ export default {
       }
     }
 
-    return new Response('Outdoors Telemetry', { status: 200 });
+    return new Response('Chiefton Telemetry', { status: 200 });
   },
 };
 
@@ -188,7 +188,7 @@ function renderDashboard(totals, buckets, messages, bugs, period, pw) {
 <html><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Outdoors Telemetry</title>
+<title>Chiefton Telemetry</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; padding: 24px; max-width: 900px; margin: 0 auto; }
@@ -215,7 +215,7 @@ function renderDashboard(totals, buckets, messages, bugs, period, pw) {
   .chart-title { font-size: 11px; color: #555; margin-top: -8px; margin-bottom: 16px; text-align: center; font-variant-numeric: tabular-nums; }
 </style>
 </head><body>
-<h1>Outdoors Telemetry</h1>
+<h1>Chiefton Telemetry</h1>
 
 <div class="cards">
   <div class="card"><div class="card-value">${t.total_tasks || 0}</div><div class="card-label">Total Tasks</div></div>

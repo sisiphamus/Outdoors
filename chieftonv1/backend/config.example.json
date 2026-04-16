@@ -1,0 +1,17 @@
+{
+  "port": 3847,
+  "allowedNumbers": [
+    "1XXXXXXXXXX"
+  ],
+  "allowAllNumbers": false,
+  "codexCommand": "codex",
+  "codexArgs": [
+    "exec"
+  ],
+  "maxResponseLength": 4000,
+  "messageTimeout": 120000,
+  "rateLimitPerMinute": 10,
+  "workingDirectory": "C:/path/to/your/workspace",
+  "codeWorkingDirectory": "C:/path/to/your/workspace",
+  "prefix": "!chiefton "
+}

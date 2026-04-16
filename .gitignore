@@ -26,17 +26,17 @@ nul
 # Workspace artifacts: keep folder shells, ignore contents
 bot/outputs/**
 !bot/outputs/.gitkeep
-outdoorsv1/backend/bot/logs/**
-!outdoorsv1/backend/bot/logs/.gitkeep
-outdoorsv1/backend/bot/memory/knowledge/**
-!outdoorsv1/backend/bot/memory/knowledge/.gitkeep
-outdoorsv1/backend/bot/memory/preferences/**
-!outdoorsv1/backend/bot/memory/preferences/.gitkeep
+chieftonv1/backend/bot/logs/**
+!chieftonv1/backend/bot/logs/.gitkeep
+chieftonv1/backend/bot/memory/knowledge/**
+!chieftonv1/backend/bot/memory/knowledge/.gitkeep
+chieftonv1/backend/bot/memory/preferences/**
+!chieftonv1/backend/bot/memory/preferences/.gitkeep
 
 # Personal data - conversations, chat sessions, user profile
-outdoorsv1/backend/bot/memory/conversations.json
-outdoorsv1/backend/bot/memory/chat-sessions.json
-outdoorsv1/backend/bot/memory/wa-chat-sessions.json
+chieftonv1/backend/bot/memory/conversations.json
+chieftonv1/backend/bot/memory/chat-sessions.json
+chieftonv1/backend/bot/memory/wa-chat-sessions.json
 
 # Claude project memory (personal)
 .claude/

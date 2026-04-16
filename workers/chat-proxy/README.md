@@ -1,6 +1,6 @@
-# outdoors-chat
+# chiefton-chat
 
-Cloudflare Worker that proxies Outdoors app → Anthropic API. Holds the real `sk-ant-…` key so the desktop app never does.
+Cloudflare Worker that proxies Chiefton app → Anthropic API. Holds the real `sk-ant-…` key so the desktop app never does.
 
 ## Setup (one time)
 
@@ -9,15 +9,15 @@ cd workers/chat-proxy
 npx wrangler login
 
 # Create the KV namespace for quota tracking
-npx wrangler kv namespace create outdoors-chat-quota
+npx wrangler kv namespace create chiefton-chat-quota
 # Paste the returned id into wrangler.toml under [[kv_namespaces]]
 
-# Set secrets (shared JWT_SECRET must match the one in outdoors-referral)
+# Set secrets (shared JWT_SECRET must match the one in chiefton-referral)
 npx wrangler secret put ANTHROPIC_API_KEY
 npx wrangler secret put JWT_SECRET
 ```
 
-The same `JWT_SECRET` must be set on `outdoors-referral` (the token issuer) — the proxy uses it to verify tokens the referral worker signs.
+The same `JWT_SECRET` must be set on `chiefton-referral` (the token issuer) — the proxy uses it to verify tokens the referral worker signs.
 
 ```bash
 cd ../referral-api
@@ -31,16 +31,16 @@ cd workers/chat-proxy
 npx wrangler deploy
 ```
 
-Default URL: `https://outdoors-chat.<your-subdomain>.workers.dev`. The app points at `outdoors-chat.towneradamm.workers.dev`; if that changes, update `PROXY_URL` in [anthropic-client.js](../../outdoorsv1/backend/src/agent/anthropic-client.js).
+Default URL: `https://chiefton-chat.<your-subdomain>.workers.dev`. The app points at `chiefton-chat.towneradamm.workers.dev`; if that changes, update `PROXY_URL` in [anthropic-client.js](../../chieftonv1/backend/src/agent/anthropic-client.js).
 
 ## Test
 
 ```bash
 # Health check — no auth needed
-curl https://outdoors-chat.towneradamm.workers.dev/health
+curl https://chiefton-chat.towneradamm.workers.dev/health
 
 # From the backend: full pipeline
-cd outdoorsv1/backend
+cd chieftonv1/backend
 node src/agent/smoke-test.js
 ```
 

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chiefton</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="motion.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles-polish.css">
+  <script defer src="motion.js"></script>
+</head>
+<body>
+  <div class="wizard">
+
+    <!-- Page 0: Welcome -->
+    <div class="page active" data-page="0">
+      <div class="page-content welcome">
+        <p class="welcome-label">Welcome to</p>
+        <h1 class="brand">Chiefton</h1>
+        <p class="tagline">Stop working, start living.</p>
+        <p class="description">
+          You text an agent that lives in your computer.
+          No need for special keys, tracking your passwords, your agent uses your computer the way you do.
+        </p>
+        <button class="btn-primary" id="btn-begin">Begin Setup</button>
+      </div>
+    </div>
+
+    <!-- Page 2: Installing Dependencies -->
+    <div class="page" data-page="1">
+      <div class="page-content">
+        <h2>Setting things up</h2>
+        <p class="subtitle">Installing what Chiefton needs to run. This only happens once.</p>
+        <div class="install-checklist">
+          <div class="install-item" id="install-system-deps">
+            <div class="install-icon"><div class="spinner-small"></div></div>
+            <div class="install-label">System tools (Node.js, Git, Python)</div>
+          </div>
+          <div class="install-item" id="install-node-deps">
+            <div class="install-icon waiting-icon"></div>
+            <div class="install-label">Node.js dependencies</div>
+          </div>
+          <div class="install-item" id="install-codex-cli">
+            <div class="install-icon waiting-icon"></div>
+            <div class="install-label">Codex CLI</div>
+          </div>
+          <div class="install-item" id="install-python">
+            <div class="install-icon waiting-icon"></div>
+            <div class="install-label">Python ML packages</div>
+          </div>
+        </div>
+        <p class="install-status" id="install-status">Checking system tools...</p>
+      </div>
+    </div>
+
+    <!-- Page 3: Codex Authentication -->
+    <div class="page" data-page="2">
+      <div class="page-content">
+        <h2>Sign in to Codex</h2>
+        <p class="subtitle">
+          Chiefton uses OpenAI Codex to understand and act on your requests.
+          Sign in with your school email to get free usage. Codex handles the AI behind the scenes.
+        </p>
+        <div class="auth-container">
+          <div id="auth-checking" class="auth-state">
+            <div class="spinner"></div>
+            <p class="auth-status-text">Checking authentication...</p>
+          </div>
+          <div id="auth-choice" class="auth-state hidden">
+            <p class="auth-hint" style="margin-bottom:14px">Are you a student?</p>
+            <button class="btn-primary" id="btn-student" style="width:100%;margin-bottom:10px">I'm a Student (currently $100 in free usage)</button>
+            <button class="btn-secondary" id="btn-non-student" style="width:100%">I'm Not a Student</button>
+          </div>
+          <div id="auth-student-signup" class="auth-state hidden">
+            <p class="auth-hint" style="margin-bottom:12px">Sign up for free Codex usage on OpenAI's student page:</p>
+            <button class="btn-primary" id="btn-codex-signup" style="width:100%;margin-bottom:14px">Open Student Signup</button>
+            <p class="auth-hint" style="margin-bottom:8px">After signing up, come back here and sign in:</p>
+            <button class="btn-primary" id="btn-auth" style="width:100%">Sign in to Codex</button>
+          </div>
+          <div id="auth-signup" class="auth-state hidden">
+            <p class="auth-hint" style="margin-bottom:12px">Sign in with your ChatGPT account:</p>
+            <button class="btn-primary" id="btn-auth-direct" style="width:100%">Sign in to Codex</button>
+          </div>
+          <div id="auth-needed" class="auth-state hidden">
+            <button class="btn-primary" id="btn-auth-retry">Sign in to Codex</button>
+            <p class="auth-hint">Opens your browser to sign in with your ChatGPT account.</p>
+          </div>
+          <div id="auth-waiting" class="auth-state hidden">
+            <div class="spinner"></div>
+            <p class="auth-status-text" id="auth-waiting-text">Opening Codex login...</p>
+            <p class="auth-hint">Complete sign-in in your browser.<br>This page will advance automatically.</p>
+          </div>
+          <div id="auth-success" class="auth-state hidden">
+            <div class="complete-mark small-mark"></div>
+            <p class="auth-status-text">Signed in</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Page 4: Connect (Browser + Google merged) -->
+    <div class="page" data-page="3">
+      <div class="page-content">
+        <h2>Connect your accounts</h2>
+        <p class="subtitle">
+          Chiefton uses your browser and Google services to act on your behalf.
+          You'll set up Chrome and sign in to Google in one step.
+        </p>
+
+        <!-- Step 1: Set up Chrome button -->
+        <div id="connect-start">
+          <button class="btn-primary" id="btn-setup-chrome">Set Up Chrome</button>
+          <p class="auth-hint" style="margin-top: 12px;">
+            Already set up? <a href="#" id="btn-skip-connect" style="color: var(--accent); text-decoration: underline; cursor: pointer;">Skip this step</a>
+          </p>
+        </div>
+
+        <!-- Detecting Chrome -->
+        <div id="connect-detecting" class="browser-status hidden">
+          <div class="spinner-small"></div>
+          <p class="browser-status-text">Detecting Chrome...</p>
+        </div>
+
+        <!-- Chrome not found -->
+        <div id="connect-not-found" class="hidden">
+          <p class="error-text">Chrome not found. Please install Google Chrome first.</p>
+          <p class="auth-hint">Download from <a href="https://www.google.com/chrome/" target="_blank">google.com/chrome</a></p>
+        </div>
+
+        <!-- Profile selection -->
+        <div id="connect-profiles" class="hidden">
+          <p class="profile-label">Select which Chrome profile to use as the base:</p>
+          <select id="profile-select" class="profile-select"></select>
+          <p class="auth-hint">Chiefton will create a separate automation profile from this one.</p>
+          <button class="btn-primary" id="btn-confirm-profile">Use This Profile</button>
+        </div>
+
+        <!-- Copying profile -->
+        <div id="connect-copying" class="browser-status hidden">
+          <div class="spinner-small"></div>
+          <p class="browser-status-text">Creating automation profile...</p>
+        </div>
+
+        <!-- Service selection (shown after profile is created) -->
+        <div id="connect-services" class="hidden">
+          <p class="auth-hint" style="margin-bottom:8px">Gmail, Calendar, and Contacts are always included.</p>
+          <p class="auth-hint" style="margin-bottom:12px">Select any additional services:</p>
+          <div class="service-list">
+            <label class="service-item"><input type="checkbox" value="drive" checked><span class="service-name">Drive</span><span class="service-desc">Access and manage files</span></label>
+            <label class="service-item"><input type="checkbox" value="docs"><span class="service-name">Docs</span><span class="service-desc">Read and edit documents</span></label>
+            <label class="service-item"><input type="checkbox" value="sheets"><span class="service-name">Sheets</span><span class="service-desc">Read and edit spreadsheets</span></label>
+            <label class="service-item"><input type="checkbox" value="slides"><span class="service-name">Slides</span><span class="service-desc">Read and edit presentations</span></label>
+            <label class="service-item"><input type="checkbox" value="tasks"><span class="service-name">Tasks</span><span class="service-desc">Manage your task lists</span></label>
+            <label class="service-item"><input type="checkbox" value="forms"><span class="service-name">Forms</span><span class="service-desc">Create and read forms</span></label>
+            <label class="service-item"><input type="checkbox" value="search"><span class="service-name">Search</span><span class="service-desc">Custom search engine</span></label>
+          </div>
+          <button class="btn-primary" id="btn-start-auth">Continue</button>
+        </div>
+
+        <!-- Waiting for sign-in + consent -->
+        <div id="connect-waiting" class="browser-status hidden">
+          <div class="spinner-small"></div>
+          <p class="browser-status-text" id="connect-waiting-text">Opening Google sign-in...</p>
+        </div>
+
+        <!-- Success -->
+        <div id="connect-success" class="browser-status hidden">
+          <div class="complete-mark small-mark"></div>
+          <p class="browser-status-text">Connected <span id="connect-email"></span></p>
+        </div>
+
+        <!-- Onboarding scan -->
+        <div id="connect-onboarding" class="hidden">
+          <div class="spinner-small"></div>
+          <p class="onboarding-title">Personalizing Chiefton...</p>
+          <p class="browser-status-text" id="onboarding-status">Starting scan...</p>
+          <div class="onboarding-progress">
+            <div class="onboarding-bar" id="onboarding-bar"></div>
+          </div>
+          <button class="btn-primary" id="btn-skip-onboarding">Next - Will continue in the background</button>
+        </div>
+
+        <!-- Error -->
+        <div id="connect-error" class="hidden">
+          <p class="error-text" id="connect-error-text"></p>
+          <button class="btn-skip" id="btn-retry-connect">Try again</button>
+        </div>
+
+        <!-- No OAuth creds configured -->
+        <div id="connect-no-creds" class="hidden">
+          <p class="auth-hint">Google integration not configured. You can set it up later.</p>
+          <button class="btn-primary" id="btn-skip-connect-nocreds">Continue</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Page 5: WhatsApp Setup -->
+    <div class="page" data-page="4">
+      <div class="page-content">
+        <h2>Connect WhatsApp</h2>
+        <p class="subtitle">
+          Chiefton lives in a WhatsApp group on your phone.
+        </p>
+
+        <div id="wa-starting" class="browser-status">
+          <div class="spinner-small"></div>
+          <p class="browser-status-text" id="wa-starting-text">Starting backend...</p>
+        </div>
+
+        <div id="wa-qr" class="hidden">
+          <div class="whatsapp-steps">
+            <div class="whatsapp-step">
+              <p class="step-label">1. Open <strong>WhatsApp</strong> on your phone</p>
+              <p class="step-label">2. Go to <strong>Linked Devices</strong> → <strong>Link a Device</strong></p>
+              <p class="step-label">3. Scan the QR code below</p>
+            </div>
+          </div>
+          <div class="qr-container">
+            <img id="wa-qr-img" alt="WhatsApp QR Code" />
+          </div>
+          <p class="auth-hint" id="wa-qr-hint">Waiting for you to scan...</p>
+        </div>
+
+        <div id="wa-connected" class="browser-status hidden">
+          <div class="complete-mark small-mark"></div>
+          <p class="browser-status-text">WhatsApp connected!</p>
+        </div>
+
+        <div id="wa-error" class="hidden">
+          <p class="error-text" id="wa-error-text">Backend failed to start.</p>
+          <button class="btn-primary" id="btn-retry-wa" style="margin-top:12px">Retry</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Page 6: Complete -->
+    <div class="page" data-page="5">
+      <div class="page-content complete-page">
+        <div class="complete-mark"></div>
+        <h2>You're all set.</h2>
+        <p class="subtitle">
+          Chiefton is now running quietly in the background.
+        </p>
+        <p class="complete-instruction">
+          Send a message to your Chiefton WhatsApp group to get started.
+          That's it. No apps to open, no windows to manage.
+        </p>
+        <div class="complete-commands">
+          <p class="commands-label">How to chat</p>
+          <div class="command-row"><code>1</code><span>Start conversation #1</span></div>
+          <div class="command-row"><code>1 pause</code><span>Pause conversation #1</span></div>
+          <div class="command-row"><code>1 new</code><span>End conversation #1</span></div>
+          <div class="command-row"><code>2</code><span>Start a second conversation</span></div>
+        </div>
+        <button class="btn-primary" id="btn-close">Next &rarr;</button>
+      </div>
+    </div>
+
+    <!-- Progress dots -->
+    <div class="progress-dots" id="progress-dots">
+      <span class="dot active" data-dot="0"></span>
+      <span class="dot" data-dot="1"></span>
+      <span class="dot" data-dot="2"></span>
+      <span class="dot" data-dot="3"></span>
+      <span class="dot" data-dot="4"></span>
+      <span class="dot" data-dot="5"></span>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

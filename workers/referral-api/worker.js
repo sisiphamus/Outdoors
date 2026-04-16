@@ -1,7 +1,7 @@
-// Outdoors Invite System — Cloudflare Worker
+// Chiefton Invite System — Cloudflare Worker
 // Pure text-code flow: user A generates an 8-char code in their app,
 // shares it with user B by any channel, user B enters it on first
-// launch of their Outdoors install. Each code is single-use.
+// launch of their Chiefton install. Each code is single-use.
 //
 // This worker intentionally has NO coupling to the marketing website.
 // It does not return download URLs or landing-page links — just codes.
@@ -16,7 +16,7 @@
 //   POST /api/claim               — new user enters a code on first launch
 //   POST /api/validate-key        — app re-validates saved key on startup
 //   POST /api/admin/seed          — admin-only bulk code generation
-//   POST /api/issue-device-token  — issues a JWT the app uses to call outdoors-chat
+//   POST /api/issue-device-token  — issues a JWT the app uses to call chiefton-chat
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -88,7 +88,7 @@ export default {
     // the app or the website; only visible to anyone poking at the URL.
     if (path === '/' || path === '') {
       return new Response(
-        'Outdoors invite API. Endpoints: /api/create-invite /api/claim /api/validate-key',
+        'Chiefton invite API. Endpoints: /api/create-invite /api/claim /api/validate-key',
         { headers: { 'Content-Type': 'text/plain', ...CORS } }
       );
     }
@@ -170,9 +170,9 @@ export default {
     }
 
     // ── POST /api/issue-device-token — mint a JWT for chat-proxy access ─
-    // The Outdoors app calls this once on first launch, then refreshes
+    // The Chiefton app calls this once on first launch, then refreshes
     // ~7 days before expiry. The returned JWT is the credential for
-    // outdoors-chat. No personal data in claims; deviceId is a client-
+    // chiefton-chat. No personal data in claims; deviceId is a client-
     // generated UUID.
     if (path === '/api/issue-device-token' && request.method === 'POST') {
       if (!env.JWT_SECRET) return json({ error: 'Server misconfigured' }, 500);

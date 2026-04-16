@@ -1,8 +1,8 @@
-// Outdoors Chat Proxy — Cloudflare Worker
+// Chiefton Chat Proxy — Cloudflare Worker
 //
-// Sits between the Outdoors desktop app and api.anthropic.com so the app
+// Sits between the Chiefton desktop app and api.anthropic.com so the app
 // never holds the real Anthropic API key. The app authenticates with a
-// device JWT (issued by outdoors-referral), this worker verifies the JWT,
+// device JWT (issued by chiefton-referral), this worker verifies the JWT,
 // enforces per-device quotas, and forwards the request with the real key.
 //
 // What this worker does NOT do:
@@ -16,7 +16,7 @@
 //
 // Secrets (set via `wrangler secret put`):
 //   ANTHROPIC_API_KEY   — sk-ant-…
-//   JWT_SECRET          — HMAC secret, shared with outdoors-referral
+//   JWT_SECRET          — HMAC secret, shared with chiefton-referral
 //
 // Endpoints:
 //   POST /v1/messages   — forwards to api.anthropic.com/v1/messages

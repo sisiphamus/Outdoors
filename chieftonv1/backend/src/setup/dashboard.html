@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chiefton</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="motion.css">
+  <link rel="stylesheet" href="dashboard.css">
+  <link rel="stylesheet" href="dashboard-polish.css">
+  <script defer src="motion.js"></script>
+</head>
+<body>
+  <!-- Custom titlebar -->
+  <div class="titlebar">
+    <div class="titlebar-drag">
+      <span class="titlebar-brand">Chiefton</span>
+      <span class="titlebar-status" id="status-indicator">
+        <span class="status-dot"></span>
+        <span class="status-text" id="status-text">Connecting...</span>
+      </span>
+      <button class="power-btn on" id="btn-power" title="Shut down Chiefton">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M7.5 1v7h1V1h-1z"/>
+          <path d="M3.904 3.404a.5.5 0 00-.707.707 6 6 0 109.606 0 .5.5 0 10-.707-.707 5 5 0 11-8.192 0z"/>
+        </svg>
+      </button>
+      <div class="onboarding-bar-container hidden" id="onboarding-bar-container" title="Onboarding scan 0% complete">
+        <div class="onboarding-bar-fill" id="onboarding-bar-fill"></div>
+      </div>
+    </div>
+    <div class="titlebar-actions">
+      <button class="titlebar-btn" id="btn-log-mode" title="Toggle Dev/Simple logs" style="font-size:11px;font-family:inherit;min-width:52px;">Simple</button>
+      <button class="titlebar-btn" id="btn-settings" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 4.754a3.246 3.246 0 100 6.492 3.246 3.246 0 000-6.492zM5.754 8a2.246 2.246 0 114.492 0 2.246 2.246 0 01-4.492 0z"/>
+          <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 01-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 01-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 01.52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 011.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 011.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 01.52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 01-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 01-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 002.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 001.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 00-1.115 2.693l.16.291c.415.764-.421 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 00-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 00-2.692-1.115l-.292.16c-.764.415-1.6-.421-1.184-1.185l.159-.291A1.873 1.873 0 001.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 003.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 002.692-1.115l.094-.319z"/>
+        </svg>
+      </button>
+      <button class="titlebar-btn" id="btn-minimize" title="Minimize">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M4 8h8v1H4z"/>
+        </svg>
+      </button>
+      <button class="titlebar-btn titlebar-btn-close" id="btn-close" title="Close to tray">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Auth warning banner — shown when Codex token is expired or expiring soon -->
+  <div class="auth-warning hidden" id="auth-warning">
+    <span class="auth-warning-text" id="auth-warning-text">Your AI login has expired.</span>
+    <button class="auth-warning-btn" id="btn-reauth">Re-authenticate</button>
+  </div>
+
+  <!-- Main content -->
+  <div class="main-content">
+    <button class="jump-top-btn hidden" id="btn-jump-top" title="Scroll to oldest logs">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10V2M2 6l4-4 4 4"/></svg>
+      <span>Top</span>
+    </button>
+    <div class="feed" id="feed">
+      <div class="feed-welcome" id="feed-welcome">
+        <p class="feed-welcome-title">Chiefton is running</p>
+        <p class="feed-welcome-text">Send a message below or via your Chiefton WhatsApp group.</p>
+        <p class="feed-welcome-hint">Activity will appear here as tasks are processed.</p>
+      </div>
+    </div>
+    <div class="chat-input-bar">
+      <input type="text" id="chat-input" placeholder="Send a message... (e.g. 3 build a website)" autocomplete="off" />
+      <button id="chat-send-btn" title="Send">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5l6 6h-4v7H6v-7H2l6-6z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Settings overlay -->
+  <div class="settings-overlay hidden" id="settings-overlay">
+    <div class="settings-panel">
+      <div class="settings-header">
+        <h2>Settings</h2>
+        <button class="settings-close" id="btn-settings-close">&times;</button>
+      </div>
+      <div class="settings-body">
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-tab="memory">Memory</button>
+          <button class="settings-tab" data-tab="general">General</button>
+          <button class="settings-tab" data-tab="automations">Automations</button>
+          <button class="settings-tab" data-tab="outputs">Projects</button>
+          <button class="settings-tab" data-tab="support">Support</button>
+        </div>
+
+        <!-- Memory tab -->
+        <div class="settings-content" id="tab-memory">
+          <div class="memory-editor">
+            <div class="memory-sidebar" id="memory-tree"></div>
+            <div class="memory-edit-area">
+              <div class="memory-edit-header">
+                <span class="memory-filename" id="memory-filename">Select a file</span>
+                <div class="memory-edit-actions">
+                  <button class="btn-toggle-preview hidden" id="btn-toggle-preview">Edit</button>
+                  <button class="btn-save hidden" id="btn-save-memory">Save</button>
+                </div>
+              </div>
+              <textarea class="memory-textarea" id="memory-content" placeholder="Select a file from the tree to edit..." disabled></textarea>
+              <div class="memory-preview hidden" id="memory-preview"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- General tab -->
+        <div class="settings-content hidden" id="tab-general">
+          <div class="settings-form">
+            <div class="form-group">
+              <label>Rate Limit (requests/min)</label>
+              <input type="number" id="cfg-rate-limit" value="10" min="1" max="100">
+            </div>
+            <div class="form-group">
+              <label>Max Response Length</label>
+              <input type="number" id="cfg-max-response" value="4000" min="500" max="50000">
+            </div>
+            <div class="form-group">
+              <label>Message Timeout (seconds)</label>
+              <input type="number" id="cfg-timeout" value="300" min="30" max="3600">
+            </div>
+            <button class="btn-primary" id="btn-save-config">Save Settings</button>
+            <hr class="settings-divider">
+            <div class="form-group">
+              <label>WhatsApp</label>
+              <p class="form-hint">Disconnect and scan a new QR code to link a different phone.</p>
+              <button class="btn-secondary" id="btn-reconnect-wa">Reconnect WhatsApp</button>
+              <div class="wa-qr-inline hidden" id="wa-qr-inline">
+                <img id="wa-qr-inline-img" alt="WhatsApp QR Code" />
+                <p class="form-hint">Scan with WhatsApp → Linked Devices → Link a Device</p>
+              </div>
+            </div>
+            <hr class="settings-divider">
+            <p class="settings-version">Chiefton <span id="app-version">—</span></p>
+          </div>
+        </div>
+
+        <!-- Automations tab -->
+        <div class="settings-content hidden" id="tab-automations">
+          <div class="automations-container" id="automations-view">
+            <div class="automations-header">
+              <p class="automations-note">Automations only fire while Chiefton is running.</p>
+              <button class="btn-primary btn-small" id="btn-add-automation">+ Add Automation</button>
+            </div>
+            <div class="automations-list" id="automations-list"></div>
+          </div>
+          <div class="automation-form hidden" id="automation-form">
+            <div class="automation-form-header">
+              <h3 id="automation-form-title">New Automation</h3>
+              <button class="settings-close" id="btn-automation-cancel">&times;</button>
+            </div>
+            <div class="settings-form">
+              <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="tf-name" placeholder="e.g. Morning briefing">
+              </div>
+              <div class="form-group">
+                <label>Prompt</label>
+                <textarea id="tf-prompt" class="automation-prompt-input" rows="3" placeholder="The message to send to the bot..."></textarea>
+              </div>
+              <div class="form-group">
+                <label>Trigger</label>
+                <select id="tf-type">
+                  <option value="interval">Repeat on interval</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="once">One time</option>
+                  <option value="email">When email arrives from...</option>
+                </select>
+              </div>
+              <div class="automation-schedule-fields">
+                <div class="form-group" id="tf-interval-group">
+                  <label>Every</label>
+                  <div class="automation-inline">
+                    <input type="number" id="tf-interval-value" value="1" min="1">
+                    <select id="tf-interval-unit">
+                      <option value="minutes">minutes</option>
+                      <option value="hours">hours</option>
+                      <option value="days" selected>days</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-group hidden" id="tf-time-group">
+                  <label>Time</label>
+                  <input type="time" id="tf-time" value="09:00">
+                </div>
+                <div class="form-group hidden" id="tf-day-group">
+                  <label>Day of week</label>
+                  <select id="tf-day">
+                    <option value="0">Sunday</option>
+                    <option value="1" selected>Monday</option>
+                    <option value="2">Tuesday</option>
+                    <option value="3">Wednesday</option>
+                    <option value="4">Thursday</option>
+                    <option value="5">Friday</option>
+                    <option value="6">Saturday</option>
+                  </select>
+                </div>
+                <div class="form-group hidden" id="tf-datetime-group">
+                  <label>Date & Time</label>
+                  <input type="datetime-local" id="tf-datetime">
+                </div>
+                <div class="form-group hidden" id="tf-email-group">
+                  <label>From address</label>
+                  <input type="email" id="tf-email-from" placeholder="sender@example.com">
+                </div>
+              </div>
+              <div class="automation-form-actions">
+                <button class="btn-secondary" id="btn-automation-form-cancel">Cancel</button>
+                <button class="btn-primary" id="btn-automation-save">Save Automation</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Projects tab -->
+        <div class="settings-content hidden" id="tab-outputs">
+          <div class="memory-editor">
+            <div class="memory-sidebar" id="outputs-tree">
+            </div>
+            <div class="memory-edit-area">
+              <div class="memory-edit-header">
+                <span class="memory-filename" id="outputs-filename">Select a file</span>
+                <div class="output-actions">
+                  <button class="project-btn project-btn-upload" id="btn-add-project-file" title="Upload existing files from your computer">Upload File</button>
+                  <button class="project-btn project-btn-create" id="btn-new-project-file" title="Create a blank text file to write in">Create Note</button>
+                  <button class="project-btn project-btn-save hidden" id="btn-save-output">Save</button>
+                  <button class="project-btn project-btn-delete hidden" id="btn-delete-output">Delete</button>
+                  <button class="project-btn project-btn-open hidden" id="btn-open-output">Open</button>
+                </div>
+              </div>
+              <textarea class="memory-textarea" id="outputs-content" placeholder="Select a file to view..." disabled></textarea>
+              <div class="media-preview hidden" id="outputs-media">
+                <img id="outputs-media-img" class="hidden" />
+                <video id="outputs-media-video" class="hidden" controls></video>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Analytics tab -->
+        <div class="settings-content hidden" id="tab-analytics">
+          <div class="analytics-container">
+            <div class="analytics-period">
+              <select id="analytics-days">
+                <option value="7">Last 7 days</option>
+                <option value="14">Last 14 days</option>
+                <option value="30" selected>Last 30 days</option>
+                <option value="90">Last 90 days</option>
+              </select>
+              <button class="project-btn" id="btn-refresh-analytics">Refresh</button>
+            </div>
+            <div class="analytics-cards" id="analytics-cards">
+              <div class="analytics-card"><div class="card-value" id="stat-messages">—</div><div class="card-label">Messages</div></div>
+              <div class="analytics-card"><div class="card-value" id="stat-cost">—</div><div class="card-label">Total Cost</div></div>
+              <div class="analytics-card"><div class="card-value" id="stat-avg-time">—</div><div class="card-label">Avg Response</div></div>
+              <div class="analytics-card"><div class="card-value" id="stat-tokens">—</div><div class="card-label">Tokens Used</div></div>
+              <div class="analytics-card"><div class="card-value" id="stat-errors">—</div><div class="card-label">Errors</div></div>
+              <div class="analytics-card"><div class="card-value" id="stat-platform">—</div><div class="card-label">WA / Web</div></div>
+            </div>
+            <div class="analytics-section">
+              <h3>Daily Activity</h3>
+              <div class="analytics-chart" id="analytics-daily-chart"></div>
+            </div>
+            <div class="analytics-row">
+              <div class="analytics-section analytics-half">
+                <h3>Top Tools</h3>
+                <div id="analytics-top-tools"></div>
+              </div>
+              <div class="analytics-section analytics-half">
+                <h3>Peak Hours</h3>
+                <div class="analytics-hours" id="analytics-peak-hours"></div>
+              </div>
+            </div>
+            <div class="analytics-section">
+              <h3>Top Senders</h3>
+              <div id="analytics-top-senders"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Support tab -->
+        <div class="settings-content hidden" id="tab-support">
+          <div class="support-form">
+            <div class="form-group">
+              <label>What's the issue?</label>
+              <input type="text" id="bug-title" placeholder="Brief title (e.g. 'WhatsApp QR code not loading')" maxlength="120" />
+            </div>
+            <div class="form-group">
+              <label>Details</label>
+              <textarea id="bug-description" rows="6" placeholder="What happened? What did you expect to happen?"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Severity</label>
+              <select id="bug-severity">
+                <option value="low">Low (cosmetic or minor)</option>
+                <option value="medium" selected>Medium (feature not working)</option>
+                <option value="high">High (app crashes or data loss)</option>
+              </select>
+            </div>
+            <div class="form-actions">
+              <button class="btn-primary" id="btn-submit-bug">Submit Bug Report</button>
+              <span class="form-hint" id="bug-status"></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Codex auth overlay -->
+  <div class="auth-overlay hidden" id="auth-overlay">
+    <div class="auth-overlay-content">
+      <h2>Sign in to Codex</h2>
+      <p>Chiefton needs an active Codex CLI session to work.</p>
+      <p>Run this in your terminal:</p>
+      <code class="auth-command">codex login</code>
+      <p class="auth-hint">This window will dismiss automatically once you're signed in.</p>
+    </div>
+  </div>
+
+  <div id="version-label" style="position:fixed;bottom:6px;left:10px;font-size:10px;color:rgba(154,139,120,0.35);pointer-events:none;z-index:1;font-family:inherit;"></div>
+  <script src="dashboard.js"></script>
+</body>
+</html>

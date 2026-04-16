@@ -21,36 +21,36 @@ jobs:
           node-version: 20
 
       - name: Write OAuth credentials
-        run: echo '${{ secrets.OAUTH_CREDS_JSON }}' > outdoorsv1/backend/oauth-creds.json
+        run: echo '${{ secrets.OAUTH_CREDS_JSON }}' > chieftonv1/backend/oauth-creds.json
 
       # ── Tests (before build — fast feedback) ─────────────────────
 
       - name: Install backend dependencies
-        working-directory: outdoorsv1/backend
+        working-directory: chieftonv1/backend
         run: npm install
 
       - name: Run unit tests
-        working-directory: outdoorsv1/backend
+        working-directory: chieftonv1/backend
         run: node --test tests/clarification-manager.test.js tests/message-handler.test.js tests/runtime-health.test.js
 
       - name: Run platform tests
-        working-directory: outdoorsv1/backend
+        working-directory: chieftonv1/backend
         run: node --test tests/platform.test.js
 
       # ── Build ────────────────────────────────────────────────────
 
       - name: Install Electron dependencies
-        working-directory: outdoorsv1/backend/electron
+        working-directory: chieftonv1/backend/electron
         run: npm install
 
       - name: Build and publish Windows installer
-        working-directory: outdoorsv1/backend/electron
+        working-directory: chieftonv1/backend/electron
         run: npm run build:win -- --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify no secrets in build output
-        working-directory: outdoorsv1/backend/electron
+        working-directory: chieftonv1/backend/electron
         shell: bash
         run: |
           set -e
@@ -68,7 +68,7 @@ jobs:
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Outdoors-Windows
+          name: Chiefton-Windows
           path: |
-            outdoorsv1/backend/electron/dist/*.exe
+            chieftonv1/backend/electron/dist/*.exe
           retention-days: 30

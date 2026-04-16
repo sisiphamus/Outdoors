@@ -21,39 +21,39 @@ jobs:
           node-version: 20
 
       - name: Write OAuth credentials
-        run: echo '${{ secrets.OAUTH_CREDS_JSON }}' > outdoorsv1/backend/oauth-creds.json
+        run: echo '${{ secrets.OAUTH_CREDS_JSON }}' > chieftonv1/backend/oauth-creds.json
 
       # ── Tests (before build — fast feedback) ─────────────────────
 
       - name: Install backend dependencies
-        working-directory: outdoorsv1/backend
+        working-directory: chieftonv1/backend
         run: npm install
 
       - name: Run unit tests
-        working-directory: outdoorsv1/backend
+        working-directory: chieftonv1/backend
         run: node --test tests/clarification-manager.test.js tests/message-handler.test.js tests/runtime-health.test.js
 
       - name: Run platform tests
-        working-directory: outdoorsv1/backend
+        working-directory: chieftonv1/backend
         run: node --test tests/platform.test.js
 
       - name: Run Mac integration tests
-        working-directory: outdoorsv1/backend
+        working-directory: chieftonv1/backend
         run: node --test tests/mac-integration.test.js
 
       - name: Run smoke test
-        working-directory: outdoorsv1/backend
+        working-directory: chieftonv1/backend
         run: node tests/e2e-check.js
         timeout-minutes: 2
 
       # ── Build ────────────────────────────────────────────────────
 
       - name: Install Electron dependencies
-        working-directory: outdoorsv1/backend/electron
+        working-directory: chieftonv1/backend/electron
         run: npm install
 
       - name: Build and publish macOS installer
-        working-directory: outdoorsv1/backend/electron
+        working-directory: chieftonv1/backend/electron
         run: npm run build:mac -- --publish always
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
@@ -62,7 +62,7 @@ jobs:
       # ── Post-build: verify build output ──────────────────────────
 
       - name: Verify DMG and app bundle
-        working-directory: outdoorsv1/backend/electron
+        working-directory: chieftonv1/backend/electron
         run: |
           set -e
 
@@ -76,9 +76,9 @@ jobs:
           echo "DMG: $DMG_FILE ($(du -h "$DMG_FILE" | cut -f1))"
 
           # Verify the unpacked .app in the build directory
-          APP_DIR=$(find dist -name "Outdoors.app" -maxdepth 3 | head -1)
+          APP_DIR=$(find dist -name "Chiefton.app" -maxdepth 3 | head -1)
           if [ -z "$APP_DIR" ]; then
-            echo "FAIL: Outdoors.app not found in build output"
+            echo "FAIL: Chiefton.app not found in build output"
             exit 1
           fi
           echo "App: $APP_DIR"
@@ -102,8 +102,8 @@ jobs:
           test -f "$RESOURCES/project/src/setup/index.html" || { echo "FAIL: setup wizard HTML missing"; exit 1; }
           test -f "$RESOURCES/project/src/setup/renderer.js" || { echo "FAIL: setup renderer missing"; exit 1; }
 
-          # Verify outdoorsv4 pipeline
-          test -f "$RESOURCES/outdoorsv4/index.js" || { echo "FAIL: outdoorsv4/index.js missing"; exit 1; }
+          # Verify chieftonv4 pipeline
+          test -f "$RESOURCES/chieftonv4/index.js" || { echo "FAIL: chieftonv4/index.js missing"; exit 1; }
 
           # Verify no secrets in bundle
           if test -f "$RESOURCES/project/config.json"; then echo "FAIL: config.json leaked"; exit 1; fi
@@ -115,8 +115,8 @@ jobs:
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Outdoors-macOS
+          name: Chiefton-macOS
           path: |
-            outdoorsv1/backend/electron/dist/*.dmg
-            outdoorsv1/backend/electron/dist/*.zip
+            chieftonv1/backend/electron/dist/*.dmg
+            chieftonv1/backend/electron/dist/*.zip
           retention-days: 30

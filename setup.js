@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 /**
- * Outdoors Setup Script
+ * Chiefton Setup Script
  *
- * Sets up everything needed to run Outdoors on a new machine:
+ * Sets up everything needed to run Chiefton on a new machine:
  * 1. Checks prerequisites (Node, Python, Claude CLI, npm)
  * 2. Asks: Chrome or Edge? Detects executable, lists profiles
  * 3. Creates an AutomationProfile with copied session cookies
@@ -24,7 +24,7 @@ const https = require('https');
 const crypto = require('crypto');
 
 const ROOT = __dirname;
-const BACKEND = path.join(ROOT, 'outdoorsv1', 'backend');
+const BACKEND = path.join(ROOT, 'chieftonv1', 'backend');
 const PREFS_DIR = path.join(BACKEND, 'bot', 'memory', 'preferences');
 const CDP_PORT = 9222;
 
@@ -437,10 +437,10 @@ async function autoCreateOAuth() {
     if (userEmail) ok(`Authenticated as ${userEmail}`);
 
     // 4. Create a GCP project (or find existing)
-    const projectId = 'outdoors-bot-' + crypto.randomBytes(3).toString('hex');
+    const projectId = 'chiefton-bot-' + crypto.randomBytes(3).toString('hex');
     log('Creating Google Cloud project...');
     const createRes = await apiRequest('POST', 'https://cloudresourcemanager.googleapis.com/v1/projects', bearerToken, {
-      projectId, name: 'Outdoors Bot',
+      projectId, name: 'Chiefton Bot',
     });
 
     let finalProjectId = projectId;
@@ -448,7 +448,7 @@ async function autoCreateOAuth() {
       // Project ID conflict — try to find existing projects
       const listRes = await apiRequest('GET', 'https://cloudresourcemanager.googleapis.com/v1/projects?filter=lifecycleState%3AACTIVE', bearerToken);
       const projects = listRes.data?.projects || [];
-      const existing = projects.find(p => p.name === 'Outdoors Bot') || projects[0];
+      const existing = projects.find(p => p.name === 'Chiefton Bot') || projects[0];
       if (existing) {
         finalProjectId = existing.projectId;
         ok(`Using existing project: ${finalProjectId}`);
@@ -485,7 +485,7 @@ async function autoCreateOAuth() {
     // 7. Create OAuth brand (consent screen) via IAP API
     log('Configuring OAuth consent screen...');
     const brandRes = await apiRequest('POST', `https://iap.googleapis.com/v1/projects/${projectNumber}/brands`, bearerToken, {
-      applicationTitle: 'Outdoors Bot',
+      applicationTitle: 'Chiefton Bot',
       supportEmail: userEmail,
     });
     if (brandRes.status >= 200 && brandRes.status < 300) {
@@ -583,7 +583,7 @@ async function autoCreateOAuth() {
         const nameInputs = document.querySelectorAll('input[formcontrolname="displayName"], input[type="text"]');
         for (const input of nameInputs) {
           if (!input.value || input.value === '') {
-            input.value = 'Outdoors Bot';
+            input.value = 'Chiefton Bot';
             input.dispatchEvent(new Event('input', { bubbles: true }));
             input.dispatchEvent(new Event('change', { bubbles: true }));
           }
@@ -691,7 +691,7 @@ async function checkPrerequisites() {
 
 async function setupBrowser() {
   log('Browser Setup');
-  log('Which browser should Outdoors use for automation?');
+  log('Which browser should Chiefton use for automation?');
   console.log('    1) Google Chrome');
   console.log('    2) Microsoft Edge');
   const choice = await ask('  Enter 1 or 2: ');
@@ -818,7 +818,7 @@ async function manualOAuthSetup(projectId) {
     try { await cdpOpenTab('https://console.cloud.google.com/projectcreate'); } catch {}
     log('Follow these steps in the browser:\n');
     log('  STEP 1 - Create a project (or select an existing one)');
-    log('    Name it anything (e.g. "Outdoors Bot")\n');
+    log('    Name it anything (e.g. "Chiefton Bot")\n');
     log('  STEP 2 - Enable APIs');
     log('    Go to "APIs & Services" > "Enabled APIs & services"');
     log('    Click "+ ENABLE APIS AND SERVICES" and enable:');
@@ -852,7 +852,7 @@ async function manualOAuthSetup(projectId) {
 
 async function setupOAuth() {
   log('Google Workspace Setup (Gmail, Calendar, Drive, etc.)');
-  log('To access Google services, Outdoors needs OAuth credentials.\n');
+  log('To access Google services, Chiefton needs OAuth credentials.\n');
 
   const want = await ask('  Set up Google Workspace now? (Y/n): ');
   if (want.trim().toLowerCase() === 'n') {
@@ -931,7 +931,7 @@ async function writeBackendConfig() {
   const configPath = path.join(BACKEND, 'config.json');
 
   if (fs.existsSync(configPath)) {
-    ok('outdoorsv1/backend/config.json already exists, skipping');
+    ok('chieftonv1/backend/config.json already exists, skipping');
     return;
   }
 
@@ -966,7 +966,7 @@ function installDependencies() {
     execSync('npm install', { cwd: BACKEND, stdio: 'inherit' });
     ok('npm packages installed');
   } catch {
-    fail('npm install failed. Run manually: cd outdoorsv1/backend && npm install');
+    fail('npm install failed. Run manually: cd chieftonv1/backend && npm install');
   }
 
   try {
@@ -1006,7 +1006,7 @@ function updateGitignore() {
 
 async function main() {
   console.log('\n  \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557');
-  console.log('  \u2551       Outdoors Setup              \u2551');
+  console.log('  \u2551       Chiefton Setup              \u2551');
   console.log('  \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d');
 
   // 1. Prerequisites
@@ -1039,8 +1039,8 @@ async function main() {
   console.log('\n  \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557');
   console.log('  \u2551       Setup complete!             \u2551');
   console.log('  \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d');
-  log('To start Outdoors:');
-  log('  cd outdoorsv1/backend && node src/index.js');
+  log('To start Chiefton:');
+  log('  cd chieftonv1/backend && node src/index.js');
   if (oauth.clientId) {
     log('');
     log('First time using Gmail/Calendar/Drive:');
