@@ -12,10 +12,11 @@
 //   user:{userId}:invite  → the unclaimed code this user currently holds
 //
 // Endpoints:
-//   POST /api/create-invite  — existing user asks for a code to share
-//   POST /api/claim          — new user enters a code on first launch
-//   POST /api/validate-key   — app re-validates saved key on startup
-//   POST /api/admin/seed     — admin-only bulk code generation
+//   POST /api/create-invite       — existing user asks for a code to share
+//   POST /api/claim               — new user enters a code on first launch
+//   POST /api/validate-key        — app re-validates saved key on startup
+//   POST /api/admin/seed          — admin-only bulk code generation
+//   POST /api/issue-device-token  — issues a JWT the app uses to call outdoors-chat
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -37,6 +38,40 @@ function randomCode(len) {
   crypto.getRandomValues(arr);
   for (const byte of arr) result += chars[byte % chars.length];
   return result;
+}
+
+// ── JWT issuance (HS256) ────────────────────────────────────────────────
+// Matches the verifier in workers/chat-proxy/worker.js. Shared JWT_SECRET.
+
+function base64UrlEncode(bytes) {
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64UrlEncodeString(s) {
+  return base64UrlEncode(new TextEncoder().encode(s));
+}
+
+async function hmacSha256(secret, data) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+  return new Uint8Array(sig);
+}
+
+async function signJWT(claims, secret) {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const headerB64 = base64UrlEncodeString(JSON.stringify(header));
+  const payloadB64 = base64UrlEncodeString(JSON.stringify(claims));
+  const signingInput = `${headerB64}.${payloadB64}`;
+  const sig = await hmacSha256(secret, signingInput);
+  return `${signingInput}.${base64UrlEncode(sig)}`;
 }
 
 export default {
@@ -132,6 +167,31 @@ export default {
       }
 
       return json({ ok: true });
+    }
+
+    // ── POST /api/issue-device-token — mint a JWT for chat-proxy access ─
+    // The Outdoors app calls this once on first launch, then refreshes
+    // ~7 days before expiry. The returned JWT is the credential for
+    // outdoors-chat. No personal data in claims; deviceId is a client-
+    // generated UUID.
+    if (path === '/api/issue-device-token' && request.method === 'POST') {
+      if (!env.JWT_SECRET) return json({ error: 'Server misconfigured' }, 500);
+
+      const { deviceId } = await request.json().catch(() => ({}));
+      if (!deviceId || typeof deviceId !== 'string' || deviceId.length < 8 || deviceId.length > 128) {
+        return json({ error: 'Missing or invalid deviceId' }, 400);
+      }
+
+      const now = Math.floor(Date.now() / 1000);
+      const ninetyDays = 60 * 60 * 24 * 90;
+      const claims = {
+        deviceId,
+        iat: now,
+        exp: now + ninetyDays,
+        iss: 'outdoors-referral',
+      };
+      const token = await signJWT(claims, env.JWT_SECRET);
+      return json({ token, expiresAt: new Date(claims.exp * 1000).toISOString() });
     }
 
     // ── POST /api/validate-key — app re-verifies a saved key on startup ─
