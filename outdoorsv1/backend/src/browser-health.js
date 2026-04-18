@@ -168,6 +168,9 @@ function openBrowser(executablePath, cdpPort, userDataDir, profileDir, firstRun 
       `--disable-external-intent-requests`,
       `--disable-popup-blocking`,
       `--autoplay-policy=no-user-gesture-required`,
+      `--disable-gpu`,
+      `--disable-software-rasterizer`,
+      `--disable-gpu-compositing`,
       ...(firstRun ? [`https://accounts.google.com/`] : []),
     ];
 
