@@ -14,8 +14,21 @@ import { config } from '../config.js';
 import { setClaudeSessionId } from '../session/session-manager.js';
 import { redactSecrets } from './redact-secrets.js';
 import { execSync, execFileSync } from 'child_process';
-import { mkdirSync, readdirSync, statSync, readFileSync, existsSync } from 'fs';
+import { mkdirSync, readdirSync, statSync, readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
+// Grid bridge — when a session has a botId, route memory + learning per-bot.
+// Imported lazily to avoid cycles at module load; fail-open to legacy flow if unavailable.
+let _gridBridge = null;
+async function gridBridge() {
+  if (_gridBridge !== null) return _gridBridge;
+  try {
+    const mod = await import('../../outdoorsv1/backend/src/grid-manager.js');
+    _gridBridge = mod;
+  } catch {
+    _gridBridge = {};
+  }
+  return _gridBridge;
+}
 
 const MAX_FEEDBACK_LOOPS = 3;
 
@@ -68,6 +81,19 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
   mkdirSync(outputDir, { recursive: true });
   const agg = createAggregator(onProgress);
 
+  const botId = sessionContext?.botId || null;
+
+  // When a bot is active, prefer its own Claude session for resume (per-bot continuity).
+  if (botId && !resumeSessionId) {
+    try {
+      const bridge = await gridBridge();
+      if (bridge.loadBotSession) {
+        const botSess = bridge.loadBotSession(botId);
+        if (botSess?.claudeSessionId) resumeSessionId = botSess.claudeSessionId;
+      }
+    } catch {}
+  }
+
   // ── Fast path: resumed session → skip A/B/C, send raw message ──
   // When resuming a conversation, the Claude session already has full context
   // from the previous turn(s). Re-running the pipeline would wrap the user's
@@ -101,6 +127,14 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
         setClaudeSessionId(sessionContext.id, phaseD.sessionId);
       }
 
+      // Per-bot: persist the Claude session ID onto the bot's session.json
+      if (botId && phaseD.sessionId) {
+        try {
+          const bridge = await gridBridge();
+          bridge.setBotClaudeSessionId?.(botId, phaseD.sessionId);
+        } catch {}
+      }
+
       if (phaseD.questionRequest) {
         return {
           status: 'needs_user_input',
@@ -111,7 +145,7 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
       }
 
       // Fire-and-forget learning
-      learnInBackground(prompt, { taskDescription: prompt }, phaseD.response, phaseD.fullEvents, onProgress, processKey, timeout);
+      learnInBackground(prompt, { taskDescription: prompt }, phaseD.response, phaseD.fullEvents, onProgress, processKey, timeout, botId);
 
       return {
         status: 'completed',
@@ -239,7 +273,28 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
     // Add site context detected from the prompt
     const selectedNames = new Set((audit.selectedMemories || []).map(m => m.name));
     const siteContext = detectSiteContext(prompt).filter(s => !selectedNames.has(s.name));
-    const allMemoryContents = [...selectedContents, ...newContents, ...siteContext];
+    let allMemoryContents = [...selectedContents, ...newContents, ...siteContext];
+
+    // Per-bot override: when a bot is active, its frozen skill list + specialization
+    // defines the Model D context. We still allow newly-created memories from C to
+    // flow through (since they were researched for this specific task), plus site
+    // context, but we drop the global skill-selection output.
+    if (botId) {
+      try {
+        const bridge = await gridBridge();
+        if (bridge.buildBotMemoryContents) {
+          const botContents = bridge.buildBotMemoryContents(botId);
+          if (Array.isArray(botContents) && botContents.length > 0) {
+            const botNames = new Set(botContents.map(c => c.name));
+            allMemoryContents = [
+              ...botContents,
+              ...newContents.filter(c => !botNames.has(c.name)),
+              ...siteContext.filter(c => !botNames.has(c.name)),
+            ];
+          }
+        }
+      } catch {}
+    }
 
     // Always ensure browser is ready before Phase D — fast no-op if already running
     await ensureBrowserReady();
@@ -279,6 +334,12 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
     // Track Claude's session ID back to our internal session
     if (sessionContext && phaseD.sessionId) {
       setClaudeSessionId(sessionContext.id, phaseD.sessionId);
+    }
+    if (botId && phaseD.sessionId) {
+      try {
+        const bridge = await gridBridge();
+        bridge.setBotClaudeSessionId?.(botId, phaseD.sessionId);
+      } catch {}
     }
 
     if (phaseD.questionRequest) {
@@ -373,7 +434,7 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
   }
 
   // ── Post-task learning (fire-and-forget) ──
-  learnInBackground(prompt, outputSpec, lastDResponse, lastDFullEvents, onProgress, processKey, timeout);
+  learnInBackground(prompt, outputSpec, lastDResponse, lastDFullEvents, onProgress, processKey, timeout, botId);
 
   // Auto-attach visual outputs that Model D created but forgot to mark with [IMAGE:]
   const finalResponse = attachUnmarkedImages(lastDResponse || '', outputDir);
@@ -503,7 +564,7 @@ async function tryInstallFromMemory(mem, onProgress) {
   }
 }
 
-function learnInBackground(prompt, outputSpec, executionResponse, fullEvents, onProgress, processKey, timeout) {
+function learnInBackground(prompt, outputSpec, executionResponse, fullEvents, onProgress, processKey, timeout, botId = null) {
   const agg = createAggregator(onProgress);
 
   // Don't await — fire and forget
@@ -632,24 +693,95 @@ function learnInBackground(prompt, outputSpec, executionResponse, fullEvents, on
       if (!learnerResult.updates || learnerResult.updates.length === 0) {
         process.stderr.write(`[learner] No updates extracted from learner response (length=${(result.response || '').length})\n`);
       }
+
+      // Per-bot learning: route writes into the bot's own memory dir so bots
+      // don't cross-pollute each other's brains. Bot-scoped roots are resolved
+      // via the grid bridge; if we can't find the bot, fall through to the
+      // global path so we never silently drop learnings.
+      let botMemoryRoot = null;
+      if (botId) {
+        try {
+          const bridge = await gridBridge();
+          if (bridge.getBotMemoryRoot) botMemoryRoot = bridge.getBotMemoryRoot(botId);
+        } catch {}
+      }
+
+      const writeBotMemory = (name, category, content) => {
+        const catDirs = { skill: 'skills', knowledge: 'knowledge', preference: 'preferences', site: 'sites' };
+        const sub = catDirs[category];
+        if (!sub) throw new Error(`Unknown category: ${category}`);
+        const safeName = String(name).replace(/[^a-zA-Z0-9_\-]/g, '-');
+        let filepath;
+        if (category === 'skill') {
+          const dir = join(botMemoryRoot, sub, safeName);
+          mkdirSync(dir, { recursive: true });
+          filepath = join(dir, 'SKILL.md');
+        } else {
+          const dir = join(botMemoryRoot, sub);
+          mkdirSync(dir, { recursive: true });
+          filepath = join(dir, `${safeName}.md`);
+        }
+        writeFileSync(filepath, content, 'utf-8');
+        return filepath;
+      };
+
+      const appendBotMemory = (relOrAbsPath, content) => {
+        const safe = String(relOrAbsPath).replace(/\\/g, '/');
+        if (safe.includes('..')) throw new Error('Unsafe path');
+        const abs = safe.startsWith('/') || /^[a-z]:/i.test(safe) ? safe : join(botMemoryRoot, safe);
+        if (!abs.startsWith(botMemoryRoot)) throw new Error('Escapes bot root');
+        const dir = join(abs, '..');
+        try { mkdirSync(dir, { recursive: true }); } catch {}
+        const existing = existsSync(abs) ? readFileSync(abs, 'utf-8') : '';
+        writeFileSync(abs, existing + '\n\n' + content, 'utf-8');
+      };
+
       for (const update of learnerResult.updates) {
         try {
-          if (update.path) {
-            if (update.path.includes('..') || update.path.startsWith('/') || /^[a-zA-Z]:/.test(update.path) || update.path.includes('\\')) {
-              process.stderr.write(`[learner] Blocked path traversal: ${update.path}\n`);
-              continue;
-            }
-            await updateMemory(update.path, 'append', update.content);
-            process.stderr.write(`[learner] Appended to ${update.path}\n`);
-          } else {
-            const currentInventory = getFullInventory();
-            const existingMatch = currentInventory.find(m => m.name === update.name);
-            if (existingMatch?.path) {
-              await updateMemory(existingMatch.path, 'append', update.content);
-              process.stderr.write(`[learner] Appended to existing memory: ${update.name} (${existingMatch.path})\n`);
+          if (botMemoryRoot) {
+            // Route every write into the bot's own memory root
+            if (update.path) {
+              // Normalize: if learner gave an absolute path under MEMORY_ROOT, remap the
+              // tail portion into the bot's memory dir.
+              let tail = update.path;
+              if (tail.includes('..') || (/^[a-z]:/i.test(tail) && !tail.startsWith(botMemoryRoot))) {
+                process.stderr.write(`[learner] Blocked unsafe path for bot ${botId}: ${update.path}\n`);
+                continue;
+              }
+              if (/^[a-z]:/i.test(tail) || tail.startsWith('/')) {
+                // Absolute: only allow if already inside bot root; otherwise strip leading dirs
+                if (!tail.startsWith(botMemoryRoot)) {
+                  const parts = tail.replace(/\\/g, '/').split('/');
+                  const catIdx = parts.findIndex(p => ['skills','knowledge','preferences','sites'].includes(p));
+                  if (catIdx >= 0) tail = parts.slice(catIdx).join('/');
+                  else continue;
+                }
+              }
+              appendBotMemory(tail, update.content);
+              process.stderr.write(`[learner:bot=${botId}] Appended to ${tail}\n`);
             } else {
-              await writeMemory(update.name, update.category, update.content);
-              process.stderr.write(`[learner] Created new memory: ${update.name} (${update.category})\n`);
+              writeBotMemory(update.name, update.category, update.content);
+              process.stderr.write(`[learner:bot=${botId}] Created new bot memory: ${update.name} (${update.category})\n`);
+            }
+          } else {
+            // Legacy global path
+            if (update.path) {
+              if (update.path.includes('..') || update.path.startsWith('/') || /^[a-zA-Z]:/.test(update.path) || update.path.includes('\\')) {
+                process.stderr.write(`[learner] Blocked path traversal: ${update.path}\n`);
+                continue;
+              }
+              await updateMemory(update.path, 'append', update.content);
+              process.stderr.write(`[learner] Appended to ${update.path}\n`);
+            } else {
+              const currentInventory = getFullInventory();
+              const existingMatch = currentInventory.find(m => m.name === update.name);
+              if (existingMatch?.path) {
+                await updateMemory(existingMatch.path, 'append', update.content);
+                process.stderr.write(`[learner] Appended to existing memory: ${update.name} (${existingMatch.path})\n`);
+              } else {
+                await writeMemory(update.name, update.category, update.content);
+                process.stderr.write(`[learner] Created new memory: ${update.name} (${update.category})\n`);
+              }
             }
           }
         } catch (err) {
@@ -657,23 +789,49 @@ function learnInBackground(prompt, outputSpec, executionResponse, fullEvents, on
         }
       }
 
-      // Rebuild the memory index after all writes
+      // Rebuild the memory index after all writes — bot-scoped or global
       try {
-        const updatedInventory = getFullInventory();
-        const byCategory = {};
-        for (const m of updatedInventory) {
-          if (!byCategory[m.category]) byCategory[m.category] = [];
-          byCategory[m.category].push(m);
-        }
-        const lines = [`# Memory Index\n_Auto-updated after each learning pass. ${updatedInventory.length} total entries._\n`];
-        for (const [cat, items] of Object.entries(byCategory)) {
-          lines.push(`\n## ${cat.charAt(0).toUpperCase() + cat.slice(1)}s (${items.length})`);
-          for (const item of items.sort((a, b) => a.name.localeCompare(b.name))) {
-            lines.push(`- **${item.name}**: ${item.description}`);
+        if (botMemoryRoot) {
+          const cats = [['skill','skills'],['knowledge','knowledge'],['preference','preferences'],['site','sites']];
+          const entries = [];
+          for (const [cat, sub] of cats) {
+            const dir = join(botMemoryRoot, sub);
+            if (!existsSync(dir)) continue;
+            for (const de of readdirSync(dir, { withFileTypes: true })) {
+              if (de.isDirectory()) {
+                const p = join(dir, de.name, 'SKILL.md');
+                if (existsSync(p)) entries.push({ name: de.name, category: cat });
+              } else if (de.isFile() && de.name.endsWith('.md')) {
+                entries.push({ name: de.name.replace('.md',''), category: cat });
+              }
+            }
           }
+          const lines = [`# Memory Index (bot: ${botId})\n_Auto-updated after each learning pass. ${entries.length} total entries._\n`];
+          const byCat = {};
+          for (const e of entries) (byCat[e.category] ||= []).push(e);
+          for (const [cat, items] of Object.entries(byCat)) {
+            lines.push(`\n## ${cat.charAt(0).toUpperCase()+cat.slice(1)}s (${items.length})`);
+            for (const it of items.sort((a,b)=>a.name.localeCompare(b.name))) lines.push(`- **${it.name}**`);
+          }
+          writeFileSync(join(botMemoryRoot, 'memory-index.md'), lines.join('\n'), 'utf-8');
+          process.stderr.write(`[learner:bot=${botId}] Memory index updated (${entries.length} entries)\n`);
+        } else {
+          const updatedInventory = getFullInventory();
+          const byCategory = {};
+          for (const m of updatedInventory) {
+            if (!byCategory[m.category]) byCategory[m.category] = [];
+            byCategory[m.category].push(m);
+          }
+          const lines = [`# Memory Index\n_Auto-updated after each learning pass. ${updatedInventory.length} total entries._\n`];
+          for (const [cat, items] of Object.entries(byCategory)) {
+            lines.push(`\n## ${cat.charAt(0).toUpperCase() + cat.slice(1)}s (${items.length})`);
+            for (const item of items.sort((a, b) => a.name.localeCompare(b.name))) {
+              lines.push(`- **${item.name}**: ${item.description}`);
+            }
+          }
+          await updateMemory(join(MEMORY_ROOT, 'memory-index.md'), 'replace', lines.join('\n'));
+          process.stderr.write(`[learner] Memory index updated (${updatedInventory.length} entries)\n`);
         }
-        await updateMemory(join(MEMORY_ROOT, 'memory-index.md'), 'replace', lines.join('\n'));
-        process.stderr.write(`[learner] Memory index updated (${updatedInventory.length} entries)\n`);
       } catch (indexErr) {
         process.stderr.write(`[learner] Failed to update memory index: ${indexErr.message}\n`);
       }

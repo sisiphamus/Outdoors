@@ -425,8 +425,16 @@ export async function handleMessage(message, emitLog) {
   emitLog?.('received', { sender, prompt: parsed.body, conversation: parsed.number, processKey });
   emitLog?.('processing', { sender, prompt: parsed.body, conversation: parsed.number, resuming: resumeSessionId, processKey });
 
+  // Route inbound WhatsApp messages to the grid's default transport bot (slot 0).
+  // Falls back to null (legacy single-bot flow) if the user hasn't created any bots yet.
+  let transportBotId = null;
+  try {
+    const { getDefaultTransportBotId: _defBot } = await import('./grid-manager.js');
+    transportBotId = _defBot() || null;
+  } catch {}
+
   // Create isolated session for this execution
-  const session = createSession(processKey, 'whatsapp');
+  const session = createSession(processKey, 'whatsapp', transportBotId);
 
   // Download and process media attachments
   let finalPrompt = parsed.body;

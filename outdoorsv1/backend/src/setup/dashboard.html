@@ -11,7 +11,9 @@
   <link rel="stylesheet" href="motion.css">
   <link rel="stylesheet" href="dashboard.css">
   <link rel="stylesheet" href="dashboard-polish.css">
+  <link rel="stylesheet" href="grid.css">
   <script defer src="motion.js"></script>
+  <script defer src="grid.js"></script>
 </head>
 <body>
   <!-- Custom titlebar -->
@@ -60,24 +62,96 @@
   </div>
 
   <!-- Main content -->
-  <div class="main-content">
+  <div class="main-content grid-mode" id="main-content">
     <button class="jump-top-btn hidden" id="btn-jump-top" title="Scroll to oldest logs">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10V2M2 6l4-4 4 4"/></svg>
       <span>Top</span>
     </button>
-    <div class="feed" id="feed">
-      <div class="feed-welcome" id="feed-welcome">
-        <p class="feed-welcome-title">Outdoors is running</p>
-        <p class="feed-welcome-text">Send a message below or via your Outdoors WhatsApp group.</p>
-        <p class="feed-welcome-hint">Activity will appear here as tasks are processed.</p>
+
+    <!-- Bot grid — the 2D map. Visible when no bot is zoomed in. -->
+    <div class="grid-canvas" id="grid-canvas" aria-label="Bot grid">
+      <div class="grid-header">
+        <div class="grid-title">Your Bots</div>
+        <div class="grid-subtitle">Pinch a tile to open · drag the grip to reorder · right-click to delete</div>
+      </div>
+      <div class="grid-tiles" id="grid-tiles"></div>
+    </div>
+
+    <!-- Active chat panel — host for the zoomed-in bot. Reuses the existing feed + input machinery. -->
+    <div class="chat-panel" id="chat-panel" aria-hidden="true">
+      <div class="chat-panel-header" id="chat-panel-header">
+        <button class="chat-back-btn" id="btn-chat-back" title="Back to grid (or pinch out)">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13L5 8l5-5"/></svg>
+          <span>Grid</span>
+        </button>
+        <div class="chat-panel-identity">
+          <span class="chat-panel-emoji" id="chat-panel-emoji">🤖</span>
+          <span class="chat-panel-name" id="chat-panel-name">Bot</span>
+          <span class="chat-panel-project" id="chat-panel-project"></span>
+        </div>
+      </div>
+      <div class="feed" id="feed">
+        <div class="feed-welcome" id="feed-welcome">
+          <p class="feed-welcome-title">Outdoors is running</p>
+          <p class="feed-welcome-text">Pick a bot above, or send a message below.</p>
+          <p class="feed-welcome-hint">Activity will appear here as tasks are processed.</p>
+        </div>
+      </div>
+      <div class="chat-input-bar">
+        <input type="text" id="chat-input" placeholder="Send a message..." autocomplete="off" />
+        <button id="chat-send-btn" title="Send">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5l6 6h-4v7H6v-7H2l6-6z"/></svg>
+        </button>
       </div>
     </div>
-    <div class="chat-input-bar">
-      <input type="text" id="chat-input" placeholder="Send a message... (e.g. 3 build a website)" autocomplete="off" />
-      <button id="chat-send-btn" title="Send">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5l6 6h-4v7H6v-7H2l6-6z"/></svg>
-      </button>
+  </div>
+
+  <!-- Bot create/edit modal -->
+  <div class="bot-modal hidden" id="bot-modal" role="dialog" aria-modal="true">
+    <div class="bot-modal-panel">
+      <div class="bot-modal-header">
+        <h2 id="bot-modal-title">Add a bot</h2>
+        <button class="bot-modal-close" id="bot-modal-close">&times;</button>
+      </div>
+      <div class="bot-modal-tabs" id="bot-modal-tabs">
+        <button class="bot-modal-tab active" data-bot-tab="templates">Templates</button>
+        <button class="bot-modal-tab" data-bot-tab="scratch">From scratch</button>
+      </div>
+      <div class="bot-modal-body">
+        <div class="bot-modal-pane active" data-bot-pane="templates">
+          <div class="template-grid" id="template-grid"></div>
+        </div>
+        <div class="bot-modal-pane" data-bot-pane="scratch">
+          <div class="scratch-row">
+            <label>Name</label>
+            <input type="text" id="scratch-name" placeholder="e.g. Python helper" />
+          </div>
+          <div class="scratch-row">
+            <label>Emoji</label>
+            <input type="text" id="scratch-emoji" placeholder="🤖" maxlength="4" />
+          </div>
+          <div class="scratch-row">
+            <label>Project <span class="scratch-optional">(optional)</span></label>
+            <input type="text" id="scratch-project" placeholder="e.g. side-project-x" />
+          </div>
+          <div class="scratch-row">
+            <label>What should this bot specialize in?</label>
+            <textarea id="scratch-spec" rows="4" placeholder="e.g. Helps me with Python data analysis tasks, writing scripts, and debugging pandas code."></textarea>
+          </div>
+          <div class="scratch-hint" id="scratch-hint"></div>
+        </div>
+      </div>
+      <div class="bot-modal-footer">
+        <button class="bot-modal-secondary" id="bot-modal-cancel">Cancel</button>
+        <button class="bot-modal-primary" id="bot-modal-submit">Create bot</button>
+      </div>
     </div>
+  </div>
+
+  <!-- Bot tile context menu -->
+  <div class="bot-context-menu hidden" id="bot-context-menu" role="menu">
+    <button class="bot-context-item" data-context-action="edit">Edit</button>
+    <button class="bot-context-item danger" data-context-action="delete">Delete bot</button>
   </div>
 
   <!-- Settings overlay -->

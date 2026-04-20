@@ -38,5 +38,9 @@ outdoorsv1/backend/bot/memory/conversations.json
 outdoorsv1/backend/bot/memory/chat-sessions.json
 outdoorsv1/backend/bot/memory/wa-chat-sessions.json
 
+# Bot grid runtime — user-specific, created on first launch
+outdoorsv1/backend/bot/grid-config.json
+outdoorsv1/backend/bot/bots/
+
 # Claude project memory (personal)
 .claude/

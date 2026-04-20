@@ -98,6 +98,8 @@ function loadSocketIO(backendUrl) {
 
 function connectSocket(backendUrl) {
   socket = io(backendUrl);
+  // Expose to grid.js so it can reuse the same connection
+  try { window.__socket = socket; } catch {}
 
   socket.on('connect', () => setStatus('connected', 'Connected'));
   socket.on('disconnect', () => setStatus('offline', 'Disconnected'));
@@ -159,8 +161,14 @@ function sendChatMessage() {
   feed.appendChild(entry);
   feed.scrollTop = feed.scrollHeight;
 
-  // Send to backend via the existing web_message channel
-  socket.emit('web_message', { text, windowId: DASHBOARD_WINDOW_ID });
+  // Send to backend via the existing web_message channel.
+  // If the grid has an active bot, route the message to it so the orchestrator
+  // uses that bot's specialization + memory + Claude session.
+  const payload = { text, windowId: DASHBOARD_WINDOW_ID };
+  if (typeof window !== 'undefined' && window.__activeBotId) {
+    payload.botId = window.__activeBotId;
+  }
+  socket.emit('web_message', payload);
 }
 
 document.getElementById('chat-send-btn')?.addEventListener('click', sendChatMessage);

@@ -23,6 +23,18 @@ import { assertRuntimeBridgeReady, createRuntimeAwareProgress, getRuntimeHealthS
 import { extractImages } from './transport-utils.js';
 import { createSession, closeSession, listActiveSessions, cleanupOrphanedSessionDirs } from '../../../outdoorsv4/session/session-manager.js';
 import { ensureBrowserReady } from './browser-health.js';
+import {
+  loadGrid as gridLoad,
+  createBotInSlot as gridCreateBotInSlot,
+  editBot as gridEditBot,
+  deleteBot as gridDeleteBot,
+  moveBot as gridMoveBot,
+  setActiveBot as gridSetActiveBot,
+  getDefaultTransportBotId as gridGetDefaultTransportBotId,
+  listTemplates as gridListTemplates,
+  getBot as gridGetBot,
+} from './grid-manager.js';
+import { pickSkillsForSpecialization } from './grid-skill-picker.js';
 
 import { registerStartup } from './register-startup.js';
 import { startAutomationScheduler, reloadAutomations } from './automation-scheduler.js';
@@ -470,9 +482,67 @@ io.on('connection', async (socket) => {
     } catch {}
   }
 
-  // Web chat messages — accepts string or { text, image, sessionId } object
+  // Grid handlers — CRUD for the bot grid
+  socket.on('grid:load', (cb) => {
+    try { cb?.({ ok: true, grid: gridLoad(), templates: gridListTemplates() }); }
+    catch (err) { cb?.({ ok: false, error: err.message }); }
+  });
+  socket.on('grid:create', (payload, cb) => {
+    try {
+      const { slotIndex, templateId, specializationText, name, project, emoji, color } = payload || {};
+      let skillIds = null;
+      if (!templateId && specializationText) {
+        skillIds = pickSkillsForSpecialization(specializationText);
+      }
+      const slot = gridCreateBotInSlot(slotIndex, {
+        templateId, specializationText, name, project, emoji, color,
+        skillIds: skillIds || undefined,
+      });
+      const grid = gridLoad();
+      io.emit('grid:updated', { grid });
+      cb?.({ ok: true, slot, grid });
+    } catch (err) { cb?.({ ok: false, error: err.message }); }
+  });
+  socket.on('grid:edit', (payload, cb) => {
+    try {
+      const { botId, patch } = payload || {};
+      const slot = gridEditBot(botId, patch || {});
+      const grid = gridLoad();
+      io.emit('grid:updated', { grid });
+      cb?.({ ok: true, slot, grid });
+    } catch (err) { cb?.({ ok: false, error: err.message }); }
+  });
+  socket.on('grid:delete', (payload, cb) => {
+    try {
+      const { botId } = payload || {};
+      const removed = gridDeleteBot(botId);
+      const grid = gridLoad();
+      io.emit('grid:updated', { grid });
+      cb?.({ ok: removed, grid });
+    } catch (err) { cb?.({ ok: false, error: err.message }); }
+  });
+  socket.on('grid:move', (payload, cb) => {
+    try {
+      const { fromIdx, toIdx } = payload || {};
+      const moved = gridMoveBot(fromIdx, toIdx);
+      const grid = gridLoad();
+      io.emit('grid:updated', { grid });
+      cb?.({ ok: moved, grid });
+    } catch (err) { cb?.({ ok: false, error: err.message }); }
+  });
+  socket.on('grid:setActive', (payload, cb) => {
+    try {
+      const { botId } = payload || {};
+      gridSetActiveBot(botId);
+      const grid = gridLoad();
+      io.emit('grid:updated', { grid });
+      cb?.({ ok: true, grid });
+    } catch (err) { cb?.({ ok: false, error: err.message }); }
+  });
+
+  // Web chat messages — accepts string or { text, image, sessionId, botId } object
   socket.on('web_message', async (data) => {
-    let prompt, imageBase64, imageMime, clientSessionId, windowId;
+    let prompt, imageBase64, imageMime, clientSessionId, windowId, botIdParam;
     if (typeof data === 'string') {
       prompt = data;
     } else if (data && typeof data === 'object') {
@@ -481,6 +551,7 @@ io.on('connection', async (socket) => {
       imageMime = data.imageMime || 'image/jpeg';
       clientSessionId = data.sessionId || null;
       windowId = data.windowId || null;
+      botIdParam = data.botId || null;
     }
     if ((!prompt || typeof prompt !== 'string' || !prompt.trim()) && !imageBase64) return;
 
@@ -610,10 +681,18 @@ io.on('connection', async (socket) => {
     }
 
     const processKey = parsed.number !== null ? `web:conv:${parsed.number}` : `web:win:${windowKey}`;
-    console.log(`[dispatch] "${(parsed.body || '').slice(0, 40)}" → processKey=${processKey} resume=${resumeSessionId || 'fresh'}`);
+    // Resolve the active bot: prefer the botId the client sent (from the focused tile),
+    // fall through to the grid's active bot. If the user hasn't made a bot yet, leave null
+    // (legacy single-bot flow).
+    const effectiveBotId = (() => {
+      if (botIdParam && gridGetBot(botIdParam)) return botIdParam;
+      const grid = gridLoad();
+      return grid.activeBotId || null;
+    })();
+    console.log(`[dispatch] "${(parsed.body || '').slice(0, 40)}" → processKey=${processKey} resume=${resumeSessionId || 'fresh'} bot=${effectiveBotId || 'none'}`);
 
     // Create an isolated session for this execution (must be before image saving)
-    const session = createSession(processKey, 'web');
+    const session = createSession(processKey, 'web', effectiveBotId);
 
     // Save image to disk if present (session-scoped directory)
     let finalPrompt = parsed.body;

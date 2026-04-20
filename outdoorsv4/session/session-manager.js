@@ -21,7 +21,7 @@ const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
  * @param {string} transport - "web" | "whatsapp"
  * @returns {SessionContext}
  */
-export function createSession(processKey, transport) {
+export function createSession(processKey, transport, botId = null) {
   const id = randomUUID();
   const shortTermDir = join(SHORT_TERM_ROOT, id);
   mkdirSync(shortTermDir, { recursive: true });
@@ -30,6 +30,7 @@ export function createSession(processKey, transport) {
     id,
     processKey,
     transport,
+    botId, // grid bot this session belongs to; null for legacy single-bot flows
     createdAt: Date.now(),
     lastActivity: Date.now(),
     shortTermDir,
