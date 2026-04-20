@@ -69,14 +69,14 @@ const logger = pino({ level: 'warn' });
 async function sendOnboardingWelcome(sock, groupJid) {
   try {
     const msg = formatChieftonResponse(
-      `Hey I'm Chiefton 🌲\n\n` +
-      `When you see 🌱🌿🌳 on your message, that means I'm thinking.\n\n` +
+      `Hey I'm Chiefton 🔷\n\n` +
+      `When you see 💧🌊🔹 on your message, that means I'm thinking.\n\n` +
       `Answer these so I can do my job better — everything stays on your device and can be changed later:\n\n` +
-      `🌿 What's your name?\n` +
-      `🌿 Student or working? (school, class of ____, major — or where you work)\n` +
-      `🌿 Personal email + school/work email\n` +
-      `🌿 Browser (Chrome, Edge, Brave, Arc)\n` +
-      `🌿 Outdoor vibe — beaches, mountains, forests, desert, or city? (sets your emoji aesthetic)`
+      `🔹 What's your name?\n` +
+      `🔹 Student or working? (school, class of ____, major — or where you work)\n` +
+      `🔹 Personal email + school/work email\n` +
+      `🔹 Browser (Chrome, Edge, Brave, Arc)\n` +
+      `🔹 Vibe — waves, sky, city, coast, or mountain? (sets your emoji aesthetic)`
     );
     const sent = await sock.sendMessage(groupJid, { text: msg });
     if (sent?.key?.id) {
@@ -91,7 +91,7 @@ async function sendOnboardingWelcome(sock, groupJid) {
 
 async function createChieftonGroup(sock, emitLog) {
   try {
-    const group = await sock.groupCreate('Chiefton 🌲🏔️', []);
+    const group = await sock.groupCreate('Chiefton 🔷🌊', []);
     const groupJid = group.id;
     config.chieftonGroupJid = groupJid;
     saveConfig(config);
@@ -116,9 +116,9 @@ async function createChieftonGroup(sock, emitLog) {
     } else {
       try {
         const welcome = formatChieftonResponse(
-          `Hello! I'm Chiefton 🌲\n\n` +
+          `Hello! I'm Chiefton 🔷\n\n` +
           `I'm your personal assistant — I live right here in this chat.\n` +
-          `Send me a message and I'll get to work. When you see 🌱🌿🌳 on your message, that means I'm thinking.\n\n` +
+          `Send me a message and I'll get to work. When you see 💧🌊🔹 on your message, that means I'm thinking.\n\n` +
           `You can run multiple conversations at once:\n` +
           `*1 email my friend about friday*\n` +
           `*2 research for my econ project*\n\n` +
@@ -648,8 +648,8 @@ async function startWhatsApp() {
           }
         }
 
-        // Cycle 🌱🌿🌳🪾🍃 reaction while processing
-        const growEmojis = ['🌱', '🌿', '🌳', '🪾', '🍃'];
+        // Cycle 💧🌊🔹🔷🔵 reaction while processing
+        const growEmojis = ['💧', '🌊', '🔹', '🔷', '🔵'];
         let growIdx = 0;
         let reactInFlight = false;
         let reactFails = 0;
@@ -750,7 +750,7 @@ async function startWhatsApp() {
               const searching = await sendWithRetry(jid, { text: formatChieftonResponse('Looking up contacts...') });
               if (searching?.key?.id) { addBotSentId(searching.key.id); storeMessage(searching.key.id, searching.message); }
             }
-            const { executeCodexPrompt } = await import('./codex-bridge.js');
+            const { executeCodexPrompt } = await import('./claude-bridge.js');
             const replyFn = async (m) => {
               const s = await sendWithRetry(jid, { text: formatChieftonResponse(m) });
               if (s?.key?.id) { addBotSentId(s.key.id); storeMessage(s.key.id, s.message); }
@@ -770,7 +770,7 @@ async function startWhatsApp() {
             // If they typed "refer email@rice.edu", go straight to manual entry
             const emailMatch = msgText.match(/(?:invite|refer)\s+(\S+@\S+)/i);
             if (emailMatch) {
-              const { executeCodexPrompt } = await import('./codex-bridge.js');
+              const { executeCodexPrompt } = await import('./claude-bridge.js');
               startReferralFlow(jid, senderName);
               // Set stage to manual and process the email
               const state = getReferralState(jid);

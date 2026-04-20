@@ -23,12 +23,12 @@
   --text-muted:     #9A8B78;  /* tertiary — driftwood */
   --text-faint:     #C9BFAF;  /* placeholder, disabled */
 
-  /* Brand — forest + warm accents */
-  --accent:         #3D5A3E;  /* forest green */
-  --accent-hover:   #4A6E4C;  /* one step brighter */
-  --accent-pressed: #335030;  /* one step darker */
-  --accent-glow:    rgba(61, 90, 62, 0.18);  /* for focus rings */
-  --accent-wash:    rgba(61, 90, 62, 0.08);  /* for hover tints */
+  /* Brand — blue + warm accents */
+  --accent:         #2C4E7A;  /* deep blue */
+  --accent-hover:   #3A6399;  /* one step brighter */
+  --accent-pressed: #223D5E;  /* one step darker */
+  --accent-glow:    rgba(44, 78, 122, 0.18);  /* for focus rings */
+  --accent-wash:    rgba(44, 78, 122, 0.08);  /* for hover tints */
 
   --highlight:      #C4856A;  /* warm terracotta — tool names, code chips */
   --highlight-wash: rgba(196, 133, 106, 0.12);

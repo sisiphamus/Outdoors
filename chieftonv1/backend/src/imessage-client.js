@@ -411,9 +411,9 @@ async function processIncomingMessage(handle, text, rawMsg) {
     if (refState.stage === 'name') {
       await sendWithRetry(handle, formatChieftonResponse('Looking up contacts...'));
     }
-    const { executeCodexPrompt } = await import('./codex-bridge.js');
+    const { executeCodexPrompt } = await import('./claude-bridge.js');
     const replyFn = async (m) => await sendWithRetry(handle, formatChieftonResponse(m));
-    const killFn = () => { try { const { killProcess } = require('./codex-bridge.js'); killProcess(`imsg:chat:${handle}`); } catch {} };
+    const killFn = () => { try { const { killProcess } = require('./claude-bridge.js'); killProcess(`imsg:chat:${handle}`); } catch {} };
     const result = await processReferralReply(jid, text, executeCodexPrompt, replyFn, killFn);
     if (result?.handled) {
       await sendWithRetry(handle, formatChieftonResponse(result.reply));
@@ -426,7 +426,7 @@ async function processIncomingMessage(handle, text, rawMsg) {
     const senderName = config.googleEmail?.split('@')[0]?.replace(/[._]/g, ' ') || 'A friend';
     const emailMatch = text.match(/(?:invite|refer)\s+(\S+@\S+)/i);
     if (emailMatch) {
-      const { executeCodexPrompt } = await import('./codex-bridge.js');
+      const { executeCodexPrompt } = await import('./claude-bridge.js');
       startReferralFlow(jid, senderName);
       const state = getReferralState(jid);
       if (state) { state.stage = 'manual'; }

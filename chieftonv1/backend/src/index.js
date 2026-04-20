@@ -17,7 +17,7 @@ import { config, saveConfig, loadConfig } from './config.js';
 import { startWhatsApp, setSocketIO, getStatus, getLastQR, reconnectWhatsApp } from './messaging-client.js';
 
 import { execFile, execFileSync } from 'child_process';
-import { executeCodexPrompt, killProcess, codeAgentOptions, getActiveProcessSummary, setProcessChangeListener, setProcessActivityListener, clearClarificationState } from './codex-bridge.js';
+import { executeCodexPrompt, killProcess, codeAgentOptions, getActiveProcessSummary, setProcessChangeListener, setProcessActivityListener, clearClarificationState } from './claude-bridge.js';
 import { parseMessage, resolveSession, createOrUpdateConversation, closeConversation, listConversations, getConversationMode } from './conversation-manager.js';
 import { assertRuntimeBridgeReady, createRuntimeAwareProgress, getRuntimeHealthStatus, getRuntimeStatusPayload } from './runtime-health.js';
 import { extractImages } from './transport-utils.js';

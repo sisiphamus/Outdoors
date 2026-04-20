@@ -44,10 +44,6 @@
             <div class="install-icon waiting-icon"></div>
             <div class="install-label">Node.js dependencies</div>
           </div>
-          <div class="install-item" id="install-codex-cli">
-            <div class="install-icon waiting-icon"></div>
-            <div class="install-label">Codex CLI</div>
-          </div>
           <div class="install-item" id="install-python">
             <div class="install-icon waiting-icon"></div>
             <div class="install-label">Python ML packages</div>
@@ -57,52 +53,7 @@
       </div>
     </div>
 
-    <!-- Page 3: Codex Authentication -->
-    <div class="page" data-page="2">
-      <div class="page-content">
-        <h2>Sign in to Codex</h2>
-        <p class="subtitle">
-          Chiefton uses OpenAI Codex to understand and act on your requests.
-          Sign in with your school email to get free usage. Codex handles the AI behind the scenes.
-        </p>
-        <div class="auth-container">
-          <div id="auth-checking" class="auth-state">
-            <div class="spinner"></div>
-            <p class="auth-status-text">Checking authentication...</p>
-          </div>
-          <div id="auth-choice" class="auth-state hidden">
-            <p class="auth-hint" style="margin-bottom:14px">Are you a student?</p>
-            <button class="btn-primary" id="btn-student" style="width:100%;margin-bottom:10px">I'm a Student (currently $100 in free usage)</button>
-            <button class="btn-secondary" id="btn-non-student" style="width:100%">I'm Not a Student</button>
-          </div>
-          <div id="auth-student-signup" class="auth-state hidden">
-            <p class="auth-hint" style="margin-bottom:12px">Sign up for free Codex usage on OpenAI's student page:</p>
-            <button class="btn-primary" id="btn-codex-signup" style="width:100%;margin-bottom:14px">Open Student Signup</button>
-            <p class="auth-hint" style="margin-bottom:8px">After signing up, come back here and sign in:</p>
-            <button class="btn-primary" id="btn-auth" style="width:100%">Sign in to Codex</button>
-          </div>
-          <div id="auth-signup" class="auth-state hidden">
-            <p class="auth-hint" style="margin-bottom:12px">Sign in with your ChatGPT account:</p>
-            <button class="btn-primary" id="btn-auth-direct" style="width:100%">Sign in to Codex</button>
-          </div>
-          <div id="auth-needed" class="auth-state hidden">
-            <button class="btn-primary" id="btn-auth-retry">Sign in to Codex</button>
-            <p class="auth-hint">Opens your browser to sign in with your ChatGPT account.</p>
-          </div>
-          <div id="auth-waiting" class="auth-state hidden">
-            <div class="spinner"></div>
-            <p class="auth-status-text" id="auth-waiting-text">Opening Codex login...</p>
-            <p class="auth-hint">Complete sign-in in your browser.<br>This page will advance automatically.</p>
-          </div>
-          <div id="auth-success" class="auth-state hidden">
-            <div class="complete-mark small-mark"></div>
-            <p class="auth-status-text">Signed in</p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Page 4: Connect (Browser + Google merged) -->
+    <!-- Page 3: Connect (Browser + Google merged) -->
     <div class="page" data-page="3">
       <div class="page-content">
         <h2>Connect your accounts</h2>
@@ -267,7 +218,6 @@
       <span class="dot" data-dot="2"></span>
       <span class="dot" data-dot="3"></span>
       <span class="dot" data-dot="4"></span>
-      <span class="dot" data-dot="5"></span>
     </div>
   </div>
 

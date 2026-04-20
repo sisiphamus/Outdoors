@@ -5,7 +5,7 @@
 
 const isElectron = !!(window.electronAPI);
 let currentPage = 0;
-const totalPages = 6; // welcome, deps, auth, connect, telegram, done
+const totalPages = 5; // welcome, deps, connect, telegram, done
 
 // Cached existing setup state — fetched once on load, used to skip configured pages
 let existingSetup = null;
@@ -36,9 +36,8 @@ function goToPage(index) {
 
   // Trigger page-specific logic (page 0 = welcome)
   if (currentPage === 1) runInstallPage();
-  if (currentPage === 2) runAuthPage();
-  if (currentPage === 3) runConnectPage();
-  if (currentPage === 4) runTelegramPage();
+  if (currentPage === 2) runConnectPage();
+  if (currentPage === 3) runTelegramPage();
 }
 
 function nextPage() {
@@ -53,7 +52,7 @@ document.getElementById('btn-begin')?.addEventListener('click', () => {
   if (isElectron) {
     nextPage();
   } else {
-    goToPage(3);
+    goToPage(2);
   }
 });
 
@@ -151,23 +150,6 @@ async function runInstallPage() {
     return;
   }
 
-  setInstallItemState('install-codex-cli', 'active');
-  setInstallStatus('Checking Codex CLI...');
-
-  const codexCheck = await window.electronAPI.checkCodexInstalled();
-  if (codexCheck.installed) {
-    setInstallItemState('install-codex-cli', 'done');
-    setInstallStatus('Codex CLI already installed (' + (codexCheck.version || '') + ').');
-  } else {
-    setInstallStatus('Installing Codex CLI (this may take a minute)...');
-    const codexInstall = await window.electronAPI.installCodexCLI();
-    setInstallItemState('install-codex-cli', codexInstall.ok ? 'done' : 'error');
-    if (!codexInstall.ok) {
-      const hint = codexInstall.output ? ' (' + codexInstall.output.slice(-150).replace(/\s+/g, ' ').trim() + ')' : '';
-      setInstallStatus('Codex CLI install failed' + hint + '. You can install it manually: npm install -g @openai/codex');
-    }
-  }
-
   setInstallItemState('install-python', 'active');
   setInstallStatus('Checking Python packages...');
 
@@ -195,86 +177,7 @@ async function runInstallPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Page 3: Codex Authentication (Electron only)
-// ---------------------------------------------------------------------------
-
-async function runAuthPage() {
-  if (!isElectron) { nextPage(); return; }
-
-  showAuthState('auth-checking');
-
-  const status = await window.electronAPI.checkCodexAuth();
-  if (status.authenticated) {
-    showAuthState('auth-success');
-    await delay(1200);
-    nextPage();
-    return;
-  }
-
-  // Show student / non-student choice
-  showAuthState('auth-choice');
-}
-
-function showAuthState(id) {
-  const states = document.querySelectorAll('.auth-state');
-  states.forEach((s) => s.classList.add('hidden'));
-  const el = document.getElementById(id);
-  if (el) el.classList.remove('hidden');
-}
-
-// Student path — show student signup page
-document.getElementById('btn-student')?.addEventListener('click', () => {
-  showAuthState('auth-student-signup');
-});
-
-// Non-student path — go straight to sign in
-document.getElementById('btn-non-student')?.addEventListener('click', () => {
-  showAuthState('auth-signup');
-});
-
-// Open Codex student signup page in browser
-document.getElementById('btn-codex-signup')?.addEventListener('click', () => {
-  window.electronAPI.openExternal('https://chatgpt.com/codex/offers/students');
-});
-
-// Sign in to Codex (from any path)
-async function doCodexLogin() {
-  showAuthState('auth-waiting');
-
-  const waitText = document.getElementById('auth-waiting-text');
-  if (waitText) {
-    waitText.textContent = 'Opening Codex login...';
-    setTimeout(() => { if (waitText.textContent.startsWith('Opening')) waitText.textContent = 'Still loading — almost there...'; }, 6000);
-    setTimeout(() => { waitText.textContent = 'Waiting for sign-in...'; }, 15000);
-  }
-
-  const result = await window.electronAPI.startCodexAuth();
-  if (result.ok) {
-    showAuthState('auth-success');
-    await delay(1000);
-    nextPage();
-  } else {
-    showAuthState('auth-needed');
-    const hint = document.querySelector('#auth-needed .auth-hint');
-    if (hint) hint.textContent = 'Auth timed out — try again.';
-  }
-}
-
-document.getElementById('btn-auth')?.addEventListener('click', doCodexLogin);
-document.getElementById('btn-auth-direct')?.addEventListener('click', doCodexLogin);
-document.getElementById('btn-auth-retry')?.addEventListener('click', doCodexLogin);
-
-document.getElementById('btn-skip-auth')?.addEventListener('click', () => {
-  if (isElectron) window.electronAPI.cancelAuthPoll?.();
-  nextPage();
-});
-document.getElementById('btn-skip-auth-waiting')?.addEventListener('click', () => {
-  if (isElectron) window.electronAPI.cancelAuthPoll?.();
-  nextPage();
-});
-
-// ---------------------------------------------------------------------------
-// Page 4: Connect (Browser + Google merged into one step)
+// Page 2: Connect (Browser + Google merged into one step)
 // ---------------------------------------------------------------------------
 
 let connectDone = false;
@@ -307,18 +210,10 @@ async function runConnectPage() {
   if (connectDone) return;
   if (!isElectron) { nextPage(); return; }
 
-  // Skip if AutomationProfile and Google creds already exist (update scenario)
-  if (existingSetup && existingSetup.automationProfile && existingSetup.googleCreds) {
-    connectDone = true;
-    showConnectSection('connect-success');
-    const emailEl = document.getElementById('connect-email');
-    if (emailEl) emailEl.textContent = '(already configured)';
-    // Regenerate MCP config in background (may have been wiped by update)
-    window.electronAPI.regenerateMcpConfig?.().catch(() => {});
-    await delay(1000);
-    nextPage();
-    return;
-  }
+  // NOTE: we intentionally do NOT auto-skip when AutomationProfile exists.
+  // AutomationProfile is a shared machine-global Chrome profile — another
+  // Chiefton-adjacent app may have created it. The user should always walk
+  // through the Connect step so they explicitly authorize this app.
 
   // Check if oauth-creds.json exists — still set up Chrome even without it
   const credsCheck = await window.electronAPI.checkGoogleCreds();

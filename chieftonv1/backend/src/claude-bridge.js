@@ -1,11 +1,26 @@
+// claude-bridge.js — Thin passthrough to the chieftonv4 pipeline.
+//
+// The pipeline (A → B → C → D → learn) lives in chieftonv4 and is model-
+// agnostic. It calls a single model-runner, which we've swapped to use
+// Claude via the outdoors-chat Cloudflare proxy. This file keeps the old
+// bridge API so index.js, whatsapp-client.js, and the schedulers don't
+// need to change imports beyond swapping './codex-bridge.js' → './claude-bridge.js'.
+
 import * as chieftonv4 from '../../../chieftonv4/index.js';
 
-export function executeClaudePrompt(prompt, options) {
-  return chieftonv4.executeClaudePrompt(prompt, options);
+export function executeCodexPrompt(prompt, options) {
+  return chieftonv4.executeCodexPrompt(prompt, options);
 }
+
+// Alias under the new name for future call sites
+export const executeClaudePrompt = executeCodexPrompt;
 
 export function killProcess(key) {
   return chieftonv4.killProcess(key);
+}
+
+export function hasActiveProcess(key) {
+  return chieftonv4.hasActiveProcess(key);
 }
 
 export function codeAgentOptions(baseOptions, modelOverride) {

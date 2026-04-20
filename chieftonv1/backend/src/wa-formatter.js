@@ -28,9 +28,9 @@ const VIBE_EMOJI_MAP = {
   city:     ['\uD83C\uDFD9\uFE0F', '\uD83C\uDF03'],  // 🏙️ 🌃
 };
 
-const DEFAULT_VIBE = ['\uD83C\uDF32', '\uD83C\uDFD4\uFE0F']; // 🌲 🏔️
+const DEFAULT_VIBE = ['\uD83D\uDD37', '\uD83C\uDF0A']; // 🔷 🌊
 
-const DEFAULT_HEADER = `\u2591\u2592\u2593\u2588 \uD83C\uDF32 CHIEFTON \uD83C\uDFD4\uFE0F \u2588\u2593\u2592\u2591`;
+const DEFAULT_HEADER = `\u2591\u2592\u2593\u2588 \uD83D\uDD37 CHIEFTON \uD83C\uDF0A \u2588\u2593\u2592\u2591`;
 const DEFAULT_FOOTER = `\u2591\u2592\u2593\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2593\u2592\u2591`;
 
 let cachedColor = undefined; // undefined = not yet read, null = no color found

@@ -9,11 +9,11 @@
   --text: #2C2417;
   --text-secondary: #6B5744;
   --text-muted: #9A8B78;
-  --accent: #3D5A3E;
-  --accent-hover: #4A6E4C;
+  --accent: #2C4E7A;
+  --accent-hover: #3A6399;
   --highlight: #C4856A;
   --border: #D9CFC2;
-  --success: #3D5A3E;
+  --success: #2C4E7A;
   --error: #9E4A3A;
   --white: #FFFFFF;
 }
@@ -96,7 +96,7 @@ html, body {
   background: #888;
   transition: background 0.3s;
 }
-.status-dot.connected { background: #7EC87E; }
+.status-dot.connected { background: #7EA8E8; }
 .status-dot.offline { background: #D46A4E; }
 
 .power-btn {
@@ -117,7 +117,7 @@ html, body {
   -webkit-app-region: no-drag;
 }
 .power-btn:hover { color: #fff; background: rgba(255,255,255,0.1); }
-.power-btn.on { color: #7EC87E; }
+.power-btn.on { color: #7EA8E8; }
 .power-btn.on:hover { color: #fff; background: rgba(126,200,126,0.2); }
 .power-btn.off { color: #D46A4E; }
 .power-btn.off:hover { color: #fff; background: rgba(212,106,78,0.2); }
@@ -538,7 +538,7 @@ html, body {
   text-overflow: ellipsis;
 }
 .memory-file:hover { background: var(--bg-secondary); color: var(--text); }
-.memory-file.active { background: rgba(61, 90, 62, 0.1); color: var(--accent); }
+.memory-file.active { background: rgba(44, 78, 122, 0.1); color: var(--accent); }
 
 .memory-edit-area {
   flex: 1;

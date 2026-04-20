@@ -1,5 +1,5 @@
 # Memory Index
-_Auto-updated after each learning pass. 22 total entries._
+_Auto-updated after each learning pass. 23 total entries._
 
 
 ## Skills (18)
@@ -25,7 +25,8 @@ _Auto-updated after each learning pass. 22 total entries._
 ## Preferences (1)
 - **browser-preferences**: Browser Preferences
 
-## Sites (3)
+## Sites (4)
+- **gmail-url-handling**: Gmail URL Handling
 - **io-rice**: iO — Rice University Timesheet
 - **todoist**: Todoist
 - **whatsapp-desktop-access**: WhatsApp Desktop Access

@@ -363,6 +363,11 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
       break;
     }
 
+    // If the model runner flagged a fatal API error (no credits, auth bad,
+    // quota exceeded), don't retry — just surface the friendly message.
+    const hadFatalError = (lastDFullEvents || []).some(e => e.type === 'error');
+    if (hadFatalError) break;
+
     if (detectFailure(lastDResponse) && loopCount < MAX_FEEDBACK_LOOPS) {
       agg.phase('feedback', `Model D couldn't complete the task. Looping back to B for more knowledge.`);
       previousFailure = lastDResponse || '(executor returned empty response)';
@@ -373,7 +378,12 @@ export async function runPipeline(prompt, { onProgress, processKey, timeout, res
   }
 
   // ── Post-task learning (fire-and-forget) ──
-  learnInBackground(prompt, outputSpec, lastDResponse, lastDFullEvents, onProgress, processKey, timeout);
+  // Skip learning if we hit a fatal API error — no point burning another
+  // call and surfacing a second error in the feed.
+  const runHadFatalError = (lastDFullEvents || []).some(e => e.type === 'error');
+  if (!runHadFatalError) {
+    learnInBackground(prompt, outputSpec, lastDResponse, lastDFullEvents, onProgress, processKey, timeout);
+  }
 
   // Auto-attach visual outputs that Model D created but forgot to mark with [IMAGE:]
   const finalResponse = attachUnmarkedImages(lastDResponse || '', outputDir);

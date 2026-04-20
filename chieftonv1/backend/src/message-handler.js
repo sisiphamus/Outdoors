@@ -1,4 +1,4 @@
-import { executeCodexPrompt, killProcess, hasActiveProcess, codeAgentOptions, clearClarificationState, getActiveProcessSummary } from './codex-bridge.js';
+import { executeCodexPrompt, killProcess, hasActiveProcess, codeAgentOptions, clearClarificationState, getActiveProcessSummary } from './claude-bridge.js';
 import { config } from './config.js';
 import { parseMessage, resolveSession, createOrUpdateConversation, closeConversation, getConversationMode } from './conversation-manager.js';
 import { downloadContentFromMessage } from '@whiskeysockets/baileys';
